@@ -4,16 +4,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
 import { copyFixtureRepository } from "./support/repository-files.js";
 import { createSandbox } from "./support/sandbox.js";
-import { startStubAdminApi } from "./support/stub-admin-api.js";
-
-const webApp = {
-  id: "4f0c1d2e-8a51-4c3b-9b6e-2d7f8a9b0c1d",
-  name: "Web App",
-  slug: "web-app",
-  organizationId: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
-  createdAt: "2026-09-01T10:00:00.000Z",
-  updatedAt: "2026-09-01T10:00:00.000Z",
-};
+import { startScanAdminApi } from "./support/scan-admin-api.js";
 
 type InCodeDefaultValue = { type: string; value: unknown };
 
@@ -36,7 +27,7 @@ const validateScanOutput = new Ajv2020({ allErrors: true }).compile(
 );
 
 const scanFixture = async (fixtureName: string) => {
-  const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+  const adminApi = await startScanAdminApi();
   const sandbox = await createSandbox();
   await copyFixtureRepository(sandbox.workingDirectory, fixtureName);
   const invocation = sandbox.invocation({

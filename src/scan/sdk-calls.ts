@@ -11,6 +11,7 @@ import type { SourceCode, TokenRange } from "./source-code.js";
 
 export type DirectReference = {
   key: string;
+  argument: string | undefined;
   line: number;
   sdk: SdkFamily;
   call: string;
@@ -21,9 +22,15 @@ export type DirectReference = {
 
 export type DynamicReference = { line: number; sdk: SdkFamily; call: string; argument: string };
 
-export type FamilyCallShape = { sdk: SdkFamily; shape: CallShape };
+export type NamedKeyReference = Omit<DirectReference, "key"> & { argument: string };
 
-type FileReferences = { direct: DirectReference[]; dynamic: DynamicReference[] };
+export type SdkCallMatch = { tokenIndex: number } & (
+  | { kind: "direct"; reference: DirectReference }
+  | { kind: "named"; name: string; reference: NamedKeyReference }
+  | { kind: "dynamic"; reference: DynamicReference }
+);
+
+export type FamilyCallShape = { sdk: SdkFamily; shape: CallShape };
 
 type CallArgument = { label: string | undefined; range: TokenRange };
 
@@ -64,6 +71,46 @@ const precedingTokenMatchesForm = (code: SourceCode, nameIndex: number, shape: C
     case "function":
       return true;
   }
+};
+
+export const dynamicReferenceOf = ({ line, sdk, call, argument }: NamedKeyReference): DynamicReference => ({
+  line,
+  sdk,
+  call,
+  argument,
+});
+
+const RAW_VALUE_ACCESSOR = "rawValue";
+
+const rangeInsideBrackets = (code: SourceCode, range: TokenRange): TokenRange =>
+  code.isPunctuation(range.first, "[") && code.closerOf(range.first) === range.last
+    ? { first: range.first + 1, last: range.last - 1 }
+    : range;
+
+const dottedPathSegments = (code: SourceCode, range: TokenRange): string[] | undefined => {
+  const path = rangeInsideBrackets(code, range);
+  const tokenCount = path.last - path.first + 1;
+  if (tokenCount < 1 || tokenCount % 2 === 0) {
+    return undefined;
+  }
+  const segments: string[] = [];
+  for (let index = path.first; index <= path.last; index += 2) {
+    const segment = code.token(index);
+    if (segment?.kind !== "identifier" || (index < path.last && !code.isPunctuation(index + 1, "."))) {
+      return undefined;
+    }
+    segments.push(segment.text);
+  }
+  return segments;
+};
+
+const nameReadForKey = (code: SourceCode, range: TokenRange): string | undefined => {
+  const segments = dottedPathSegments(code, range);
+  if (segments === undefined) {
+    return undefined;
+  }
+  const accessesRawValue = segments.length > 1 && segments[segments.length - 1] === RAW_VALUE_ACCESSOR;
+  return segments[segments.length - (accessesRawValue ? 2 : 1)];
 };
 
 const TOKENS_SEARCHED_FOR_THE_END_OF_TYPE_ARGUMENTS = 64;
@@ -150,7 +197,7 @@ const collectCallReferences = (
   nameIndex: number,
   sdk: SdkFamily,
   shape: CallShape,
-  references: FileReferences,
+  matches: SdkCallMatch[],
 ) => {
   const callArguments = precedingTokenMatchesForm(code, nameIndex, shape)
     ? callArgumentsOf(code, nameIndex)
@@ -165,36 +212,40 @@ const collectCallReferences = (
   for (const expression of keyExpressionsOf(code, callArguments, shape.keyArgument)) {
     const line = code.lineOf(expression.range.first);
     const keyLiteral = keyLiteralOf(code, expression);
+    const tokenIndex = expression.range.first;
+    const call = {
+      line,
+      sdk,
+      call: shape.name,
+      inCodeDefault,
+      getterType: shape.getterType,
+      test: shape.test,
+    };
     switch (keyLiteral.kind) {
       case "key":
-        references.direct.push({
-          key: keyLiteral.key,
-          line,
-          sdk,
-          call: shape.name,
-          inCodeDefault,
-          getterType: shape.getterType,
-          test: shape.test,
+        matches.push({
+          tokenIndex,
+          kind: "direct",
+          reference: { ...call, key: keyLiteral.key, argument: undefined },
         });
         break;
-      case "notLiteral":
-        references.dynamic.push({
-          line,
-          sdk,
-          call: shape.name,
-          argument: code.textOf(expression.range),
-        });
+      case "notLiteral": {
+        const reference = { ...call, argument: code.textOf(expression.range) };
+        const name = nameReadForKey(code, expression.range);
+        if (name === undefined) {
+          matches.push({ tokenIndex, kind: "dynamic", reference: dynamicReferenceOf(reference) });
+        } else {
+          matches.push({ tokenIndex, kind: "named", name, reference });
+        }
         break;
+      }
       case "outsideKeyGrammar":
         break;
     }
   }
 };
 
-export const sdkCallReferences = (
-  code: SourceCode,
-  callShapes: readonly FamilyCallShape[],
-): FileReferences => {
+export const sdkCallMatches = (code: SourceCode, callShapes: readonly FamilyCallShape[]): SdkCallMatch[] => {
   const shapesByName = new Map<string, FamilyCallShape[]>();
   for (const callShape of callShapes) {
     const shapesNamedAlike = shapesByName.get(callShape.shape.name);
@@ -204,14 +255,14 @@ export const sdkCallReferences = (
       shapesNamedAlike.push(callShape);
     }
   }
-  const references: FileReferences = { direct: [], dynamic: [] };
+  const matches: SdkCallMatch[] = [];
   code.tokens.forEach((token, index) => {
     if (token.kind !== "identifier") {
       return;
     }
     for (const { sdk, shape } of shapesByName.get(token.text) ?? []) {
-      collectCallReferences(code, index, sdk, shape, references);
+      collectCallReferences(code, index, sdk, shape, matches);
     }
   });
-  return references;
+  return matches;
 };

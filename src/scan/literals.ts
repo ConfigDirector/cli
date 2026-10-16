@@ -20,7 +20,7 @@ const isAlphanumeric = (character: string) => isDigit(character) || isAsciiLette
 const isKeyCharacter = (character: string) =>
   isAlphanumeric(character) || character === "." || character === "_" || character === "-";
 
-const fitsKeyGrammar = (text: string) =>
+export const fitsKeyGrammar = (text: string) =>
   text.length >= MINIMUM_KEY_LENGTH &&
   text.length <= MAXIMUM_KEY_LENGTH &&
   isAlphanumeric(text.charAt(0)) &&

@@ -5,16 +5,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
 import { writeRepositoryFile } from "./support/repository-files.js";
 import { createSandbox, type Sandbox } from "./support/sandbox.js";
-import { startStubAdminApi } from "./support/stub-admin-api.js";
-
-const webApp = {
-  id: "4f0c1d2e-8a51-4c3b-9b6e-2d7f8a9b0c1d",
-  name: "Web App",
-  slug: "web-app",
-  organizationId: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
-  createdAt: "2026-09-01T10:00:00.000Z",
-  updatedAt: "2026-09-01T10:00:00.000Z",
-};
+import { projectConfig, startScanAdminApi, webApp } from "./support/scan-admin-api.js";
 
 const serverSdkFile = (lines: string[]) =>
   [
@@ -59,7 +50,7 @@ const scanJson = async (sandbox: Sandbox, baseUrl: string, commandLineArguments:
 };
 
 const scanServerSdkCalls = async (lines: string[]) => {
-  const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+  const adminApi = await startScanAdminApi();
   const sandbox = await createSandbox();
   await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", serverSdkFile(lines));
   return scanJson(sandbox, adminApi.baseUrl);
@@ -67,7 +58,7 @@ const scanServerSdkCalls = async (lines: string[]) => {
 
 describe("scan", () => {
   it("reports an SDK call whose key is a string literal as a direct reference with its in-code default value", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -104,7 +95,7 @@ describe("scan", () => {
   });
 
   it("reports an SDK call whose key is not a string literal as a dynamic reference with the argument as written", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -176,7 +167,7 @@ describe("scan", () => {
   });
 
   it("skips the SDK calls of a file that does not contain the SDK's import marker", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -199,7 +190,7 @@ describe("scan", () => {
   });
 
   it("reports the SDK call inside a wrapper function but not the wrapper's own definition", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -224,7 +215,7 @@ describe("scan", () => {
   });
 
   it("reports nothing for SDK calls inside comments and strings", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -249,7 +240,7 @@ describe("scan", () => {
   });
 
   it("reports a test client seeded from a variable as a dynamic reference", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -361,7 +352,7 @@ describe("scan local imports", () => {
   }) => output.references.map((reference) => [reference.key, reference.file, reference.sdk]);
 
   it("finds the SDK calls of a file that imports the client from a local setup module, as the docs show", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "src/config-director-setup.ts", clientSetup);
     await writeRepositoryFile(
@@ -407,7 +398,7 @@ describe("scan local imports", () => {
   });
 
   it("follows a local import written with a .js extension to its TypeScript file", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "src/config-director-setup.ts", clientSetup);
     await writeRepositoryFile(
@@ -423,7 +414,7 @@ describe("scan local imports", () => {
   });
 
   it("follows a local import of a directory to its index file", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "src/flags/index.ts", clientSetup);
     await writeRepositoryFile(
@@ -441,7 +432,7 @@ describe("scan local imports", () => {
   });
 
   it("follows only one local import, not a module that re-exports the client from another", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director-setup.ts", clientSetup);
     await writeRepositoryFile(
@@ -459,7 +450,7 @@ describe("scan local imports", () => {
   });
 
   it("follows a Python import of a module next to the file, as the docs show", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -479,7 +470,7 @@ describe("scan local imports", () => {
   });
 
   it("follows a relative Python import within a package", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -499,7 +490,7 @@ describe("scan local imports", () => {
   });
 
   it("follows an absolute Python import of a package module from a file deeper in the package", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -521,7 +512,7 @@ describe("scan local imports", () => {
   });
 
   it("follows a Dart package import of the app's own package to its lib directory", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "app/pubspec.yaml", "name: shop\nversion: 1.0.0\n");
     await writeRepositoryFile(
@@ -554,7 +545,7 @@ describe("scan local imports", () => {
   });
 
   it("follows a Go import of a package of the same module", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "go.mod", "module example.com/shop\n\ngo 1.24\n");
     await writeRepositoryFile(
@@ -593,7 +584,7 @@ describe("scan local imports", () => {
 
 describe("scan Go calls", () => {
   it("tells a Go SDK read from an OpenFeature Go read of the same name, and from flag.String, by their arguments", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -647,7 +638,7 @@ describe("scan Nuxt app and server", () => {
     output.references.map((reference) => reference.sdk);
 
   it("reports a Nuxt call in the server directory next to nuxt.config as the Nuxt server SDK", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -667,7 +658,7 @@ describe("scan Nuxt app and server", () => {
   });
 
   it("reports a Nuxt call in a directory named server elsewhere in the app as the Nuxt client SDK", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -683,7 +674,7 @@ describe("scan Nuxt app and server", () => {
   });
 
   it("reports a Nuxt call as the Nuxt client SDK when no nuxt.config is above it", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "server/api/checkout.get.ts", nuxtServerHandler);
 
@@ -709,7 +700,7 @@ describe("scan JVM build modules", () => {
   ].join("\n");
 
   it("reports a com.configdirector call as the Android SDK when the nearest build file is an Android module", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "build.gradle.kts", 'plugins {\n    id("java")\n}\n');
     await writeRepositoryFile(
@@ -726,7 +717,7 @@ describe("scan JVM build modules", () => {
   });
 
   it("reports a com.configdirector call as the Java server SDK when the nearest build file is not an Android module", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -749,8 +740,18 @@ describe("scan JVM build modules", () => {
 
 describe("scan output", () => {
   it("prints the references grouped by key, then the dynamic references, then the counts", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi({ configs: [projectConfig("new-checkout")] });
     const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/ab-tests.ts",
+      [
+        'import { isEnabled } from "./flags";',
+        "",
+        'export const checkout = () => isEnabled("new-checkout");',
+        "",
+      ].join("\n"),
+    );
     await writeRepositoryFile(
       sandbox.workingDirectory,
       "src/checkout.ts",
@@ -785,20 +786,21 @@ describe("scan output", () => {
         "  src/checkout.ts:5 getValue (js-server)",
         "",
         "new-checkout",
+        "  src/ab-tests.ts:3 (indirect)",
         "  src/banner.ts:4 getValue (js-server)",
         "  src/checkout.ts:4 getValue (js-server)",
         "",
         "Dynamic references (calls whose key is not a string literal)",
         "  src/banner.ts:5 getValue(flagKey) (js-server)",
         "",
-        "3 direct and 1 dynamic references in 2 scanned files.",
+        "3 direct, 1 indirect and 1 dynamic references in 3 scanned files.",
         "",
       ].join("\n"),
     );
   });
 
   it("exits 0 saying there was nothing to scan when no file can be scanned", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "README.md", "# Web App\n");
 
@@ -809,7 +811,7 @@ describe("scan output", () => {
   });
 
   it("prints JSON that the scan output schema shipped in the package accepts", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi({ configs: [projectConfig("new-checkout", ["checkout-v2"])] });
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -817,11 +819,14 @@ describe("scan output", () => {
       [
         'import { createClient } from "@configdirector/server-sdk";',
         'import { OpenFeature } from "@openfeature/server-sdk";',
+        'import { isEnabled } from "./wrapper";',
         "",
         'const client = createClient("YOUR-SERVER-SDK-KEY");',
+        'const DARK_MODE_FLAG = "dark-mode";',
         'client.getValue("new-checkout", false);',
         "client.getValue(flagKey, false);",
-        'OpenFeature.getClient().getBooleanValue("dark-mode", false);',
+        "OpenFeature.getClient().getBooleanValue(DARK_MODE_FLAG, false);",
+        'isEnabled("checkout-v2");',
         "",
       ].join("\n"),
     );
@@ -841,7 +846,18 @@ describe("scan output", () => {
     const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
 
     expect(exitCode).toEqual(0);
-    expect(output.references.length).toEqual(4);
+    expect(
+      output.references.map((reference: { kind: string; argument?: string }) => [
+        reference.kind,
+        reference.argument,
+      ]),
+    ).toEqual([
+      ["direct", undefined],
+      ["direct", "DARK_MODE_FLAG"],
+      ["indirect", undefined],
+      ["direct", undefined],
+      ["direct", undefined],
+    ]);
     expect(output.dynamicReferences.length).toEqual(1);
     expect(validateScanOutput(output)).toEqual(true);
     expect(validateScanOutput.errors).toEqual(null);
@@ -850,7 +866,7 @@ describe("scan output", () => {
 
 describe("scan scope", () => {
   it("skips files that .gitignore ignores, in the scanned directory and below", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, ".gitignore", "generated/\n");
     await writeRepositoryFile(sandbox.workingDirectory, "packages/web/.gitignore", "*.local.ts\n");
@@ -877,7 +893,7 @@ describe("scan scope", () => {
   });
 
   it("applies the .gitignore of the current directory when scanning a directory below it", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, ".gitignore", "src/generated/\n");
     await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", serverSdkCall("new-checkout"));
@@ -894,7 +910,7 @@ describe("scan scope", () => {
   });
 
   it("applies the .gitignore of the git repository root above the current directory", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await mkdir(join(sandbox.root, ".git"));
     await writeRepositoryFile(sandbox.root, ".gitignore", "repository/generated/\n");
@@ -912,7 +928,7 @@ describe("scan scope", () => {
   });
 
   it("skips files over 1 MB", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     const oneMegabyte = 1024 * 1024;
     const callAtOneMegabyte = serverSdkCall("one-megabyte-flag");
@@ -935,7 +951,7 @@ describe("scan scope", () => {
   });
 
   it("skips binary files", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", serverSdkCall("new-checkout"));
     await writeRepositoryFile(
@@ -952,7 +968,7 @@ describe("scan scope", () => {
   });
 
   it("skips node_modules, vendor, build, dist and target directories at any depth", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", serverSdkCall("new-checkout"));
     await writeRepositoryFile(
@@ -977,7 +993,7 @@ describe("scan scope", () => {
   });
 
   it("skips files matching an exclude glob in configdirector.json", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -1007,7 +1023,7 @@ describe("scan scope", () => {
   });
 
   it("scans only files matching an include glob in configdirector.json", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -1024,7 +1040,7 @@ describe("scan scope", () => {
   });
 
   it("scans only the directory given as the path argument", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", serverSdkCall("new-checkout"));
     await writeRepositoryFile(sandbox.workingDirectory, "scripts/seed.ts", serverSdkCall("seed-flag"));
@@ -1036,7 +1052,7 @@ describe("scan scope", () => {
   });
 
   it("scans only the directory given as an absolute path argument", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", serverSdkCall("new-checkout"));
     await writeRepositoryFile(sandbox.workingDirectory, "scripts/seed.ts", serverSdkCall("seed-flag"));
@@ -1050,7 +1066,7 @@ describe("scan scope", () => {
   });
 
   it("scans only the file given as the path argument", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", serverSdkCall("new-checkout"));
     await writeRepositoryFile(sandbox.workingDirectory, "src/seed.ts", serverSdkCall("seed-flag"));
@@ -1062,7 +1078,7 @@ describe("scan scope", () => {
   });
 
   it("exits 2 naming the path without calling the Admin API when the path does not exist", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
 
     const { exitCode, stdout, stderr } = await scan(sandbox, adminApi.baseUrl, ["no-such-directory"]);
@@ -1085,7 +1101,7 @@ const linkProject = async (sandbox: Sandbox, baseUrl: string, projectSlug: strin
 
 describe("scan project", () => {
   it("scans for the project that init linked when no project is given", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await linkProject(sandbox, adminApi.baseUrl, "web-app");
     const invocation = sandbox.invocation({
@@ -1106,7 +1122,7 @@ describe("scan project", () => {
       name: "Mobile App",
       slug: "mobile-app",
     };
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp, mobileApp] });
+    const adminApi = await startScanAdminApi({ projects: [webApp, mobileApp] });
     const sandbox = await createSandbox();
     await linkProject(sandbox, adminApi.baseUrl, "web-app");
     const invocation = sandbox.invocation({
@@ -1123,8 +1139,8 @@ describe("scan project", () => {
     expect(JSON.parse(invocation.stdout.text()).project).toEqual("mobile-app");
   });
 
-  it("calls only the project listing of the Admin API", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+  it("calls the project listing, then the config listing of the project, and nothing else", async () => {
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", serverSdkCall("new-checkout"));
 
@@ -1132,11 +1148,12 @@ describe("scan project", () => {
 
     expect(adminApi.receivedRequests.map((request) => [request.method, request.path])).toEqual([
       ["GET", "/v1/projects"],
+      ["GET", `/v1/projects/${webApp.id}/configs`],
     ]);
   });
 
   it("exits 2 without calling the Admin API when no project is given and there is no configdirector.json", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({
       commandLineArguments: ["scan", "--token", "cd_flag_token"],
@@ -1151,7 +1168,7 @@ describe("scan project", () => {
   });
 
   it("exits 2 naming configdirector.json without calling the Admin API when the file is not valid", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
       sandbox.workingDirectory,
@@ -1168,7 +1185,7 @@ describe("scan project", () => {
   });
 
   it("exits 2 naming CONFIGDIRECTOR_TOKEN without calling the Admin API when no token is found", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({
       commandLineArguments: ["scan", "--project", "web-app"],
@@ -1183,7 +1200,7 @@ describe("scan project", () => {
   });
 
   it("exits 2 naming the slug when no project in the organization has it", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({
       commandLineArguments: ["scan", "--project", "checkout-service", "--token", "cd_flag_token"],

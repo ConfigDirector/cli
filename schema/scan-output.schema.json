@@ -16,14 +16,21 @@
       "minimum": 0
     },
     "references": {
-      "description": "Places where the code reads a config key.",
+      "description": "Places where the code reads a config key: SDK calls, and the project's keys quoted elsewhere in the code.",
       "type": "array",
       "items": {
-        "$ref": "#/$defs/directReference"
+        "oneOf": [
+          {
+            "$ref": "#/$defs/directReference"
+          },
+          {
+            "$ref": "#/$defs/indirectReference"
+          }
+        ]
       }
     },
     "dynamicReferences": {
-      "description": "SDK calls whose key is not a string literal, so the key they read is not known.",
+      "description": "SDK calls whose key is neither a string literal nor a constant the scan could resolve, so the key they read is not known.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/dynamicReference"
@@ -84,7 +91,7 @@
       "additionalProperties": false,
       "properties": {
         "key": {
-          "description": "The config key, as written in the call.",
+          "description": "The config key: the string literal in the call, or the string the constant passed to the call holds.",
           "type": "string"
         },
         "file": {
@@ -94,7 +101,7 @@
           "$ref": "#/$defs/line"
         },
         "kind": {
-          "description": "The key is a string literal in an SDK call.",
+          "description": "The key is a string literal in an SDK call, or a constant the scan resolved.",
           "const": "direct"
         },
         "sdk": {
@@ -102,6 +109,10 @@
         },
         "call": {
           "$ref": "#/$defs/call"
+        },
+        "argument": {
+          "description": "The key argument as written in the code, present when the scan resolved it from a constant or property rather than reading a string literal.",
+          "type": "string"
         },
         "default": {
           "$ref": "#/$defs/inCodeDefaultValue"
@@ -112,6 +123,31 @@
         },
         "test": {
           "$ref": "#/$defs/test"
+        }
+      }
+    },
+    "indirectReference": {
+      "type": "object",
+      "required": ["key", "file", "line", "kind", "test"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "The project's current or deprecated key, as quoted in the code.",
+          "type": "string"
+        },
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "line": {
+          "$ref": "#/$defs/line"
+        },
+        "kind": {
+          "description": "The key is quoted outside an SDK call, such as in a wrapper function, a key list or a test fixture.",
+          "const": "indirect"
+        },
+        "test": {
+          "description": "Whether the file is in a test directory or has a test name.",
+          "type": "boolean"
         }
       }
     },

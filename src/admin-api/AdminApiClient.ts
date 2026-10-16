@@ -20,6 +20,13 @@ const ProjectSchema = v.object({
 
 export type Project = v.InferOutput<typeof ProjectSchema>;
 
+const ConfigKeysSchema = v.object({
+  key: v.string(),
+  deprecatedKeys: v.array(v.object({ key: v.string() })),
+});
+
+type ConfigKeys = v.InferOutput<typeof ConfigKeysSchema>;
+
 const readJsonBody = async (response: Response): Promise<unknown> => {
   try {
     return await response.json();
@@ -60,6 +67,10 @@ export class AdminApiClient {
 
   public listProjects(): Promise<Project[]> {
     return this.get("/v1/projects", v.array(ProjectSchema));
+  }
+
+  public listConfigKeys(projectId: string): Promise<ConfigKeys[]> {
+    return this.get(`/v1/projects/${encodeURIComponent(projectId)}/configs`, v.array(ConfigKeysSchema));
   }
 
   private async get<TSchema extends v.GenericSchema>(

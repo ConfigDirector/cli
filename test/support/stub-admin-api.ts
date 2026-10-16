@@ -15,16 +15,16 @@ type ReceivedRequest = {
   headers: IncomingHttpHeaders;
 };
 
-export const startStubAdminApi = async (reply: StubReply) => {
+export const startStubAdminApi = async (reply: StubReply, repliesByPath: Record<string, StubReply> = {}) => {
   const receivedRequests: ReceivedRequest[] = [];
   const server = createServer((request, response) => {
-    receivedRequests.push({
-      method: request.method ?? "",
-      path: request.url ?? "",
-      headers: request.headers,
-    });
-    response.writeHead(reply.status, { "content-type": "application/json", ...reply.headers });
-    response.end(reply.rawBody ?? (reply.body === undefined ? "" : JSON.stringify(reply.body)));
+    const path = request.url ?? "";
+    receivedRequests.push({ method: request.method ?? "", path, headers: request.headers });
+    const replyToPath = repliesByPath[path] ?? reply;
+    response.writeHead(replyToPath.status, { "content-type": "application/json", ...replyToPath.headers });
+    response.end(
+      replyToPath.rawBody ?? (replyToPath.body === undefined ? "" : JSON.stringify(replyToPath.body)),
+    );
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   onTestFinished(
