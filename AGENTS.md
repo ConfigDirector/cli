@@ -43,4 +43,4 @@ Run a single spec with `yarn vitest run test/login.spec.ts`.
 ## Releasing
 
 - Every user-visible change gets an entry in `CHANGELOG.md` under `## [Unreleased]`, in Keep a Changelog sections (Added, Changed, Fixed), written from the user's side.
-- To release, set `version` in `package.json` (0.x during the beta), move the Unreleased entries under that version, and run the `Release` workflow from GitHub Actions. It runs `yarn release` in the `production` environment, publishes `package.tgz` to npm with `--tag beta` through trusted publishing, and tags the commit `cli-v<version>`.
+- To release, set `version` in `package.json` (0.x during the beta), move the Unreleased entries under that version, and run the `Release` workflow from GitHub Actions. It runs `yarn release`, publishes `package.tgz` to npm with `--tag beta` through trusted publishing, and tags the commit `cli-v<version>`.
