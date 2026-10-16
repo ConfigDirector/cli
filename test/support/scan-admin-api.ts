@@ -11,14 +11,22 @@ export const webApp = {
 
 type Project = typeof webApp;
 
-export const projectConfig = (key: string, deprecatedKeys: string[] = []) => ({
+type ConfigOverrides = { type?: string; typeOptions?: object | null; client?: boolean; server?: boolean };
+
+export const projectConfig = (
+  key: string,
+  deprecatedKeys: string[] = [],
+  overrides: ConfigOverrides = {},
+) => ({
   id: `config-${key}`,
   projectId: webApp.id,
   key,
   type: "boolean",
+  typeOptions: null,
   state: "in-use",
   client: true,
   server: true,
+  ...overrides,
   deprecatedKeys: deprecatedKeys.map((deprecatedKey) => ({
     id: `key-${deprecatedKey}`,
     configId: `config-${key}`,

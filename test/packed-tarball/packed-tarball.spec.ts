@@ -126,6 +126,6 @@ describe("the packed tarball installed into an empty directory", () => {
       ),
     );
 
-    expect(schema.title).toEqual("configdirector scan --json output");
+    expect(schema.title).toEqual("configdirector scan and validate --json output");
   });
 });

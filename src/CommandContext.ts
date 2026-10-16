@@ -1,3 +1,4 @@
+import type { ExitCode } from "./ExitCode.js";
 import type { Invocation } from "./Invocation.js";
 
 export type CommandContext = {
@@ -7,4 +8,8 @@ export type CommandContext = {
   projectSlug: string | undefined;
 };
 
-export type CommandOutput = { json: unknown; text: string };
+export type CommandOutput = {
+  json: unknown;
+  text: string;
+  exitCode: typeof ExitCode.success | typeof ExitCode.problemsFound;
+};

@@ -7,6 +7,7 @@ const ProjectSettingsSchema = v.object({
   project: v.optional(v.string()),
   include: v.optional(v.array(v.string())),
   exclude: v.optional(v.array(v.string())),
+  ignoreKeys: v.optional(v.array(v.string())),
 });
 
 export type ProjectSettings = v.InferOutput<typeof ProjectSettingsSchema>;

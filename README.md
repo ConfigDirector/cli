@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, and lists where the repository's code reads config keys.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, and checks those keys against the project's configs.
 
 ## Install
 
@@ -50,16 +50,36 @@ The scan skips what `.gitignore` ignores, the `node_modules`, `vendor`, `build`,
 
 With `--json`, `scan` prints the references for scripts and CI; `schema/scan-output.schema.json` in the package describes that output. Each reference has a `kind`, `direct` or `indirect`, and a direct reference resolved from a constant carries the constant as `argument`.
 
+## Check the keys the code reads
+
+From the repository root, or as a CI step:
+
+```bash
+configdirector validate
+```
+
+`validate` runs the same scan, then checks every config key the code reads through an SDK against the project's configs. It exits with 1 when it finds a problem, so the build fails before a wrong key ships:
+
+- **Unknown key**: no config in the project has the key, as its current key or a deprecated one, so the SDK always returns the in-code default value. The key of an archived config is unknown too.
+- **Deprecated key**: the config was renamed. The output names its current key.
+- **Type mismatch**: the in-code default value, or a getter whose name fixes the type such as `getBoolean`, reads the config as a type the SDKs do not serve it as, so the SDK returns the in-code default value. A boolean reads a boolean config; an integer reads an integer, float or timespan config; a float reads a float or timespan config; a string reads a string, enum or URL config; an object or array reads a JSON config. A timespan is served as a number in its unit, so read it with a number, not a string such as `"30s"`. An enum whose values are numbers can also be read with a number.
+- **Availability mismatch**: a client SDK reads a server-only config, or a server SDK reads a client-only config, so the SDK never receives it.
+- **Enum value not allowed**: the in-code default value is not one of the enum's allowed values.
+
+A test client call, such as `setValue` or `createTestClient`, is checked for unknown and deprecated keys only, since ConfigDirector never serves a test client. Dynamic and indirect references are listed by `scan` but never checked, and a config's lifecycle state is never a problem. To skip a key, such as one another project serves, list it in `ignoreKeys` in `configdirector.json`. `include` and `exclude` narrow the files checked as they do for `scan`.
+
+The output lists the problems grouped by kind, with the file, the line, the key and what is wrong, such as the type a timespan is served as, then counts the references checked. With `--json`, `validate` prints the scan's JSON with a `findings` array; `schema/scan-output.schema.json` describes it.
+
 ## Options
 
-| Option             | Environment variable      | Meaning                                                                           |
-| ------------------ | ------------------------- | --------------------------------------------------------------------------------- |
-| `--token <token>`  | `CONFIGDIRECTOR_TOKEN`    | API token. Without either, the token saved by `login` is used.                    |
-| `--base-url <url>` | `CONFIGDIRECTOR_BASE_URL` | API host. Defaults to `https://api.configdirector.com`.                           |
-| `--project <slug>` | `CONFIGDIRECTOR_PROJECT`  | Project slug. Without either, `scan` uses the `project` in `configdirector.json`. |
-| `--json`           |                           | Print JSON on stdout. Errors always go to stderr.                                 |
+| Option             | Environment variable      | Meaning                                                                                         |
+| ------------------ | ------------------------- | ----------------------------------------------------------------------------------------------- |
+| `--token <token>`  | `CONFIGDIRECTOR_TOKEN`    | API token. Without either, the token saved by `login` is used.                                  |
+| `--base-url <url>` | `CONFIGDIRECTOR_BASE_URL` | API host. Defaults to `https://api.configdirector.com`.                                         |
+| `--project <slug>` | `CONFIGDIRECTOR_PROJECT`  | Project slug. Without either, `scan` and `validate` use the `project` in `configdirector.json`. |
+| `--json`           |                           | Print JSON on stdout. Errors always go to stderr.                                               |
 
-The command exits with 0 when it succeeds and 2 when it could not run: a usage mistake, a rejected token, a suspended service or an unreachable API.
+The command exits with 0 when it succeeds, 1 when `validate` found a problem, and 2 when it could not run: a usage mistake, a rejected token, a suspended service or an unreachable API. A CI job can therefore tell a wrong config key from an outage.
 
 ## License
 

@@ -1,10 +1,8 @@
-import { AdminApiClient } from "../admin-api/AdminApiClient.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
-import { configuredApiToken } from "../configured-api-token.js";
-import { findProjectBySlug, requireLinkedProjectSlug } from "../project-selection.js";
-import { readProjectSettings } from "../project-settings.js";
-import { scanCodeReferences, type CodeReference, type CodeReferenceScan } from "../scan/code-references.js";
-import { scanRootAt } from "../scan/scanned-files.js";
+import { ExitCode } from "../ExitCode.js";
+import { plural } from "../plural.js";
+import { scanProject } from "../project-scan.js";
+import type { CodeReference, CodeReferenceScan } from "../scan/code-references.js";
 
 const referenceJson = (reference: CodeReference) => {
   switch (reference.kind) {
@@ -32,7 +30,7 @@ const referenceJson = (reference: CodeReference) => {
   }
 };
 
-const scanJson = (projectSlug: string, scan: CodeReferenceScan) => ({
+export const scanJson = (projectSlug: string, scan: CodeReferenceScan) => ({
   project: projectSlug,
   filesScanned: scan.filesScanned,
   references: scan.references.map(referenceJson),
@@ -74,11 +72,12 @@ const describeReference = (reference: CodeReference): string => {
   }
 };
 
-const plural = (count: number, singular: string, pluralForm: string) => (count === 1 ? singular : pluralForm);
+export const nothingToScanText = (scannedLocation: string) =>
+  `No source files to scan in ${scannedLocation}.\n`;
 
 const scanText = (scan: CodeReferenceScan, scannedLocation: string): string => {
   if (scan.filesScanned === 0) {
-    return `No source files to scan in ${scannedLocation}.\n`;
+    return nothingToScanText(scannedLocation);
   }
   const referencesByKey = new Map<string, CodeReference[]>();
   for (const reference of scan.references) {
@@ -123,30 +122,11 @@ export const scan = async (
   context: CommandContext,
   [path]: ReadonlyArray<string | undefined>,
 ): Promise<CommandOutput> => {
-  const { workingDirectory } = context.invocation;
-  const settings = await readProjectSettings(workingDirectory);
-  const projectSlug = requireLinkedProjectSlug(context, settings);
-  const root = await scanRootAt(workingDirectory, path);
-  const client = new AdminApiClient({ baseUrl: context.baseUrl, token: await configuredApiToken(context) });
-  const project = await findProjectBySlug(client, projectSlug);
-  const projectKeys = new Set(
-    (await client.listConfigKeys(project.id)).flatMap((config) => [
-      config.key,
-      ...config.deprecatedKeys.map((deprecatedKey) => deprecatedKey.key),
-    ]),
-  );
-  const codeReferenceScan = await scanCodeReferences(
-    {
-      root,
-      workingDirectory,
-      include: settings?.include ?? "everyFile",
-      exclude: settings?.exclude ?? [],
-    },
-    projectKeys,
-  );
+  const { project, scannedLocation, codeReferenceScan } = await scanProject(context, path);
 
   return {
     json: scanJson(project.slug, codeReferenceScan),
-    text: scanText(codeReferenceScan, root.description),
+    text: scanText(codeReferenceScan, scannedLocation),
+    exitCode: ExitCode.success,
   };
 };

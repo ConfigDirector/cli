@@ -20,12 +20,29 @@ const ProjectSchema = v.object({
 
 export type Project = v.InferOutput<typeof ProjectSchema>;
 
-const ConfigKeysSchema = v.object({
+const configFields = {
   key: v.string(),
   deprecatedKeys: v.array(v.object({ key: v.string() })),
+  client: v.boolean(),
+  server: v.boolean(),
+};
+
+const EnumConfigSchema = v.object({
+  ...configFields,
+  type: v.literal("enum"),
+  typeOptions: v.object({ valueType: v.string(), values: v.array(v.string()) }),
 });
 
-type ConfigKeys = v.InferOutput<typeof ConfigKeysSchema>;
+const ConfigSchema = v.variant("type", [
+  EnumConfigSchema,
+  v.object({ ...configFields, type: v.pipe(v.string(), v.notValue("enum")) }),
+]);
+
+export type Config = v.InferOutput<typeof ConfigSchema>;
+
+type EnumConfig = v.InferOutput<typeof EnumConfigSchema>;
+
+export const isEnumConfig = (config: Config): config is EnumConfig => config.type === "enum";
 
 const readJsonBody = async (response: Response): Promise<unknown> => {
   try {
@@ -69,8 +86,8 @@ export class AdminApiClient {
     return this.get("/v1/projects", v.array(ProjectSchema));
   }
 
-  public listConfigKeys(projectId: string): Promise<ConfigKeys[]> {
-    return this.get(`/v1/projects/${encodeURIComponent(projectId)}/configs`, v.array(ConfigKeysSchema));
+  public listConfigs(projectId: string): Promise<Config[]> {
+    return this.get(`/v1/projects/${encodeURIComponent(projectId)}/configs`, v.array(ConfigSchema));
   }
 
   private async get<TSchema extends v.GenericSchema>(

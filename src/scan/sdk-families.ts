@@ -28,6 +28,10 @@ export type SdkFamily =
   | "go"
   | "openfeature-go";
 
+export const sdkTypes = ["client", "server"] as const;
+
+export type SdkType = (typeof sdkTypes)[number];
+
 export type GetterType = "boolean" | "string" | "integer" | "float" | "number" | "json";
 
 export type ArgumentSlot = { position?: number; label?: string };
@@ -50,7 +54,7 @@ export type CallShape = {
 };
 
 type SdkFamilyRecord = {
-  sdkType: "client" | "server";
+  sdkType: SdkType;
   extensions: readonly SourceExtension[];
   importMarkers: readonly string[];
   projectArea?: ProjectArea;

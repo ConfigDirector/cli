@@ -3,6 +3,7 @@ import { AdminApiClient } from "../admin-api/AdminApiClient.js";
 import { configuredApiToken } from "../configured-api-token.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
+import { ExitCode } from "../ExitCode.js";
 import { findProjectBySlug, requireProjectSlug } from "../project-selection.js";
 import { projectSettingsFile } from "../project-settings.js";
 
@@ -28,5 +29,6 @@ export const init = async (context: CommandContext): Promise<CommandOutput> => {
   return {
     json: { settingsFile, project: { id: project.id, slug: project.slug, name: project.name } },
     text: `Linked this directory to the project ${project.name} (${project.slug}) in ${settingsFile}\n`,
+    exitCode: ExitCode.success,
   };
 };

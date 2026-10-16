@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "configdirector scan --json output",
-  "description": "The code references `configdirector scan --json` found in a repository.",
+  "title": "configdirector scan and validate --json output",
+  "description": "The code references `configdirector scan --json` found in a repository, and the findings `configdirector validate --json` adds.",
   "type": "object",
   "required": ["project", "filesScanned", "references", "dynamicReferences"],
   "additionalProperties": false,
@@ -34,6 +34,29 @@
       "type": "array",
       "items": {
         "$ref": "#/$defs/dynamicReference"
+      }
+    },
+    "findings": {
+      "description": "Only in `configdirector validate --json` output: the problems the check found in direct references, empty when it found none.",
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/unknownKeyFinding"
+          },
+          {
+            "$ref": "#/$defs/deprecatedKeyFinding"
+          },
+          {
+            "$ref": "#/$defs/typeMismatchFinding"
+          },
+          {
+            "$ref": "#/$defs/availabilityMismatchFinding"
+          },
+          {
+            "$ref": "#/$defs/enumValueNotAllowedFinding"
+          }
+        ]
       }
     }
   },
@@ -85,6 +108,10 @@
       "description": "Whether the call sets a value on an SDK test client rather than reading a config.",
       "type": "boolean"
     },
+    "getterType": {
+      "description": "The type the method reads the config as, when its name fixes it, such as getBoolean. number means integer or float.",
+      "enum": ["boolean", "string", "integer", "float", "number", "json"]
+    },
     "directReference": {
       "type": "object",
       "required": ["key", "file", "line", "kind", "sdk", "call", "test"],
@@ -118,8 +145,7 @@
           "$ref": "#/$defs/inCodeDefaultValue"
         },
         "getterType": {
-          "description": "The type the method reads the config as, when its name fixes it, such as getBoolean. number means integer or float.",
-          "enum": ["boolean", "string", "integer", "float", "number", "json"]
+          "$ref": "#/$defs/getterType"
         },
         "test": {
           "$ref": "#/$defs/test"
@@ -228,6 +254,155 @@
         "argument": {
           "description": "The key argument as written in the code.",
           "type": "string"
+        }
+      }
+    },
+    "findingKey": {
+      "description": "The config key the direct reference reads.",
+      "type": "string"
+    },
+    "sdkType": {
+      "description": "Whether an SDK runs in clients, such as browsers and mobile apps, or on servers.",
+      "enum": ["client", "server"]
+    },
+    "unknownKeyFinding": {
+      "type": "object",
+      "required": ["kind", "key", "file", "line"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "No config in the project has this key as its current or a deprecated key. Archived configs are not listed, so their keys are unknown too.",
+          "const": "unknown-key"
+        },
+        "key": {
+          "$ref": "#/$defs/findingKey"
+        },
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "line": {
+          "$ref": "#/$defs/line"
+        }
+      }
+    },
+    "deprecatedKeyFinding": {
+      "type": "object",
+      "required": ["kind", "key", "file", "line", "currentKey"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "The key is a deprecated key of a renamed config.",
+          "const": "deprecated-key"
+        },
+        "key": {
+          "$ref": "#/$defs/findingKey"
+        },
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "line": {
+          "$ref": "#/$defs/line"
+        },
+        "currentKey": {
+          "description": "The renamed config's current key.",
+          "type": "string"
+        }
+      }
+    },
+    "typeMismatchFinding": {
+      "type": "object",
+      "required": ["kind", "key", "file", "line", "configType", "servedAs"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "The in-code default value or the typed getter reads the config as a type the SDKs do not serve it as.",
+          "const": "type-mismatch"
+        },
+        "key": {
+          "$ref": "#/$defs/findingKey"
+        },
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "line": {
+          "$ref": "#/$defs/line"
+        },
+        "configType": {
+          "description": "The config's type, such as boolean, enum or timespan.",
+          "type": "string"
+        },
+        "servedAs": {
+          "description": "The type the SDKs are served the config as, which the check compared against: a timespan is served as a float and a URL as a string, and an enum's values as strings or numbers.",
+          "enum": ["boolean", "string", "integer", "float", "json", "string-enum", "number-enum"]
+        },
+        "default": {
+          "$ref": "#/$defs/inCodeDefaultValue"
+        },
+        "getterType": {
+          "$ref": "#/$defs/getterType"
+        }
+      }
+    },
+    "availabilityMismatchFinding": {
+      "type": "object",
+      "required": ["kind", "key", "file", "line", "sdk", "sdkType", "configAvailableTo"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "A client SDK reads a server-only config, or a server SDK reads a client-only config.",
+          "const": "availability-mismatch"
+        },
+        "key": {
+          "$ref": "#/$defs/findingKey"
+        },
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "line": {
+          "$ref": "#/$defs/line"
+        },
+        "sdk": {
+          "$ref": "#/$defs/sdk"
+        },
+        "sdkType": {
+          "$ref": "#/$defs/sdkType"
+        },
+        "configAvailableTo": {
+          "description": "The kinds of SDK the config is served to.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sdkType"
+          }
+        }
+      }
+    },
+    "enumValueNotAllowedFinding": {
+      "type": "object",
+      "required": ["kind", "key", "file", "line", "default", "allowedValues"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "The in-code default value is not one of the enum config's allowed values.",
+          "const": "enum-value-not-allowed"
+        },
+        "key": {
+          "$ref": "#/$defs/findingKey"
+        },
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "line": {
+          "$ref": "#/$defs/line"
+        },
+        "default": {
+          "$ref": "#/$defs/inCodeDefaultValue"
+        },
+        "allowedValues": {
+          "description": "The enum config's allowed values, as ConfigDirector stores them.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     }
