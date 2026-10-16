@@ -1,7 +1,8 @@
-import { mkdir, open, readFile } from "node:fs/promises";
+import { mkdir, open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import * as v from "valibot";
 import { CliError } from "./CliError.js";
+import { parseJson, readFileIfPresent } from "./file-contents.js";
 import { nonEmptyVariable, type Invocation } from "./Invocation.js";
 
 const SavedApiTokenSchema = v.object({ token: v.string() });
@@ -22,25 +23,6 @@ const userConfigDirectory = (invocation: Invocation): string =>
 
 const savedApiTokenFile = (invocation: Invocation): string =>
   join(userConfigDirectory(invocation), "configdirector", "config.json");
-
-const readFileIfPresent = async (file: string): Promise<string | undefined> => {
-  try {
-    return await readFile(file, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
-};
-
-const parseJson = (contents: string): unknown => {
-  try {
-    return JSON.parse(contents);
-  } catch {
-    return undefined;
-  }
-};
 
 export const readSavedApiToken = async (invocation: Invocation): Promise<string | undefined> => {
   const file = savedApiTokenFile(invocation);

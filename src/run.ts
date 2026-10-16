@@ -5,6 +5,7 @@ import type { CommandContext, CommandOutput } from "./CommandContext.js";
 import { nonEmptyVariable, type Invocation } from "./Invocation.js";
 import { init } from "./commands/init.js";
 import { login } from "./commands/login.js";
+import { scan } from "./commands/scan.js";
 
 const ExitCode = { success: 0, couldNotRun: 2 } as const;
 type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
@@ -27,17 +28,27 @@ const withoutTrailingSlashes = (url: string): string => {
 };
 
 const commandAction =
-  (invocation: Invocation, command: (context: CommandContext) => Promise<CommandOutput>) =>
-  async (_options: unknown, parsedCommand: Command) => {
+  (
+    invocation: Invocation,
+    command: (
+      context: CommandContext,
+      commandArguments: ReadonlyArray<string | undefined>,
+    ) => Promise<CommandOutput>,
+  ) =>
+  async (...actionArguments: unknown[]) => {
+    const parsedCommand = actionArguments.at(-1) as Command;
     const options = parsedCommand.optsWithGlobals<GlobalOptions>();
-    const output = await command({
-      invocation,
-      baseUrl: withoutTrailingSlashes(
-        options.baseUrl ?? nonEmptyVariable(invocation, "CONFIGDIRECTOR_BASE_URL") ?? DEFAULT_BASE_URL,
-      ),
-      tokenOption: options.token,
-      projectSlug: options.project ?? nonEmptyVariable(invocation, "CONFIGDIRECTOR_PROJECT"),
-    });
+    const output = await command(
+      {
+        invocation,
+        baseUrl: withoutTrailingSlashes(
+          options.baseUrl ?? nonEmptyVariable(invocation, "CONFIGDIRECTOR_BASE_URL") ?? DEFAULT_BASE_URL,
+        ),
+        tokenOption: options.token,
+        projectSlug: options.project ?? nonEmptyVariable(invocation, "CONFIGDIRECTOR_PROJECT"),
+      },
+      parsedCommand.processedArgs,
+    );
     invocation.stdout.write(options.json ? `${JSON.stringify(output.json, null, 2)}\n` : output.text);
   };
 
@@ -81,6 +92,12 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .command("init")
     .description("write configdirector.json for a project in the current directory")
     .action(commandAction(invocation, init));
+
+  program
+    .command("scan")
+    .argument("[path]", "directory or file to scan (default: the current directory)")
+    .description("list where the code reads config keys through a ConfigDirector SDK")
+    .action(commandAction(invocation, scan));
 
   try {
     await program.parseAsync(invocation.commandLineArguments, { from: "user" });

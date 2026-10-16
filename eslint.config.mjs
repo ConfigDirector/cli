@@ -5,7 +5,7 @@ const injectedInvocationMessage =
   "Read the Invocation passed to run, so every command sees the arguments, variables and streams the tests give it.";
 
 export default defineConfig([
-  { ignores: ["dist/**"] },
+  { ignores: ["dist/**", "test/fixtures/**"] },
   tseslint.configs.strict,
   {
     files: ["src/**/*.ts"],

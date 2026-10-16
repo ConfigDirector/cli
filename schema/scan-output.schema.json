@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "configdirector scan --json output",
+  "description": "The code references `configdirector scan --json` found in a repository.",
+  "type": "object",
+  "required": ["project", "filesScanned", "references", "dynamicReferences"],
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "description": "The slug of the project the scan ran for.",
+      "type": "string"
+    },
+    "filesScanned": {
+      "description": "How many source files were read. 0 means nothing in the scanned location could be scanned.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "references": {
+      "description": "Places where the code reads a config key.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/directReference"
+      }
+    },
+    "dynamicReferences": {
+      "description": "SDK calls whose key is not a string literal, so the key they read is not known.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dynamicReference"
+      }
+    }
+  },
+  "$defs": {
+    "file": {
+      "description": "The file's path from the directory the scan ran in.",
+      "type": "string"
+    },
+    "line": {
+      "description": "The line of the key in the file, starting at 1.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "sdk": {
+      "description": "The ConfigDirector SDK or OpenFeature provider family the call belongs to.",
+      "enum": [
+        "js-client",
+        "js-server",
+        "react",
+        "react-native",
+        "vue",
+        "nuxt-client",
+        "nuxt-server",
+        "nextjs-client",
+        "nextjs-server",
+        "openfeature-web",
+        "openfeature-node",
+        "flutter",
+        "openfeature-flutter",
+        "swift",
+        "openfeature-swift",
+        "android",
+        "openfeature-android",
+        "python",
+        "openfeature-python",
+        "java",
+        "openfeature-java",
+        "dotnet",
+        "openfeature-dotnet",
+        "go",
+        "openfeature-go"
+      ]
+    },
+    "call": {
+      "description": "The SDK method, function or annotation that names the key.",
+      "type": "string"
+    },
+    "test": {
+      "description": "Whether the call sets a value on an SDK test client rather than reading a config.",
+      "type": "boolean"
+    },
+    "directReference": {
+      "type": "object",
+      "required": ["key", "file", "line", "kind", "sdk", "call", "test"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "The config key, as written in the call.",
+          "type": "string"
+        },
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "line": {
+          "$ref": "#/$defs/line"
+        },
+        "kind": {
+          "description": "The key is a string literal in an SDK call.",
+          "const": "direct"
+        },
+        "sdk": {
+          "$ref": "#/$defs/sdk"
+        },
+        "call": {
+          "$ref": "#/$defs/call"
+        },
+        "default": {
+          "$ref": "#/$defs/inCodeDefaultValue"
+        },
+        "getterType": {
+          "description": "The type the method reads the config as, when its name fixes it, such as getBoolean. number means integer or float.",
+          "enum": ["boolean", "string", "integer", "float", "number", "json"]
+        },
+        "test": {
+          "$ref": "#/$defs/test"
+        }
+      }
+    },
+    "inCodeDefaultValue": {
+      "description": "The in-code default value the call passes, when it is a literal. A json value is the literal as written in the code.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "boolean"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "integer"
+            },
+            "value": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "float"
+            },
+            "value": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "enum": ["string", "json"]
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "dynamicReference": {
+      "type": "object",
+      "required": ["file", "line", "sdk", "call", "argument"],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/file"
+        },
+        "line": {
+          "$ref": "#/$defs/line"
+        },
+        "sdk": {
+          "$ref": "#/$defs/sdk"
+        },
+        "call": {
+          "$ref": "#/$defs/call"
+        },
+        "argument": {
+          "description": "The key argument as written in the code.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

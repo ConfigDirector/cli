@@ -1,0 +1,13 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>checkout-service</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>com.configdirector</groupId>
+      <artifactId>configdirector-server-sdk</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+  </dependencies>
+</project>

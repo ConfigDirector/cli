@@ -1,12 +1,27 @@
 import type { AdminApiClient, Project } from "./admin-api/AdminApiClient.js";
 import { CliError } from "./CliError.js";
 import type { CommandContext } from "./CommandContext.js";
+import type { ProjectSettings } from "./project-settings.js";
 
 export const requireProjectSlug = (context: CommandContext): string => {
   if (context.projectSlug === undefined) {
     throw new CliError("Name the project with --project <slug> or CONFIGDIRECTOR_PROJECT.");
   }
   return context.projectSlug;
+};
+
+export const requireLinkedProjectSlug = (
+  context: CommandContext,
+  settings: ProjectSettings | undefined,
+): string => {
+  const slug = context.projectSlug ?? settings?.project;
+  if (slug === undefined) {
+    throw new CliError(
+      "Name the project with --project <slug>, CONFIGDIRECTOR_PROJECT, or `project` in configdirector.json, " +
+        "which `configdirector init` writes.",
+    );
+  }
+  return slug;
 };
 
 export const findProjectBySlug = async (client: AdminApiClient, slug: string): Promise<Project> => {

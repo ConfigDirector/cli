@@ -1,0 +1,352 @@
+import { readdir } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
+import { fileExists, readFileIfPresent } from "../file-contents.js";
+import { plainStringContent } from "./literals.js";
+import { NearestDeclarations } from "./nearest-declarations.js";
+import type { SourceCode } from "./source-code.js";
+
+type PythonImport = { level: number; modulePath: string[]; names: string[] };
+
+type DartPackage = { root: string; name: string };
+
+type GoModule = { root: string; path: string };
+
+const JAVASCRIPT_SOURCE_EXTENSIONS = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".mts",
+  ".cts",
+  ".vue",
+  ".svelte",
+];
+const TYPESCRIPT_EXTENSIONS_FOR: Readonly<Record<string, readonly string[]>> = {
+  ".js": [".ts", ".tsx"],
+  ".jsx": [".tsx"],
+  ".mjs": [".mts"],
+  ".cjs": [".cts"],
+};
+const DART_PACKAGE_SCHEME = "package:";
+const DART_LIBRARY_SCHEME = "dart:";
+
+const stringAt = (code: SourceCode, index: number): string | undefined =>
+  code.token(index)?.kind === "string" ? plainStringContent(code, { first: index, last: index }) : undefined;
+
+const unquoted = (text: string) => {
+  const trimmed = text.trim();
+  const quote = trimmed.charAt(0);
+  return (quote === '"' || quote === "'") && trimmed.endsWith(quote) ? trimmed.slice(1, -1) : trimmed;
+};
+
+const directoriesUpFrom = (directory: string, highestDirectory: string): string[] => {
+  const directories = [directory];
+  let current = directory;
+  while (current !== highestDirectory && dirname(current) !== current) {
+    current = dirname(current);
+    directories.push(current);
+  }
+  return directories;
+};
+
+const ancestorDirectory = (directory: string, levelsUp: number): string => {
+  let ancestor = directory;
+  for (let level = 0; level < levelsUp; level += 1) {
+    ancestor = dirname(ancestor);
+  }
+  return ancestor;
+};
+
+const isRelativeSpecifier = (specifier: string) => specifier.startsWith("./") || specifier.startsWith("../");
+
+const javascriptSpecifiers = (code: SourceCode): string[] =>
+  code.tokens.flatMap((_token, index) => {
+    const isModuleSpecifier =
+      code.isIdentifier(index - 1, "from") ||
+      code.isIdentifier(index - 1, "import") ||
+      (code.isPunctuation(index - 1, "(") &&
+        (code.isIdentifier(index - 2, "import") || code.isIdentifier(index - 2, "require")));
+    const specifier = isModuleSpecifier ? stringAt(code, index) : undefined;
+    return specifier !== undefined && isRelativeSpecifier(specifier) ? [specifier] : [];
+  });
+
+const javascriptCandidates = (directory: string, specifier: string): string[] => {
+  const path = join(directory, specifier);
+  const extension = extname(path);
+  const withoutExtension = path.slice(0, path.length - extension.length);
+  return [
+    ...(JAVASCRIPT_SOURCE_EXTENSIONS.includes(extension) ? [path] : []),
+    ...(TYPESCRIPT_EXTENSIONS_FOR[extension] ?? []).map(
+      (typescriptExtension) => withoutExtension + typescriptExtension,
+    ),
+    ...JAVASCRIPT_SOURCE_EXTENSIONS.map((sourceExtension) => path + sourceExtension),
+    ...JAVASCRIPT_SOURCE_EXTENSIONS.map((sourceExtension) => join(path, `index${sourceExtension}`)),
+  ];
+};
+
+const pythonImportedNames = (code: SourceCode, start: number): string[] => {
+  const names: string[] = [];
+  let isInsideParentheses = false;
+  for (let index = start; index < code.tokens.length; index += 1) {
+    if (index > start && code.startsLine(index) && !isInsideParentheses) {
+      break;
+    }
+    if (code.isPunctuation(index, "(")) {
+      isInsideParentheses = true;
+    } else if (code.isPunctuation(index, ")")) {
+      break;
+    } else if (code.isIdentifier(index, "as")) {
+      index += 1;
+    } else {
+      const token = code.token(index);
+      if (token?.kind === "identifier") {
+        names.push(token.text);
+      }
+    }
+  }
+  return names;
+};
+
+const pythonFromImport = (code: SourceCode, fromIndex: number): PythonImport | undefined => {
+  let index = fromIndex + 1;
+  let level = 0;
+  while (code.isPunctuation(index, ".")) {
+    level += 1;
+    index += 1;
+  }
+  const modulePath: string[] = [];
+  for (
+    let token = code.token(index);
+    token?.kind === "identifier" && token.text !== "import";
+    token = code.token(index)
+  ) {
+    modulePath.push(token.text);
+    index += code.isPunctuation(index + 1, ".") ? 2 : 1;
+  }
+  return code.isIdentifier(index, "import")
+    ? { level, modulePath, names: pythonImportedNames(code, index + 1) }
+    : undefined;
+};
+
+const pythonPlainImports = (code: SourceCode, importIndex: number): PythonImport[] => {
+  const imports: PythonImport[] = [];
+  let modulePath: string[] = [];
+  const endModule = () => {
+    if (modulePath.length > 0) {
+      imports.push({ level: 0, modulePath, names: [] });
+    }
+    modulePath = [];
+  };
+  for (let index = importIndex + 1; index < code.tokens.length && !code.startsLine(index); index += 1) {
+    if (code.isIdentifier(index, "as")) {
+      endModule();
+      index += 1;
+    } else if (code.isPunctuation(index, ",")) {
+      endModule();
+    } else {
+      const token = code.token(index);
+      if (token?.kind === "identifier") {
+        modulePath.push(token.text);
+      }
+    }
+  }
+  endModule();
+  return imports;
+};
+
+const pythonImports = (code: SourceCode): PythonImport[] =>
+  code.tokens.flatMap((_token, index) => {
+    if (!code.startsLine(index)) {
+      return [];
+    }
+    if (code.isIdentifier(index, "from")) {
+      const fromImport = pythonFromImport(code, index);
+      return fromImport === undefined ? [] : [fromImport];
+    }
+    return code.isIdentifier(index, "import") ? pythonPlainImports(code, index) : [];
+  });
+
+const pythonModuleFiles = (base: string, modulePath: readonly string[]): string[] => {
+  if (modulePath.length === 0) {
+    return [];
+  }
+  const path = join(base, ...modulePath);
+  return [`${path}.py`, join(path, "__init__.py")];
+};
+
+const dartPackageDeclaredIn = async (directory: string): Promise<DartPackage | undefined> => {
+  const contents = await readFileIfPresent(join(directory, "pubspec.yaml"));
+  const nameLine = contents?.split("\n").find((line) => line.startsWith("name:"));
+  return nameLine === undefined
+    ? undefined
+    : { root: directory, name: unquoted(nameLine.slice("name:".length)) };
+};
+
+const goModuleDeclaredIn = async (directory: string): Promise<GoModule | undefined> => {
+  const contents = await readFileIfPresent(join(directory, "go.mod"));
+  const moduleLine = contents?.split("\n").find((line) => line.startsWith("module "));
+  return moduleLine === undefined
+    ? undefined
+    : { root: directory, path: unquoted(moduleLine.slice("module ".length)) };
+};
+
+const dartSpecifiers = (code: SourceCode): string[] =>
+  code.tokens.flatMap((_token, index) => {
+    const isDirective =
+      code.isIdentifier(index - 1, "import") ||
+      code.isIdentifier(index - 1, "export") ||
+      code.isIdentifier(index - 1, "part");
+    const specifier = isDirective ? stringAt(code, index) : undefined;
+    return specifier === undefined || specifier.startsWith(DART_LIBRARY_SCHEME) ? [] : [specifier];
+  });
+
+const goImportPaths = (code: SourceCode): string[] =>
+  code.tokens.flatMap((_token, index) => {
+    if (!code.isIdentifier(index, "import")) {
+      return [];
+    }
+    const groupCloser = code.isPunctuation(index + 1, "(") ? code.closerOf(index + 1) : undefined;
+    const lastIndex = groupCloser ?? index + 1;
+    const paths: string[] = [];
+    for (let pathIndex = index + 1; pathIndex <= lastIndex; pathIndex += 1) {
+      const path = stringAt(code, pathIndex);
+      if (path !== undefined) {
+        paths.push(path);
+      }
+    }
+    return paths;
+  });
+
+export class LocalImports {
+  private readonly dartPackages: NearestDeclarations<DartPackage>;
+  private readonly goModules: NearestDeclarations<GoModule>;
+  private readonly goPackageFiles = new Map<string, Promise<string[]>>();
+  private readonly fileExistence = new Map<string, Promise<boolean>>();
+
+  constructor(private readonly highestDirectory: string) {
+    this.dartPackages = new NearestDeclarations(highestDirectory, dartPackageDeclaredIn);
+    this.goModules = new NearestDeclarations(highestDirectory, goModuleDeclaredIn);
+  }
+
+  public filesImportedBy(code: SourceCode, file: string): Promise<string[]> {
+    switch (code.language) {
+      case "javascript":
+        return this.javascriptFilesImportedBy(code, file);
+      case "python":
+        return this.pythonFilesImportedBy(code, file);
+      case "dart":
+        return this.dartFilesImportedBy(code, file);
+      case "go":
+        return this.goFilesImportedBy(code, file);
+      case "swift":
+      case "kotlin":
+      case "java":
+      case "csharp":
+        return Promise.resolve([]);
+    }
+  }
+
+  private fileExistsAt(path: string): Promise<boolean> {
+    const existenceCheckedBefore = this.fileExistence.get(path);
+    if (existenceCheckedBefore !== undefined) {
+      return existenceCheckedBefore;
+    }
+    const existence = fileExists(path);
+    this.fileExistence.set(path, existence);
+    return existence;
+  }
+
+  private async firstExistingFile(candidates: readonly string[]): Promise<string | undefined> {
+    for (const candidate of candidates) {
+      if (await this.fileExistsAt(candidate)) {
+        return candidate;
+      }
+    }
+    return undefined;
+  }
+
+  private async existingFiles(candidates: readonly string[]): Promise<string[]> {
+    const existing: string[] = [];
+    for (const candidate of candidates) {
+      if (await this.fileExistsAt(candidate)) {
+        existing.push(candidate);
+      }
+    }
+    return existing;
+  }
+
+  private async javascriptFilesImportedBy(code: SourceCode, file: string): Promise<string[]> {
+    const files: string[] = [];
+    for (const specifier of javascriptSpecifiers(code)) {
+      const importedFile = await this.firstExistingFile(javascriptCandidates(dirname(file), specifier));
+      if (importedFile !== undefined) {
+        files.push(importedFile);
+      }
+    }
+    return files;
+  }
+
+  private async pythonFilesImportedBy(code: SourceCode, file: string): Promise<string[]> {
+    const files: string[] = [];
+    for (const { level, modulePath, names } of pythonImports(code)) {
+      const bases =
+        level === 0
+          ? directoriesUpFrom(dirname(file), this.highestDirectory)
+          : [ancestorDirectory(dirname(file), level - 1)];
+      for (const base of bases) {
+        const moduleFiles = await this.existingFiles([
+          ...pythonModuleFiles(base, modulePath),
+          ...names.flatMap((name) => pythonModuleFiles(base, [...modulePath, name])),
+        ]);
+        if (moduleFiles.length > 0) {
+          files.push(...moduleFiles);
+          break;
+        }
+      }
+    }
+    return files;
+  }
+
+  private async dartFilesImportedBy(code: SourceCode, file: string): Promise<string[]> {
+    const ownPackage = await this.dartPackages.declarationAbove(file);
+    const candidates = dartSpecifiers(code).flatMap((specifier) => {
+      if (!specifier.startsWith(DART_PACKAGE_SCHEME)) {
+        return [join(dirname(file), specifier)];
+      }
+      const [packageName, ...pathInPackage] = specifier.slice(DART_PACKAGE_SCHEME.length).split("/");
+      return ownPackage !== undefined && packageName === ownPackage.name
+        ? [join(ownPackage.root, "lib", ...pathInPackage)]
+        : [];
+    });
+    return this.existingFiles(candidates);
+  }
+
+  private async goFilesImportedBy(code: SourceCode, file: string): Promise<string[]> {
+    const module = await this.goModules.declarationAbove(file);
+    if (module === undefined) {
+      return [];
+    }
+    const packageDirectories = goImportPaths(code)
+      .filter((path) => path === module.path || path.startsWith(`${module.path}/`))
+      .map((path) => join(module.root, path.slice(module.path.length)));
+    return (await Promise.all(packageDirectories.map((directory) => this.goFilesIn(directory)))).flat();
+  }
+
+  private goFilesIn(directory: string): Promise<string[]> {
+    const filesListedBefore = this.goPackageFiles.get(directory);
+    if (filesListedBefore !== undefined) {
+      return filesListedBefore;
+    }
+    const files = readdir(directory, { withFileTypes: true }).then(
+      (entries) =>
+        entries
+          .filter((entry) => entry.isFile() && extname(entry.name) === ".go")
+          .map((entry) => join(directory, entry.name)),
+      () => [],
+    );
+    this.goPackageFiles.set(directory, files);
+    return files;
+  }
+}

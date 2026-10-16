@@ -94,4 +94,46 @@ describe("the packed tarball installed into an empty directory", () => {
       JSON.parse(await readFile(join(homeDirectory, ".config", "configdirector", "config.json"), "utf8")),
     ).toEqual({ token: "cd_pasted_token" });
   });
+
+  it("scans the current directory for SDK calls against a stub Admin API", async () => {
+    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    await mkdir(join(installDirectory, "src"), { recursive: true });
+    await writeFile(
+      join(installDirectory, "src", "checkout.ts"),
+      'import { createClient } from "@configdirector/server-sdk";\n\ncreateClient("key").getValue("new-checkout", false);\n',
+    );
+
+    const result = await runInstalledBinary(
+      ["scan", "--project", "web-app", "--token", "cd_flag_token", "--json"],
+      {
+        environmentVariables: { CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl },
+        input: "",
+      },
+    );
+
+    expect(result.exitCode).toEqual(0);
+    expect(JSON.parse(result.stdout).references).toEqual([
+      {
+        key: "new-checkout",
+        file: "src/checkout.ts",
+        line: 3,
+        kind: "direct",
+        sdk: "js-server",
+        call: "getValue",
+        default: { type: "boolean", value: false },
+        test: false,
+      },
+    ]);
+  });
+
+  it("ships the JSON Schema of the scan output", async () => {
+    const schema = JSON.parse(
+      await readFile(
+        join(installDirectory, "node_modules", "@configdirector", "cli", "schema", "scan-output.schema.json"),
+        "utf8",
+      ),
+    );
+
+    expect(schema.title).toEqual("configdirector scan --json output");
+  });
 });

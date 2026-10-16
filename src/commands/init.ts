@@ -1,10 +1,10 @@
 import { access, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { AdminApiClient } from "../admin-api/AdminApiClient.js";
 import { configuredApiToken } from "../configured-api-token.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { findProjectBySlug, requireProjectSlug } from "../project-selection.js";
+import { projectSettingsFile } from "../project-settings.js";
 
 const refuseExistingFile = async (file: string): Promise<void> => {
   const exists = await access(file).then(
@@ -17,7 +17,7 @@ const refuseExistingFile = async (file: string): Promise<void> => {
 };
 
 export const init = async (context: CommandContext): Promise<CommandOutput> => {
-  const settingsFile = join(context.invocation.workingDirectory, "configdirector.json");
+  const settingsFile = projectSettingsFile(context.invocation.workingDirectory);
   await refuseExistingFile(settingsFile);
   const projectSlug = requireProjectSlug(context);
   const client = new AdminApiClient({ baseUrl: context.baseUrl, token: await configuredApiToken(context) });
