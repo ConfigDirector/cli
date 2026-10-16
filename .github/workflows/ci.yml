@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: ".nvmrc"
+
+      - name: yarn install
+        run: yarn install
+
+      - name: yarn typecheck
+        run: yarn typecheck
+
+      - name: yarn lint
+        run: yarn lint
+
+      - name: yarn ci:test
+        run: yarn ci:test
+
+      - name: yarn build
+        run: yarn build
+
+      - name: yarn pack:tarball
+        run: yarn pack:tarball
+
+      - name: Packed tarball on Node 24
+        run: yarn ci:test:packed-tarball
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Packed tarball on Node 20
+        run: yarn ci:test:packed-tarball

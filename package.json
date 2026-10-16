@@ -1,0 +1,54 @@
+{
+  "name": "@configdirector/cli",
+  "version": "0.0.0",
+  "description": "Command line tool for ConfigDirector, the managed configuration and feature flag service.",
+  "license": "MIT",
+  "author": "ConfigDirector",
+  "keywords": [
+    "configdirector",
+    "cli",
+    "config",
+    "remote config",
+    "feature flag"
+  ],
+  "homepage": "https://www.configdirector.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ConfigDirector/cli.git"
+  },
+  "type": "module",
+  "bin": {
+    "configdirector": "./dist/configdirector.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "yarn@4.13.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest",
+    "ci:test": "vitest run",
+    "build": "tsdown",
+    "pack:tarball": "yarn pack --out package.tgz",
+    "ci:test:packed-tarball": "vitest run --config vitest.packed-tarball.config.ts",
+    "release": "yarn typecheck && yarn lint && yarn ci:test && yarn build && yarn pack:tarball && yarn ci:test:packed-tarball && npm publish package.tgz --access public --tag beta"
+  },
+  "dependencies": {
+    "commander": "^14.0.3",
+    "valibot": "^1.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "eslint": "^9.39.1",
+    "prettier": "3.9.9",
+    "tsdown": "^0.21.10",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "~8.58.1",
+    "vitest": "4.1.8"
+  }
+}

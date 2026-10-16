@@ -1,0 +1,17 @@
+node_modules
+dist
+*.tgz
+*.log
+coverage/
+.DS_Store
+.idea
+.vscode
+.env
+.env.*
+.claude
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions

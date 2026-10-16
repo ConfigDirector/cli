@@ -1,0 +1,97 @@
+import { execFile, spawn } from "node:child_process";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { startStubAdminApi } from "../support/stub-admin-api.js";
+
+const execFileAsync = promisify(execFile);
+
+const tarball = fileURLToPath(new URL("../../package.tgz", import.meta.url));
+
+const webApp = {
+  id: "4f0c1d2e-8a51-4c3b-9b6e-2d7f8a9b0c1d",
+  name: "Web App",
+  slug: "web-app",
+  organizationId: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+  createdAt: "2026-09-01T10:00:00.000Z",
+  updatedAt: "2026-09-01T10:00:00.000Z",
+};
+
+let installDirectory: string;
+
+const installedBinary = () => join(installDirectory, "node_modules", ".bin", "configdirector");
+
+const runInstalledBinary = (
+  commandLineArguments: string[],
+  options: { environmentVariables: Record<string, string>; input: string },
+) =>
+  new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(installedBinary(), commandLineArguments, {
+      cwd: installDirectory,
+      env: { PATH: process.env.PATH ?? "", ...options.environmentVariables },
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("error", reject);
+    child.on("close", (exitCode) => resolve({ exitCode, stdout, stderr }));
+    child.stdin.end(options.input);
+  });
+
+beforeAll(async () => {
+  await access(tarball).catch(() => {
+    throw new Error(`${tarball} is missing. Run \`yarn build && yarn pack:tarball\` first.`);
+  });
+  installDirectory = await mkdtemp(join(tmpdir(), "configdirector-cli-tarball-"));
+  await writeFile(join(installDirectory, "package.json"), JSON.stringify({ private: true }));
+  await execFileAsync("npm", ["install", "--no-audit", "--no-fund", "--no-package-lock", tarball], {
+    cwd: installDirectory,
+  });
+});
+
+afterAll(async () => {
+  await rm(installDirectory, { recursive: true, force: true });
+});
+
+describe("the packed tarball installed into an empty directory", () => {
+  it("prints the installed package's version", async () => {
+    const installedPackage = JSON.parse(
+      await readFile(
+        join(installDirectory, "node_modules", "@configdirector", "cli", "package.json"),
+        "utf8",
+      ),
+    );
+
+    const result = await runInstalledBinary(["--version"], { environmentVariables: {}, input: "" });
+
+    expect(result.exitCode).toEqual(0);
+    expect(result.stdout).toEqual(`${installedPackage.version}\n`);
+  });
+
+  it("logs in against a stub Admin API and saves the token", async () => {
+    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const homeDirectory = join(installDirectory, "home");
+    await mkdir(homeDirectory, { recursive: true });
+
+    const result = await runInstalledBinary(["login"], {
+      environmentVariables: {
+        HOME: homeDirectory,
+        XDG_CONFIG_HOME: join(homeDirectory, ".config"),
+        CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl,
+      },
+      input: "cd_pasted_token\n",
+    });
+
+    expect(result.exitCode).toEqual(0);
+    expect(adminApi.receivedRequests.map((request) => request.headers.authorization)).toEqual([
+      "Bearer cd_pasted_token",
+    ]);
+    expect(
+      JSON.parse(await readFile(join(homeDirectory, ".config", "configdirector", "config.json"), "utf8")),
+    ).toEqual({ token: "cd_pasted_token" });
+  });
+});
