@@ -13,7 +13,7 @@ import {
   type SdkCallMatch,
 } from "./sdk-calls.js";
 import { readFileWithinSizeLimit, scannedFiles, type ScannedFile, type ScanScope } from "./scanned-files.js";
-import { isSourceExtension, languageOfExtension } from "./source-languages.js";
+import { isSourceExtension, languageOfExtension, type SourceExtension } from "./source-languages.js";
 import { SourceCode } from "./source-code.js";
 import { isTestFile } from "./test-files.js";
 
@@ -101,8 +101,17 @@ const matchOutcomes = (matches: readonly ScanMatch[], constantIndex: ConstantInd
   });
 };
 
+const holdsImportMarkerOf = (contents: string, family: SdkFamily): boolean => {
+  const { importMarkers, providerPackagesContainingMarkers = [] } = sdkFamilies[family];
+  const contentsWithoutProviderPackages = providerPackagesContainingMarkers.reduce(
+    (text, providerPackage) => text.replaceAll(providerPackage, ""),
+    contents,
+  );
+  return importMarkers.some((marker) => contentsWithoutProviderPackages.includes(marker));
+};
+
 const familiesWithMarkerIn = (contents: string, families: readonly SdkFamily[]): SdkFamily[] =>
-  families.filter((family) => sdkFamilies[family].importMarkers.some((marker) => contents.includes(marker)));
+  families.filter((family) => holdsImportMarkerOf(contents, family));
 
 const callsAnyOf = (code: SourceCode, families: readonly SdkFamily[]): boolean => {
   const callNames = new Set(
@@ -111,21 +120,25 @@ const callsAnyOf = (code: SourceCode, families: readonly SdkFamily[]): boolean =
   return code.tokens.some((token) => token.kind === "identifier" && callNames.has(token.text));
 };
 
+const familiesOfExtension = (extension: SourceExtension): SdkFamily[] =>
+  allSdkFamilies.filter((family) => sdkFamilies[family].extensions.includes(extension));
+
 const readImportedFile = async (path: string, localImports: LocalImports): Promise<ImportedFile> => {
+  const extension = extname(path);
   const contents = await readFileWithinSizeLimit(path);
-  if (contents === undefined) {
+  if (contents === undefined || !isSourceExtension(extension)) {
     return { kind: "unmarked", reExportedFiles: [] };
   }
-  const families = familiesWithMarkerIn(contents, allSdkFamilies);
+  const families = familiesWithMarkerIn(contents, familiesOfExtension(extension));
   if (families.length > 0) {
     return { kind: "marked", families };
   }
-  const extension = extname(path);
   return {
     kind: "unmarked",
-    reExportedFiles: isSourceExtension(extension)
-      ? await localImports.filesReExportedBy(new SourceCode(contents, languageOfExtension[extension]), path)
-      : [],
+    reExportedFiles: await localImports.filesReExportedBy(
+      new SourceCode(contents, languageOfExtension[extension]),
+      path,
+    ),
   };
 };
 
@@ -170,9 +183,7 @@ const sdkFamiliesUsedIn = (highestDirectory: string) => {
   };
 
   return async (file: ScannedFile, code: SourceCode): Promise<SdkFamily[]> => {
-    const familiesForExtension = allSdkFamilies.filter((family) =>
-      sdkFamilies[family].extensions.includes(file.extension),
-    );
+    const familiesForExtension = familiesOfExtension(file.extension);
     const markedHere = familiesWithMarkerIn(file.contents, familiesForExtension);
     const unmarkedFamilies = familiesForExtension.filter((family) => !markedHere.includes(family));
     const markedThroughImports = callsAnyOf(code, unmarkedFamilies)

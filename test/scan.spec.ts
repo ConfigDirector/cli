@@ -21,6 +21,10 @@ const serverSdkCall = (key: string) => serverSdkFile([`client.getValue("${key}",
 const referencedKeysAndFiles = (output: { references: Array<{ key: string; file: string }> }) =>
   output.references.map((reference) => [reference.key, reference.file]);
 
+const referencedKeysFilesAndSdks = (output: {
+  references: Array<{ key: string; file: string; sdk: string }>;
+}) => output.references.map((reference) => [reference.key, reference.file, reference.sdk]);
+
 const scanOutputSchemaValidator = async () => {
   const schema = JSON.parse(
     await readFile(new URL("../schema/scan-output.schema.json", import.meta.url), "utf8"),
@@ -346,10 +350,6 @@ describe("scan local imports", () => {
 
   const callsThroughLocalClient = (specifier: string) =>
     [`import { client } from "${specifier}";`, "", 'client.getValue("new-checkout", false);', ""].join("\n");
-
-  const referencedKeysFilesAndSdks = (output: {
-    references: Array<{ key: string; file: string; sdk: string }>;
-  }) => output.references.map((reference) => [reference.key, reference.file, reference.sdk]);
 
   it("finds the SDK calls of a file that imports the client from a local setup module, as the docs show", async () => {
     const adminApi = await startScanAdminApi();
@@ -1708,6 +1708,291 @@ describe("scan JVM build modules", () => {
 
     expect(exitCode).toEqual(0);
     expect(output.references.map((reference: { sdk: string }) => reference.sdk)).toEqual(["java"]);
+  });
+});
+
+describe("scan OpenFeature provider imports", () => {
+  it("skips a Swift SDK look-alike call in a file that imports only the OpenFeature provider", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/App/ConfigDirectorSetup.swift",
+      [
+        "import ConfigDirectorOpenFeatureProvider",
+        "import OpenFeature",
+        "",
+        'let provider = try ConfigDirectorProvider(clientSDKKey: "YOUR-CLIENT-SDK-KEY")',
+        "let client = OpenFeatureAPI.shared.getClient()",
+        'let darkMode = client.getBooleanValue(key: "dark-mode", defaultValue: false)',
+        'let theme = preferences.value(for: "theme-name", default: "light")',
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["dark-mode", "Sources/App/ConfigDirectorSetup.swift", "openfeature-swift"],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a Java SDK look-alike call in a file that imports only the OpenFeature provider", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/main/java/com/example/checkout/Flags.java",
+      [
+        "package com.example.checkout;",
+        "",
+        "import com.configdirector.openfeature.ConfigDirectorProvider;",
+        "import dev.openfeature.sdk.Client;",
+        "import dev.openfeature.sdk.OpenFeatureAPI;",
+        "import java.util.prefs.Preferences;",
+        "",
+        "class Flags {",
+        "    boolean darkMode(Client client) {",
+        '        return client.getBooleanValue("dark-mode", false);',
+        "    }",
+        "",
+        "    boolean onboarded(Preferences preferences) {",
+        '        return preferences.getBoolean("onboarding-done", false);',
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["dark-mode", "src/main/java/com/example/checkout/Flags.java", "openfeature-java"],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips an Android SDK look-alike call in a file that imports only the OpenFeature provider", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/build.gradle.kts",
+      'plugins {\n    id("com.android.application")\n}\n\nandroid {\n    namespace = "com.example"\n}\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/Flags.kt",
+      [
+        "package com.example.app",
+        "",
+        "import android.content.SharedPreferences",
+        "import com.configdirector.openfeature.ConfigDirectorProvider",
+        "import dev.openfeature.kotlin.sdk.OpenFeatureAPI",
+        "",
+        "fun readFlags(preferences: SharedPreferences) {",
+        "    val client = OpenFeatureAPI.getClient()",
+        '    val darkMode = client.getBooleanValue("dark-mode", false)',
+        '    val onboarded = preferences.getBoolean("onboarding-done", false)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["dark-mode", "app/src/main/java/com/example/app/Flags.kt", "openfeature-android"],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a Python SDK look-alike call in a file that imports only the OpenFeature provider", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "config_director_setup.py",
+      [
+        "from configdirector_openfeature import ConfigDirectorProvider",
+        "from openfeature import api",
+        "",
+        'api.set_provider_and_wait(ConfigDirectorProvider("YOUR-SERVER-SDK-KEY"))',
+        "client = api.get_client()",
+        'dark_mode = client.get_boolean_value("dark-mode", False)',
+        'theme = settings.get_value("theme-name", "light")',
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["dark-mode", "config_director_setup.py", "openfeature-python"],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a .NET SDK look-alike call in a file that imports only the OpenFeature provider", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "ConfigDirectorSetup.cs",
+      [
+        "using ConfigDirector.OpenFeature;",
+        "using OpenFeature;",
+        "",
+        'await Api.Instance.SetProviderAsync(new ConfigDirectorProvider("YOUR-SERVER-SDK-KEY"));',
+        "var client = Api.Instance.GetClient();",
+        'var darkMode = await client.GetBooleanValueAsync("dark-mode", false);',
+        'var timeout = settings.GetValue("checkout-timeout", 30);',
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["dark-mode", "ConfigDirectorSetup.cs", "openfeature-dotnet"],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a Go SDK look-alike call in a file that imports only the OpenFeature provider", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "flags.go",
+      [
+        "package main",
+        "",
+        "import (",
+        '\t"context"',
+        "",
+        '\tconfigdirectoropenfeature "github.com/ConfigDirector/go-sdks/configdirector-openfeature"',
+        '\t"github.com/open-feature/go-sdk/openfeature"',
+        ")",
+        "",
+        "func readFlags(ctx context.Context, provider *configdirectoropenfeature.Provider, settings *Settings, user User) {",
+        "\topenfeature.SetProvider(provider)",
+        '\tclient := openfeature.NewClient("my-app")',
+        '\tdarkMode := client.Boolean(ctx, "dark-mode", false, openfeature.EvaluationContext{})',
+        '\ttheme := settings.StringValue("theme-name", "light", user)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["dark-mode", "flags.go", "openfeature-go"]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a Python SDK look-alike call in a file whose imported setup module imports only the OpenFeature provider", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "config_director_setup.py",
+      [
+        "from configdirector_openfeature import ConfigDirectorProvider",
+        "from openfeature import api",
+        "",
+        'api.set_provider_and_wait(ConfigDirectorProvider("YOUR-SERVER-SDK-KEY"))',
+        "client = api.get_client()",
+        "",
+      ].join("\n"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "main.py",
+      [
+        "from config_director_setup import client",
+        "",
+        'dark_mode = client.get_boolean_value("dark-mode", False)',
+        'theme = settings.get_value("theme-name", "light")',
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["dark-mode", "main.py", "openfeature-python"]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("follows the client re-exported by a Python package's __init__.py that also imports the OpenFeature provider", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "shop/flags.py",
+      'from configdirector import create_client\n\nclient = create_client("YOUR-SERVER-SDK-KEY")\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "shop/__init__.py",
+      "from configdirector_openfeature import ConfigDirectorProvider\nfrom .flags import client\n",
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.py",
+      'from shop import client\n\nNEW_CHECKOUT = client.get_value("new-checkout", False)\n',
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "checkout.py", "python"]]);
+  });
+
+  it("finds Go SDK calls in a file that imports the Go SDK alongside the OpenFeature provider, as the provider docs show", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "main.go",
+      [
+        "package main",
+        "",
+        "import (",
+        '\t"context"',
+        "",
+        '\t"github.com/ConfigDirector/go-sdks/configdirector"',
+        '\tconfigdirectoropenfeature "github.com/ConfigDirector/go-sdks/configdirector-openfeature"',
+        '\t"github.com/open-feature/go-sdk/openfeature"',
+        ")",
+        "",
+        "func readFlags(ctx context.Context, sdkClient *configdirector.Client, user configdirector.UserContext) {",
+        '\tprovider, _ := configdirectoropenfeature.NewProvider(configdirector.Options{SDKKey: "YOUR-SERVER-SDK-KEY"})',
+        "\topenfeature.SetProvider(provider)",
+        '\tclient := openfeature.NewClient("my-app")',
+        '\tdarkMode := client.Boolean(ctx, "dark-mode", false, openfeature.EvaluationContext{})',
+        '\ttheme := sdkClient.StringValue("theme-name", "light", user)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["dark-mode", "main.go", "openfeature-go"],
+      ["theme-name", "main.go", "go"],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
   });
 });
 

@@ -57,6 +57,7 @@ type SdkFamilyRecord = {
   sdkType: SdkType;
   extensions: readonly SourceExtension[];
   importMarkers: readonly string[];
+  providerPackagesContainingMarkers?: readonly string[];
   projectArea?: ProjectArea;
   calls: readonly CallShape[];
 };
@@ -283,6 +284,7 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
     sdkType: "client",
     extensions: [".swift"],
     importMarkers: ["import ConfigDirector"],
+    providerPackagesContainingMarkers: ["ConfigDirectorOpenFeatureProvider"],
     calls: [
       read("value", swiftLabels),
       read("values", swiftLabels),
@@ -315,6 +317,7 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
     sdkType: "client",
     extensions: [".kt", ".java"],
     importMarkers: ["com.configdirector"],
+    providerPackagesContainingMarkers: ["com.configdirector.openfeature"],
     projectArea: "android-module",
     calls: [
       read("value", kotlinLabels),
@@ -363,6 +366,7 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
     sdkType: "server",
     extensions: [".java", ".kt"],
     importMarkers: ["com.configdirector"],
+    providerPackagesContainingMarkers: ["com.configdirector.openfeature"],
     projectArea: "jvm-module",
     calls: [
       ...typedReads({
@@ -403,6 +407,7 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
     sdkType: "server",
     extensions: [".py"],
     importMarkers: ["import configdirector", "from configdirector"],
+    providerPackagesContainingMarkers: ["configdirector_openfeature"],
     calls: [
       read("get_value", pythonLabels),
       read("watch", pythonLabels),
@@ -452,6 +457,7 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
     sdkType: "server",
     extensions: [".cs"],
     importMarkers: ["using ConfigDirector", "ConfigDirectorClient", "ConfigDirectorTesting"],
+    providerPackagesContainingMarkers: ["ConfigDirector.OpenFeature"],
     calls: [
       read("GetValue", csharpLabels),
       read("Watch", csharpLabels),
@@ -482,6 +488,7 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
     sdkType: "server",
     extensions: [".go"],
     importMarkers: ["github.com/ConfigDirector/go-sdks/configdirector"],
+    providerPackagesContainingMarkers: ["github.com/ConfigDirector/go-sdks/configdirector-openfeature"],
     calls: [
       ...typedReads(
         {
