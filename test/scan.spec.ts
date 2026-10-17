@@ -431,7 +431,7 @@ describe("scan local imports", () => {
     ]);
   });
 
-  it("follows only one local import, not a module that re-exports the client from another", async () => {
+  it("follows a local import to a module that re-exports the client from another", async () => {
     const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director-setup.ts", clientSetup);
@@ -445,8 +445,874 @@ describe("scan local imports", () => {
     const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
 
     expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows two re-export steps from the imported module to the client setup", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/flags/setup.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/lib/flags/index.ts",
+      'export { client } from "./setup";\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/lib/index.ts",
+      'export { client } from "./flags";\n',
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", callsThroughLocalClient("./lib"));
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows a re-export of everything a module exports", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director-setup.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/lib/index.ts",
+      'export * from "./config-director-setup";\n',
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", callsThroughLocalClient("./lib"));
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows a re-export of a module as a namespace", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director-setup.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/lib/index.ts",
+      'export * as flags from "./config-director-setup";\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      ['import { flags } from "./lib";', "", 'flags.client.getValue("new-checkout", false);', ""].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("skips a look-alike call in a file whose imported module re-exports no client", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/forms/signup-form.ts",
+      'import { useForm } from "react-hook-form";\n\nexport const form = useForm();\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/forms/index.ts",
+      'export { form } from "./signup-form";\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/signup.ts",
+      ['import { form } from "./forms";', "", 'form.watch("email-address");', ""].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
     expect(output.references).toEqual([]);
     expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not follow a third re-export step", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/flags/client/setup.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/lib/flags/client/index.ts",
+      'export { client } from "./setup";\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/lib/flags/index.ts",
+      'export { client } from "./client";\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/lib/index.ts",
+      'export { client } from "./flags";\n',
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", callsThroughLocalClient("./lib"));
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("follows an import through a path alias declared in tsconfig.json", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout/page.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "src/checkout/page.ts", "js-client"],
+    ]);
+  });
+
+  it("follows a path alias declared in a config that tsconfig.json extends", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "config/tsconfig.base.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["../src/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ extends: "./config/tsconfig.base.json", compilerOptions: { strict: true } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows a path alias from the last relative config of an extends array that declares one", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.stubs.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./stubs/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.paths.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({
+        extends: ["./tsconfig.stubs.json", "./tsconfig.paths.json", "@tsconfig/node20/tsconfig.json"],
+      }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "stubs/lib/config-director.ts",
+      "export const client = { getValue: () => false };\n",
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows the path alias that the last config of an extends array inherits from a base an earlier config also extends", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.base.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.stubs.json",
+      JSON.stringify({
+        extends: "./tsconfig.base.json",
+        compilerOptions: { paths: { "@/*": ["./stubs/*"] } },
+      }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.strict.json",
+      JSON.stringify({ extends: "./tsconfig.base.json", compilerOptions: { strict: true } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ extends: ["./tsconfig.stubs.json", "./tsconfig.strict.json"] }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "stubs/lib/config-director.ts",
+      "export const client = { getValue: () => false };\n",
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows an extends written without the .json extension", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.base.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ extends: "./tsconfig.base" }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("does not follow an extends that names a package rather than a relative path", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.base.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ extends: "tsconfig.base.json" }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("follows a path alias when configs extend each other in a cycle", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.base.json",
+      JSON.stringify({ extends: "./tsconfig.json", compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ extends: "./tsconfig.base.json" }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows a path alias declared only in a config that tsconfig.json references, as in Vite's template", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({
+        files: [],
+        references: [{ path: "./tsconfig.app.json" }, { path: "./tsconfig.node.json" }],
+      }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.app.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } }, include: ["src"] }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.node.json",
+      JSON.stringify({ include: ["vite.config.ts"] }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows a path alias declared in the tsconfig.json of a directory that tsconfig.json references", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ files: [], references: [{ path: "./app" }] }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/tsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "~/*": ["./*"] } } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "app/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "server/checkout.ts",
+      callsThroughLocalClient("~/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "server/checkout.ts", "js-client"]]);
+  });
+
+  it("follows the path alias of the first referenced config whose pattern matches the import", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({
+        files: [],
+        references: [{ path: "./tsconfig.app.json" }, { path: "./tsconfig.stubs.json" }],
+      }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.app.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.stubs.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./stubs/*"] } } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "stubs/lib/config-director.ts",
+      "export const client = { getValue: () => false };\n",
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("does not try a later referenced config when the first match finds no file", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({
+        files: [],
+        references: [{ path: "./tsconfig.generated.json" }, { path: "./tsconfig.app.json" }],
+      }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.generated.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./generated/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.app.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not follow a bare import from the baseUrl of a referenced config", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ files: [], references: [{ path: "./tsconfig.app.json" }] }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.app.json",
+      JSON.stringify({ compilerOptions: { baseUrl: "./src" } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not read the referenced configs when tsconfig.json declares its own path aliases", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({
+        compilerOptions: { paths: { "@/*": ["./generated/*"] } },
+        references: [{ path: "./tsconfig.app.json" }],
+      }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.app.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reads a tsconfig.json with comments, trailing commas and a path alias key that looks like a comment", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      [
+        "{",
+        "  // Aliases shared with the bundler",
+        '  "compilerOptions": {',
+        '    /* "@/*" is the src directory */',
+        '    "paths": {',
+        '      "@/*": ["./src/*",],',
+        "    },",
+        "  },",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("reads a tsconfig.json that starts with a byte order mark", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      `\uFEFF${JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } })}`,
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("skips a tsconfig.json that cannot be parsed, without an error", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] }\n',
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output, stderr } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("follows an import through a path alias declared in jsconfig.json", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "jsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.js", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.js",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.js", "js-client"]]);
+  });
+
+  it("follows the path alias of tsconfig.json rather than jsconfig.json in the same directory", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "jsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./stubs/*"] } } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "stubs/lib/config-director.ts",
+      "export const client = { getValue: () => false };\n",
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows a path alias inside a re-export step", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/flags/setup.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/lib/index.ts",
+      'export { client } from "@/flags/setup";\n',
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", callsThroughLocalClient("./lib"));
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("skips a look-alike call in a file whose path alias reaches no client", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/forms/signup-form.ts",
+      'import { useForm } from "react-hook-form";\n\nexport const form = useForm();\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/signup.ts",
+      ['import { form } from "@/forms/signup-form";', "", 'form.watch("email-address");', ""].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("follows a path alias declared in a tsconfig.json outside the scanned directory", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl, ["src"]);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows a path alias declared in a gitignored config that tsconfig.json extends, as Nuxt generates", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, ".gitignore", ".nuxt\n");
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      ".nuxt/tsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "~/*": ["../*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ extends: "./.nuxt/tsconfig.json" }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "utils/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "pages/checkout.ts",
+      callsThroughLocalClient("~/utils/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "pages/checkout.ts", "js-client"]]);
+  });
+
+  it("follows the path alias with the longest prefix when several match", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"], "@/lib/*": ["./shared/*"] } } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/lib/config-director.ts",
+      "export const client = { getValue: () => false };\n",
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "shared/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@/lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows an exact path alias rather than a wildcard one", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({
+        compilerOptions: {
+          paths: { "*": ["./src/stubs/*"], "config-director": ["./src/config-director-setup.ts"] },
+        },
+      }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/stubs/config-director.ts",
+      "export const client = { getValue: () => false };\n",
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/config-director-setup.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows a bare import from the baseUrl declared in tsconfig.json", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { baseUrl: "./src" } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/config-director.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout/page.ts",
+      callsThroughLocalClient("lib/config-director"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "src/checkout/page.ts", "js-client"],
+    ]);
+  });
+
+  it("resolves path alias targets from the baseUrl when tsconfig.json declares one", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { baseUrl: "./src", paths: { "@flags/*": ["lib/flags/*"] } } }),
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/lib/flags/setup.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      callsThroughLocalClient("@flags/setup"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "src/checkout.ts", "js-client"]]);
+  });
+
+  it("follows an import of the current directory as a relative import rather than through the baseUrl", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { baseUrl: "./src" } }),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/index.ts",
+      "export const client = { getValue: () => false };\n",
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "src/flags/index.ts", clientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/flags/checkout.ts",
+      callsThroughLocalClient("."),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "src/flags/checkout.ts", "js-client"],
+    ]);
   });
 
   it("follows a Python import of a module next to the file, as the docs show", async () => {
@@ -511,6 +1377,75 @@ describe("scan local imports", () => {
     ]);
   });
 
+  it("follows a Python package whose __init__.py imports the client from a module of the package", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "shop/flags.py",
+      'from configdirector import create_client\n\nclient = create_client("YOUR-SERVER-SDK-KEY")\n',
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "shop/__init__.py", "from .flags import client\n");
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.py",
+      'from shop import client\n\nNEW_CHECKOUT = client.get_value("new-checkout", False)\n',
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "checkout.py", "python"]]);
+  });
+
+  it("does not follow an absolute import in a Python package's __init__.py", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "shop/flags.py",
+      'from configdirector import create_client\n\nclient = create_client("YOUR-SERVER-SDK-KEY")\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "shop/__init__.py",
+      "from shop.flags import client\n",
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.py",
+      'from shop import client\n\nNEW_CHECKOUT = client.get_value("new-checkout", False)\n',
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not follow the imports of a Python module other than __init__.py", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "shop/flags.py",
+      'from configdirector import create_client\n\nclient = create_client("YOUR-SERVER-SDK-KEY")\n',
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "shop/services.py", "from .flags import client\n");
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.py",
+      'from shop.services import client\n\nNEW_CHECKOUT = client.get_value("new-checkout", False)\n',
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
   it("follows a Dart package import of the app's own package to its lib directory", async () => {
     const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
@@ -530,6 +1465,44 @@ describe("scan local imports", () => {
       "app/lib/pages/checkout_page.dart",
       [
         "import 'package:shop/config_director_setup.dart';",
+        "",
+        "final newCheckout = client.getValue('new-checkout', false);",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "app/lib/pages/checkout_page.dart", "flutter"],
+    ]);
+  });
+
+  it("follows a Dart barrel library that exports the client setup", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "app/pubspec.yaml", "name: shop\nversion: 1.0.0\n");
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/lib/src/config_director_setup.dart",
+      [
+        "import 'package:configdirector_flutter_client_sdk/configdirector_flutter_client_sdk.dart';",
+        "",
+        "final client = ConfigDirectorClient(clientSdkKey: 'YOUR-CLIENT-SDK-KEY');",
+        "",
+      ].join("\n"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/lib/shop.dart",
+      "export 'src/config_director_setup.dart';\n",
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/lib/pages/checkout_page.dart",
+      [
+        "import 'package:shop/shop.dart';",
         "",
         "final newCheckout = client.getValue('new-checkout', false);",
         "",

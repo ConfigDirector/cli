@@ -1,8 +1,9 @@
 import { readdir } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { fileExists, readFileIfPresent } from "../file-contents.js";
 import { plainStringContent } from "./literals.js";
 import { NearestDeclarations } from "./nearest-declarations.js";
+import { PathAliases } from "./path-aliases.js";
 import type { SourceCode } from "./source-code.js";
 
 type PythonImport = { level: number; modulePath: string[]; names: string[] };
@@ -29,8 +30,11 @@ const TYPESCRIPT_EXTENSIONS_FOR: Readonly<Record<string, readonly string[]>> = {
   ".mjs": [".mts"],
   ".cjs": [".cts"],
 };
+const PYTHON_PACKAGE_FILE = "__init__.py";
 const DART_PACKAGE_SCHEME = "package:";
 const DART_LIBRARY_SCHEME = "dart:";
+const DART_IMPORT_DIRECTIVES = ["import", "export", "part"];
+const DART_RE_EXPORT_DIRECTIVES = ["export"];
 
 const stringAt = (code: SourceCode, index: number): string | undefined =>
   code.token(index)?.kind === "string" ? plainStringContent(code, { first: index, last: index }) : undefined;
@@ -59,7 +63,8 @@ const ancestorDirectory = (directory: string, levelsUp: number): string => {
   return ancestor;
 };
 
-const isRelativeSpecifier = (specifier: string) => specifier.startsWith("./") || specifier.startsWith("../");
+const isRelativeSpecifier = (specifier: string) =>
+  specifier === "." || specifier === ".." || specifier.startsWith("./") || specifier.startsWith("../");
 
 const javascriptSpecifiers = (code: SourceCode): string[] =>
   code.tokens.flatMap((_token, index) => {
@@ -69,11 +74,32 @@ const javascriptSpecifiers = (code: SourceCode): string[] =>
       (code.isPunctuation(index - 1, "(") &&
         (code.isIdentifier(index - 2, "import") || code.isIdentifier(index - 2, "require")));
     const specifier = isModuleSpecifier ? stringAt(code, index) : undefined;
-    return specifier !== undefined && isRelativeSpecifier(specifier) ? [specifier] : [];
+    return specifier === undefined ? [] : [specifier];
   });
 
-const javascriptCandidates = (directory: string, specifier: string): string[] => {
-  const path = join(directory, specifier);
+const indexAfterReExportedNames = (code: SourceCode, exportIndex: number): number | undefined => {
+  const namesIndex = exportIndex + 1;
+  if (code.isPunctuation(namesIndex, "{")) {
+    const closer = code.closerOf(namesIndex);
+    return closer === undefined ? undefined : closer + 1;
+  }
+  if (code.isPunctuation(namesIndex, "*")) {
+    return code.isIdentifier(namesIndex + 1, "as") ? namesIndex + 3 : namesIndex + 1;
+  }
+  return undefined;
+};
+
+const javascriptReExportSpecifiers = (code: SourceCode): string[] =>
+  code.tokens.flatMap((_token, index) => {
+    const fromIndex = code.isIdentifier(index, "export") ? indexAfterReExportedNames(code, index) : undefined;
+    const specifier =
+      fromIndex !== undefined && code.isIdentifier(fromIndex, "from")
+        ? stringAt(code, fromIndex + 1)
+        : undefined;
+    return specifier === undefined ? [] : [specifier];
+  });
+
+const javascriptCandidates = (path: string): string[] => {
   const extension = extname(path);
   const withoutExtension = path.slice(0, path.length - extension.length);
   return [
@@ -168,12 +194,14 @@ const pythonImports = (code: SourceCode): PythonImport[] =>
     return code.isIdentifier(index, "import") ? pythonPlainImports(code, index) : [];
   });
 
+const isRelativePythonImport = (pythonImport: PythonImport) => pythonImport.level > 0;
+
 const pythonModuleFiles = (base: string, modulePath: readonly string[]): string[] => {
   if (modulePath.length === 0) {
     return [];
   }
   const path = join(base, ...modulePath);
-  return [`${path}.py`, join(path, "__init__.py")];
+  return [`${path}.py`, join(path, PYTHON_PACKAGE_FILE)];
 };
 
 const dartPackageDeclaredIn = async (directory: string): Promise<DartPackage | undefined> => {
@@ -192,12 +220,9 @@ const goModuleDeclaredIn = async (directory: string): Promise<GoModule | undefin
     : { root: directory, path: unquoted(moduleLine.slice("module ".length)) };
 };
 
-const dartSpecifiers = (code: SourceCode): string[] =>
+const dartSpecifiers = (code: SourceCode, directives: readonly string[]): string[] =>
   code.tokens.flatMap((_token, index) => {
-    const isDirective =
-      code.isIdentifier(index - 1, "import") ||
-      code.isIdentifier(index - 1, "export") ||
-      code.isIdentifier(index - 1, "part");
+    const isDirective = directives.some((directive) => code.isIdentifier(index - 1, directive));
     const specifier = isDirective ? stringAt(code, index) : undefined;
     return specifier === undefined || specifier.startsWith(DART_LIBRARY_SCHEME) ? [] : [specifier];
   });
@@ -222,24 +247,45 @@ const goImportPaths = (code: SourceCode): string[] =>
 export class LocalImports {
   private readonly dartPackages: NearestDeclarations<DartPackage>;
   private readonly goModules: NearestDeclarations<GoModule>;
+  private readonly pathAliases: PathAliases;
   private readonly goPackageFiles = new Map<string, Promise<string[]>>();
   private readonly fileExistence = new Map<string, Promise<boolean>>();
 
   constructor(private readonly highestDirectory: string) {
     this.dartPackages = new NearestDeclarations(highestDirectory, dartPackageDeclaredIn);
     this.goModules = new NearestDeclarations(highestDirectory, goModuleDeclaredIn);
+    this.pathAliases = new PathAliases(highestDirectory);
   }
 
   public filesImportedBy(code: SourceCode, file: string): Promise<string[]> {
     switch (code.language) {
       case "javascript":
-        return this.javascriptFilesImportedBy(code, file);
+        return this.javascriptFilesAt(javascriptSpecifiers(code), file);
       case "python":
-        return this.pythonFilesImportedBy(code, file);
+        return this.pythonFilesAt(pythonImports(code), file);
       case "dart":
-        return this.dartFilesImportedBy(code, file);
+        return this.dartFilesAt(dartSpecifiers(code, DART_IMPORT_DIRECTIVES), file);
       case "go":
         return this.goFilesImportedBy(code, file);
+      case "swift":
+      case "kotlin":
+      case "java":
+      case "csharp":
+        return Promise.resolve([]);
+    }
+  }
+
+  public filesReExportedBy(code: SourceCode, file: string): Promise<string[]> {
+    switch (code.language) {
+      case "javascript":
+        return this.javascriptFilesAt(javascriptReExportSpecifiers(code), file);
+      case "python":
+        return basename(file) === PYTHON_PACKAGE_FILE
+          ? this.pythonFilesAt(pythonImports(code).filter(isRelativePythonImport), file)
+          : Promise.resolve([]);
+      case "dart":
+        return this.dartFilesAt(dartSpecifiers(code, DART_RE_EXPORT_DIRECTIVES), file);
+      case "go":
       case "swift":
       case "kotlin":
       case "java":
@@ -277,10 +323,13 @@ export class LocalImports {
     return existing;
   }
 
-  private async javascriptFilesImportedBy(code: SourceCode, file: string): Promise<string[]> {
+  private async javascriptFilesAt(specifiers: readonly string[], file: string): Promise<string[]> {
     const files: string[] = [];
-    for (const specifier of javascriptSpecifiers(code)) {
-      const importedFile = await this.firstExistingFile(javascriptCandidates(dirname(file), specifier));
+    for (const specifier of specifiers) {
+      const modulePaths = isRelativeSpecifier(specifier)
+        ? [join(dirname(file), specifier)]
+        : await this.pathAliases.modulePathsFor(specifier, file);
+      const importedFile = await this.firstExistingFile(modulePaths.flatMap(javascriptCandidates));
       if (importedFile !== undefined) {
         files.push(importedFile);
       }
@@ -288,9 +337,9 @@ export class LocalImports {
     return files;
   }
 
-  private async pythonFilesImportedBy(code: SourceCode, file: string): Promise<string[]> {
+  private async pythonFilesAt(imports: readonly PythonImport[], file: string): Promise<string[]> {
     const files: string[] = [];
-    for (const { level, modulePath, names } of pythonImports(code)) {
+    for (const { level, modulePath, names } of imports) {
       const bases =
         level === 0
           ? directoriesUpFrom(dirname(file), this.highestDirectory)
@@ -309,9 +358,9 @@ export class LocalImports {
     return files;
   }
 
-  private async dartFilesImportedBy(code: SourceCode, file: string): Promise<string[]> {
+  private async dartFilesAt(specifiers: readonly string[], file: string): Promise<string[]> {
     const ownPackage = await this.dartPackages.declarationAbove(file);
-    const candidates = dartSpecifiers(code).flatMap((specifier) => {
+    const candidates = specifiers.flatMap((specifier) => {
       if (!specifier.startsWith(DART_PACKAGE_SCHEME)) {
         return [join(dirname(file), specifier)];
       }

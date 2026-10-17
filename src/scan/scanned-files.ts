@@ -21,7 +21,7 @@ export type ScanScope = {
 type GitignoreRules = { directory: string; rules: Ignore };
 
 const EXCLUDED_DIRECTORY_NAMES = new Set([".git", "node_modules", "vendor", "build", "dist", "target"]);
-export const MAXIMUM_FILE_BYTES = 1024 * 1024;
+const MAXIMUM_FILE_BYTES = 1024 * 1024;
 const BYTES_CHECKED_FOR_BINARY_CONTENT = 8000;
 
 const slashSeparated = (path: string) => path.split(sep).join("/");
@@ -85,6 +85,11 @@ const isGitignored = (path: string, isDirectory: boolean, rulesInScope: readonly
     }
   }
   return false;
+};
+
+export const readFileWithinSizeLimit = async (path: string): Promise<string | undefined> => {
+  const stats = await stat(path).catch(() => undefined);
+  return stats?.isFile() && stats.size <= MAXIMUM_FILE_BYTES ? readFile(path, "utf8") : undefined;
 };
 
 const hasBinaryContent = (contents: Buffer) =>
