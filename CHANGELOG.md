@@ -4,6 +4,10 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- `scan` finds the calls of a Kotlin, Java or C# file that reaches the client through a class of your own whose file imports the SDK, such as `Flags.client.getBoolean("new-checkout", false)` with an `object Flags` holding the client, in a file that never names the SDK. The class must be in a file named after it, such as `Flags.kt`, `Flags.java` or `Flags.cs`. Kotlin and Java find it through an import, a static import, a wildcard import, or in the file's own directory for a class of the same package; C# finds it anywhere in the project of the nearest `.csproj`, so a global using of the SDK's namespace works. Only that one class is read, not the classes it uses in turn, and a Kotlin client declared at the top level of a file is not followed. A call that only looks like an SDK call, such as Android's `SharedPreferences.getBoolean` or ASP.NET's `IConfiguration.GetValue`, is still not reported in a file that uses no such class.
+
 ## [0.2.0-beta.1] - 2026-10-17
 
 ### Added

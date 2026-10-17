@@ -175,13 +175,18 @@ const sdkFamiliesUsedIn = (highestDirectory: string) => {
     }
   };
 
-  const familiesMarkedThroughImports = async (file: ScannedFile, code: SourceCode): Promise<SdkFamily[]> => {
-    const importedPaths = await localImports.filesImportedBy(code, file.path);
+  const familiesReachedThroughEach = async (paths: readonly string[]): Promise<SdkFamily[]> => {
     const reachedFamilies = await Promise.all(
-      importedPaths.map((importedPath) => familiesReachedThrough(importedPath, RE_EXPORT_STEPS_FOLLOWED)),
+      paths.map((path) => familiesReachedThrough(path, RE_EXPORT_STEPS_FOLLOWED)),
     );
     return reachedFamilies.flat();
   };
+
+  const familiesMarkedThroughImports = async (file: ScannedFile, code: SourceCode): Promise<SdkFamily[]> =>
+    familiesReachedThroughEach(await localImports.filesImportedBy(code, file.path));
+
+  const familiesMarkedInHolderClasses = async (file: ScannedFile, code: SourceCode): Promise<SdkFamily[]> =>
+    familiesReachedThroughEach(await localImports.holderClassFilesReferencedBy(code, file.path));
 
   const familiesMarkedInSamePackageOrTarget = async (
     file: ScannedFile,
@@ -192,11 +197,7 @@ const sdkFamiliesUsedIn = (highestDirectory: string) => {
       return familiesFoundBefore;
     }
     const filesOfPackageOrTarget = await localImports.filesOfSamePackageOrTarget(code, file.path);
-    const families = Promise.all(
-      filesOfPackageOrTarget.map((fileOfPackageOrTarget) =>
-        familiesReachedThrough(fileOfPackageOrTarget, RE_EXPORT_STEPS_FOLLOWED),
-      ),
-    ).then((familiesOfFiles) => familiesOfFiles.flat());
+    const families = familiesReachedThroughEach(filesOfPackageOrTarget);
     for (const fileOfPackageOrTarget of filesOfPackageOrTarget) {
       familiesMarkedInPackageOrTargetOfFile.set(fileOfPackageOrTarget, families);
     }
@@ -206,6 +207,7 @@ const sdkFamiliesUsedIn = (highestDirectory: string) => {
   const familiesMarkedByOtherFiles = async (file: ScannedFile, code: SourceCode): Promise<SdkFamily[]> => [
     ...(await familiesMarkedThroughImports(file, code)),
     ...(await familiesMarkedInSamePackageOrTarget(file, code)),
+    ...(await familiesMarkedInHolderClasses(file, code)),
   ];
 
   return async (file: ScannedFile, code: SourceCode): Promise<SdkFamily[]> => {

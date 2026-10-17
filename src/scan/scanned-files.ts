@@ -20,7 +20,14 @@ export type ScanScope = {
 
 type GitignoreRules = { directory: string; rules: Ignore };
 
-const EXCLUDED_DIRECTORY_NAMES = new Set([".git", "node_modules", "vendor", "build", "dist", "target"]);
+export const EXCLUDED_DIRECTORY_NAMES = new Set([
+  ".git",
+  "node_modules",
+  "vendor",
+  "build",
+  "dist",
+  "target",
+]);
 const MAXIMUM_FILE_BYTES = 1024 * 1024;
 const BYTES_CHECKED_FOR_BINARY_CONTENT = 8000;
 

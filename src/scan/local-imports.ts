@@ -4,7 +4,7 @@ import { fileExists, readFileIfPresent } from "../file-contents.js";
 import { plainStringContent } from "./literals.js";
 import { NearestDeclarations } from "./nearest-declarations.js";
 import { PathAliases } from "./path-aliases.js";
-import { readFileWithinSizeLimit } from "./scanned-files.js";
+import { EXCLUDED_DIRECTORY_NAMES, readFileWithinSizeLimit } from "./scanned-files.js";
 import { SourceCode } from "./source-code.js";
 
 type PythonImport = { level: number; modulePath: string[]; names: string[] };
@@ -14,6 +14,10 @@ type DartPackage = { root: string; name: string };
 type GoModule = { root: string; path: string };
 
 type SwiftProject = { kind: "swiftPackage" | "xcodeProject"; root: string };
+
+type DottedName = { segments: string[]; endsWithWildcard: boolean };
+
+type JvmImport = { kind: "classOrMember"; path: string[] } | { kind: "wholePackage"; packagePath: string[] };
 
 const JAVASCRIPT_SOURCE_EXTENSIONS = [
   ".ts",
@@ -41,6 +45,10 @@ const DART_RE_EXPORT_DIRECTIVES = ["export"];
 const SWIFT_PACKAGE_MANIFEST = "Package.swift";
 const SWIFT_PACKAGE_TARGETS_DIRECTORIES = ["Sources", "Tests"];
 const XCODE_PROJECT_EXTENSION = ".xcodeproj";
+const JVM_SOURCE_EXTENSIONS = [".kt", ".java"];
+const CSHARP_PROJECT_EXTENSION = ".csproj";
+const CSHARP_SOURCE_EXTENSION = ".cs";
+const CSHARP_BUILD_OUTPUT_DIRECTORIES = ["bin", "obj"];
 
 const stringAt = (code: SourceCode, index: number): string | undefined =>
   code.token(index)?.kind === "string" ? plainStringContent(code, { first: index, last: index }) : undefined;
@@ -275,6 +283,92 @@ const goPackageNameIn = (code: SourceCode): string | undefined => {
   return code.isIdentifier(0, "package") && name?.kind === "identifier" ? name.text : undefined;
 };
 
+const isCapitalized = (name: string) => name.charAt(0) >= "A" && name.charAt(0) <= "Z";
+
+const capitalizedNamesIn = (code: SourceCode): Set<string> =>
+  new Set(
+    code.tokens.flatMap((token) =>
+      token.kind === "identifier" && isCapitalized(token.text) ? [token.text] : [],
+    ),
+  );
+
+const dottedNameAt = (code: SourceCode, start: number): DottedName => {
+  const segments: string[] = [];
+  let index = start;
+  for (let token = code.token(index); token?.kind === "identifier"; token = code.token(index)) {
+    segments.push(token.text);
+    if (!code.isPunctuation(index + 1, ".")) {
+      break;
+    }
+    index += 2;
+  }
+  return { segments, endsWithWildcard: code.isPunctuation(index - 1, ".") && code.isPunctuation(index, "*") };
+};
+
+const jvmPackagePathIn = (code: SourceCode): string[] => {
+  const packageIndex = code.tokens.findIndex(
+    (_token, index) => code.startsLine(index) && code.isIdentifier(index, "package"),
+  );
+  return packageIndex === -1 ? [] : dottedNameAt(code, packageIndex + 1).segments;
+};
+
+const jvmImportsIn = (code: SourceCode): JvmImport[] =>
+  code.tokens.flatMap((_token, index): JvmImport[] => {
+    if (!code.startsLine(index) || !code.isIdentifier(index, "import")) {
+      return [];
+    }
+    const isStaticImport = code.isIdentifier(index + 1, "static");
+    const { segments, endsWithWildcard } = dottedNameAt(code, isStaticImport ? index + 2 : index + 1);
+    return [
+      endsWithWildcard && !isStaticImport
+        ? { kind: "wholePackage", packagePath: segments }
+        : { kind: "classOrMember", path: segments },
+    ];
+  });
+
+const jvmSourceRootOf = (directory: string, packagePath: readonly string[]): string | undefined => {
+  const sourceRoot = ancestorDirectory(directory, packagePath.length);
+  return join(sourceRoot, ...packagePath) === directory ? sourceRoot : undefined;
+};
+
+const jvmClassFileCandidates = (sourceRoot: string, importPath: readonly string[]): string[] =>
+  importPath.flatMap((_segment, index) => {
+    const classPath = join(sourceRoot, ...importPath.slice(0, importPath.length - index));
+    return JVM_SOURCE_EXTENSIONS.map((extension) => classPath + extension);
+  });
+
+const csharpProjectRootDeclaredIn = async (directory: string): Promise<string | undefined> => {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  return entries.some((entry) => entry.isFile() && extname(entry.name) === CSHARP_PROJECT_EXTENSION)
+    ? directory
+    : undefined;
+};
+
+const isSearchedForHolderClasses = (directoryName: string) =>
+  !CSHARP_BUILD_OUTPUT_DIRECTORIES.includes(directoryName) && !EXCLUDED_DIRECTORY_NAMES.has(directoryName);
+
+const csharpFilesUnder = async (directory: string): Promise<string[]> => {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  const files = entries
+    .filter((entry) => entry.isFile() && extname(entry.name) === CSHARP_SOURCE_EXTENSION)
+    .map((entry) => join(directory, entry.name));
+  const filesOfSubdirectories = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && isSearchedForHolderClasses(entry.name))
+      .map((entry) => csharpFilesUnder(join(directory, entry.name))),
+  );
+  return [...files, ...filesOfSubdirectories.flat()];
+};
+
+const filesOfCsharpClassName = (files: readonly string[]): Map<string, string[]> => {
+  const filesOfClassName = new Map<string, string[]>();
+  for (const file of files) {
+    const className = basename(file, CSHARP_SOURCE_EXTENSION);
+    filesOfClassName.set(className, [...(filesOfClassName.get(className) ?? []), file]);
+  }
+  return filesOfClassName;
+};
+
 const goPackageNameOfFile = async (file: string): Promise<string | undefined> => {
   const contents = await readFileWithinSizeLimit(file);
   return contents === undefined ? undefined : goPackageNameIn(new SourceCode(contents, "go"));
@@ -284,14 +378,17 @@ export class LocalImports {
   private readonly dartPackages: NearestDeclarations<DartPackage>;
   private readonly goModules: NearestDeclarations<GoModule>;
   private readonly swiftProjects: NearestDeclarations<SwiftProject>;
+  private readonly csharpProjectRoots: NearestDeclarations<string>;
   private readonly pathAliases: PathAliases;
-  private readonly goFilesOfDirectory = new Map<string, Promise<string[]>>();
+  private readonly filesOfDirectory = new Map<string, Promise<string[]>>();
+  private readonly csharpClassFilesOfProject = new Map<string, Promise<Map<string, string[]>>>();
   private readonly fileExistence = new Map<string, Promise<boolean>>();
 
   constructor(private readonly highestDirectory: string) {
     this.dartPackages = new NearestDeclarations(highestDirectory, dartPackageDeclaredIn);
     this.goModules = new NearestDeclarations(highestDirectory, goModuleDeclaredIn);
     this.swiftProjects = new NearestDeclarations(highestDirectory, swiftProjectDeclaredIn);
+    this.csharpProjectRoots = new NearestDeclarations(highestDirectory, csharpProjectRootDeclaredIn);
     this.pathAliases = new PathAliases(highestDirectory);
   }
 
@@ -325,6 +422,22 @@ export class LocalImports {
       case "kotlin":
       case "java":
       case "csharp":
+        return Promise.resolve([]);
+    }
+  }
+
+  public holderClassFilesReferencedBy(code: SourceCode, file: string): Promise<string[]> {
+    switch (code.language) {
+      case "kotlin":
+      case "java":
+        return this.jvmHolderClassFilesReferencedBy(code, file);
+      case "csharp":
+        return this.csharpHolderClassFilesReferencedBy(code, file);
+      case "javascript":
+      case "python":
+      case "dart":
+      case "go":
+      case "swift":
         return Promise.resolve([]);
     }
   }
@@ -483,19 +596,82 @@ export class LocalImports {
     }
   }
 
-  private goFilesIn(directory: string): Promise<string[]> {
-    const filesListedBefore = this.goFilesOfDirectory.get(directory);
+  private async jvmHolderClassFilesReferencedBy(code: SourceCode, file: string): Promise<string[]> {
+    const directory = dirname(file);
+    const classNames = capitalizedNamesIn(code);
+    const sourceRoot = jvmSourceRootOf(directory, jvmPackagePathIn(code));
+    const importedClassFiles =
+      sourceRoot === undefined
+        ? []
+        : await this.jvmClassFilesImportedFrom(sourceRoot, jvmImportsIn(code), classNames);
+    return [...importedClassFiles, ...(await this.jvmClassFilesIn(directory, classNames))];
+  }
+
+  private async jvmClassFilesImportedFrom(
+    sourceRoot: string,
+    imports: readonly JvmImport[],
+    classNames: ReadonlySet<string>,
+  ): Promise<string[]> {
+    const files: string[] = [];
+    for (const jvmImport of imports) {
+      switch (jvmImport.kind) {
+        case "classOrMember": {
+          const importedFile = await this.firstExistingFile(
+            jvmClassFileCandidates(sourceRoot, jvmImport.path),
+          );
+          if (importedFile !== undefined) {
+            files.push(importedFile);
+          }
+          break;
+        }
+        case "wholePackage":
+          files.push(...(await this.jvmClassFilesIn(join(sourceRoot, ...jvmImport.packagePath), classNames)));
+          break;
+      }
+    }
+    return files;
+  }
+
+  private async jvmClassFilesIn(directory: string, classNames: ReadonlySet<string>): Promise<string[]> {
+    return (await this.filesIn(directory)).filter((file) => {
+      const extension = extname(file);
+      return JVM_SOURCE_EXTENSIONS.includes(extension) && classNames.has(basename(file, extension));
+    });
+  }
+
+  private async csharpHolderClassFilesReferencedBy(code: SourceCode, file: string): Promise<string[]> {
+    const projectRoot = await this.csharpProjectRoots.declarationAbove(file);
+    if (projectRoot === undefined) {
+      return [];
+    }
+    const filesOfClassName = await this.csharpClassFilesIn(projectRoot);
+    return [...capitalizedNamesIn(code)].flatMap((className) => filesOfClassName.get(className) ?? []);
+  }
+
+  private csharpClassFilesIn(projectRoot: string): Promise<Map<string, string[]>> {
+    const classFilesListedBefore = this.csharpClassFilesOfProject.get(projectRoot);
+    if (classFilesListedBefore !== undefined) {
+      return classFilesListedBefore;
+    }
+    const classFiles = csharpFilesUnder(projectRoot).then(filesOfCsharpClassName);
+    this.csharpClassFilesOfProject.set(projectRoot, classFiles);
+    return classFiles;
+  }
+
+  private async goFilesIn(directory: string): Promise<string[]> {
+    return (await this.filesIn(directory)).filter((file) => extname(file) === ".go");
+  }
+
+  private filesIn(directory: string): Promise<string[]> {
+    const filesListedBefore = this.filesOfDirectory.get(directory);
     if (filesListedBefore !== undefined) {
       return filesListedBefore;
     }
     const files = readdir(directory, { withFileTypes: true }).then(
-      (entries) =>
-        entries
-          .filter((entry) => entry.isFile() && extname(entry.name) === ".go")
-          .map((entry) => join(directory, entry.name)),
+      (entries) => entries.filter((entry) => entry.isFile()).map((entry) => join(directory, entry.name)),
       () => [],
     );
-    this.goFilesOfDirectory.set(directory, files);
+    this.filesOfDirectory.set(directory, files);
     return files;
   }
 }

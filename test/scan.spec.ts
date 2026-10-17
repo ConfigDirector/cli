@@ -2105,6 +2105,612 @@ describe("scan JVM build modules", () => {
   });
 });
 
+describe("scan holder classes", () => {
+  const androidModuleBuildFile =
+    'plugins {\n    id("com.android.application")\n}\n\nandroid {\n    namespace = "com.example.app"\n}\n';
+
+  const kotlinObjectHolder = (packageName: string) =>
+    [
+      `package ${packageName}`,
+      "",
+      "import com.configdirector.ConfigDirectorClient",
+      "",
+      "object Flags {",
+      "    lateinit var client: ConfigDirectorClient",
+      "}",
+      "",
+    ].join("\n");
+
+  const mavenProjectFile = [
+    '<project xmlns="http://maven.apache.org/POM/4.0.0">',
+    "  <modelVersion>4.0.0</modelVersion>",
+    "  <groupId>com.example</groupId>",
+    "  <artifactId>shop</artifactId>",
+    "  <version>1.0.0</version>",
+    "</project>",
+    "",
+  ].join("\n");
+
+  const javaClassHolder = [
+    "package com.example;",
+    "",
+    "import com.configdirector.ConfigDirector;",
+    "import com.configdirector.ConfigDirectorClient;",
+    "",
+    "public final class Flags {",
+    '    public static final ConfigDirectorClient CLIENT = ConfigDirector.client("YOUR-SERVER-SDK-KEY");',
+    "}",
+    "",
+  ].join("\n");
+
+  const csharpProjectFile = [
+    '<Project Sdk="Microsoft.NET.Sdk.Web">',
+    "  <PropertyGroup>",
+    "    <TargetFramework>net8.0</TargetFramework>",
+    "  </PropertyGroup>",
+    "</Project>",
+    "",
+  ].join("\n");
+
+  const csharpStaticHolder = [
+    "namespace Shop.Configuration;",
+    "",
+    "public static class Flags",
+    "{",
+    "    public static ConfigDirectorClient Client { get; set; } = null!;",
+    "}",
+    "",
+  ].join("\n");
+
+  it("finds the Android SDK calls of a Kotlin file through an object of its package that holds the client", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "app/build.gradle.kts", androidModuleBuildFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/Flags.kt",
+      kotlinObjectHolder("com.example.app"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/Checkout.kt",
+      [
+        "package com.example.app",
+        "",
+        "class Checkout {",
+        '    fun isNewCheckout() = Flags.client.getBoolean("new-checkout", false)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "app/src/main/java/com/example/app/Checkout.kt", "android"],
+    ]);
+  });
+
+  it("finds the Java server SDK calls of a Java file through a holder class it imports from another package of a Maven project", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "pom.xml", mavenProjectFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/main/java/com/example/Flags.java",
+      javaClassHolder,
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/main/java/com/example/web/Checkout.java",
+      [
+        "package com.example.web;",
+        "",
+        "import com.example.Flags;",
+        "",
+        "public class Checkout {",
+        "    boolean isNewCheckout() {",
+        '        return Flags.CLIENT.getBoolean("new-checkout", false);',
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "src/main/java/com/example/web/Checkout.java", "java"],
+    ]);
+  });
+
+  it("finds the Java server SDK calls of a Java file through a static import of the client from its holder class", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "pom.xml", mavenProjectFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/main/java/com/example/Flags.java",
+      javaClassHolder,
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/main/java/com/example/web/Checkout.java",
+      [
+        "package com.example.web;",
+        "",
+        "import static com.example.Flags.CLIENT;",
+        "",
+        "public class Checkout {",
+        "    boolean isNewCheckout() {",
+        '        return CLIENT.getBoolean("new-checkout", false);',
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "src/main/java/com/example/web/Checkout.java", "java"],
+    ]);
+  });
+
+  it("finds the Java server SDK calls of a Java file through a static import of every member of its holder class", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "pom.xml", mavenProjectFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/main/java/com/example/Flags.java",
+      javaClassHolder,
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/main/java/com/example/web/Checkout.java",
+      [
+        "package com.example.web;",
+        "",
+        "import static com.example.Flags.*;",
+        "",
+        "public class Checkout {",
+        "    boolean isNewCheckout() {",
+        '        return CLIENT.getBoolean("new-checkout", false);',
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "src/main/java/com/example/web/Checkout.java", "java"],
+    ]);
+  });
+
+  it("finds the OpenFeature Java calls of a Java file through a holder class it imports that holds an OpenFeature client", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "pom.xml", mavenProjectFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/main/java/com/example/Flags.java",
+      [
+        "package com.example;",
+        "",
+        "import dev.openfeature.sdk.Client;",
+        "import dev.openfeature.sdk.OpenFeatureAPI;",
+        "",
+        "public final class Flags {",
+        "    public static final Client CLIENT = OpenFeatureAPI.getInstance().getClient();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/main/java/com/example/web/Checkout.java",
+      [
+        "package com.example.web;",
+        "",
+        "import com.example.Flags;",
+        "",
+        "public class Checkout {",
+        "    boolean isNewCheckout() {",
+        '        return Flags.CLIENT.getBooleanValue("new-checkout", false);',
+        "    }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "src/main/java/com/example/web/Checkout.java", "openfeature-java"],
+    ]);
+  });
+
+  it("finds the Android SDK calls of a Kotlin file through a wildcard import of its holder object's package", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "app/build.gradle.kts", androidModuleBuildFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/flags/Flags.kt",
+      kotlinObjectHolder("com.example.app.flags"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/checkout/Checkout.kt",
+      [
+        "package com.example.app.checkout",
+        "",
+        "import com.example.app.flags.*",
+        "",
+        "class Checkout {",
+        '    fun isNewCheckout() = Flags.client.getBoolean("new-checkout", false)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "app/src/main/java/com/example/app/checkout/Checkout.kt", "android"],
+    ]);
+  });
+
+  it("skips a SharedPreferences look-alike call in a Kotlin file of the same package as a holder object it does not refer to", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "app/build.gradle.kts", androidModuleBuildFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/Flags.kt",
+      kotlinObjectHolder("com.example.app"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/Settings.kt",
+      [
+        "package com.example.app",
+        "",
+        "import android.content.SharedPreferences",
+        "",
+        "class Settings(private val prefs: SharedPreferences) {",
+        '    fun isDarkMode() = prefs.getBoolean("dark_mode", false)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("finds the Android SDK calls of a Kotlin file through a holder object in its own directory when the directory does not end with its package", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "app/build.gradle.kts", androidModuleBuildFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/kotlin/web/Flags.kt",
+      kotlinObjectHolder("com.example.web"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/kotlin/web/Checkout.kt",
+      [
+        "package com.example.web",
+        "",
+        "class Checkout {",
+        '    fun isNewCheckout() = Flags.client.getBoolean("new-checkout", false)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "app/src/main/kotlin/web/Checkout.kt", "android"],
+    ]);
+  });
+
+  it("does not follow the imports of a Kotlin file whose directory does not end with its package", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "app/build.gradle.kts", androidModuleBuildFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/com/example/Flags.kt",
+      kotlinObjectHolder("com.example"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/kotlin/web/Checkout.kt",
+      [
+        "package com.example.web",
+        "",
+        "import com.example.Flags",
+        "",
+        "class Checkout {",
+        '    fun isNewCheckout() = Flags.client.getBoolean("new-checkout", false)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("finds the .NET SDK calls of a C# file through a static holder class in another folder of its project when a global using brings in the SDK", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/Shop.csproj", csharpProjectFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Shop/GlobalUsings.cs",
+      "global using ConfigDirector;\n",
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/Configuration/Flags.cs", csharpStaticHolder);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Shop/Checkout/CheckoutService.cs",
+      [
+        "using Shop.Configuration;",
+        "",
+        "namespace Shop.Checkout;",
+        "",
+        "public class CheckoutService",
+        "{",
+        '    public bool IsNewCheckout() => Flags.Client.GetValue("new-checkout", false);',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "Shop/Checkout/CheckoutService.cs", "dotnet"],
+    ]);
+  });
+
+  it("skips an IConfiguration look-alike call in a C# file of a project with a holder class it does not refer to", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/Shop.csproj", csharpProjectFile);
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/Configuration/Flags.cs", csharpStaticHolder);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Shop/Settings/FeatureSettings.cs",
+      [
+        "using Microsoft.Extensions.Configuration;",
+        "",
+        "namespace Shop.Settings;",
+        "",
+        "public class FeatureSettings(IConfiguration configuration)",
+        "{",
+        '    public bool IsFeatureX => configuration.GetValue("FeatureX", false);',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("finds the .NET SDK calls of a C# file through a holder class outside the scanned directory", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/Shop.csproj", csharpProjectFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Shop/GlobalUsings.cs",
+      "global using ConfigDirector;\n",
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/Configuration/Flags.cs", csharpStaticHolder);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Shop/Checkout/CheckoutService.cs",
+      [
+        "namespace Shop.Checkout;",
+        "",
+        "public class CheckoutService",
+        "{",
+        '    public bool IsNewCheckout() => Shop.Configuration.Flags.Client.GetValue("new-checkout", false);',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl, ["Shop/Checkout"]);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "Shop/Checkout/CheckoutService.cs", "dotnet"],
+    ]);
+  });
+
+  it("does not count a same-named file in the bin or obj directory of a C# project as a holder class", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/Shop.csproj", csharpProjectFile);
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/bin/Debug/Flags.cs", csharpStaticHolder);
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/obj/Debug/Flags.cs", csharpStaticHolder);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Shop/Checkout/CheckoutService.cs",
+      [
+        "namespace Shop.Checkout;",
+        "",
+        "public class CheckoutService",
+        "{",
+        '    public bool IsNewCheckout() => Flags.Client.GetValue("new-checkout", false);',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not count a same-named file in a directory that the scan always skips as a C# holder class", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/Shop.csproj", csharpProjectFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Shop/ClientApp/node_modules/flags/Flags.cs",
+      csharpStaticHolder,
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Shop/Checkout/CheckoutService.cs",
+      [
+        "namespace Shop.Checkout;",
+        "",
+        "public class CheckoutService",
+        "{",
+        '    public bool IsNewCheckout() => Flags.Client.GetValue("new-checkout", false);',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a .NET SDK call through a holder class in a C# file with no project file above it", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/Configuration/Flags.cs", csharpStaticHolder);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Shop/Checkout/CheckoutService.cs",
+      [
+        "using Shop.Configuration;",
+        "",
+        "namespace Shop.Checkout;",
+        "",
+        "public class CheckoutService",
+        "{",
+        '    public bool IsNewCheckout() => Flags.Client.GetValue("new-checkout", false);',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not follow the holder classes that a holder class refers to", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "app/build.gradle.kts", androidModuleBuildFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/Flags.kt",
+      kotlinObjectHolder("com.example.app"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/Features.kt",
+      ["package com.example.app", "", "object Features {", "    val flags = Flags", "}", ""].join("\n"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/Checkout.kt",
+      [
+        "package com.example.app",
+        "",
+        "class Checkout {",
+        '    fun isNewCheckout() = Features.flags.client.getBoolean("new-checkout", false)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a Kotlin call through a top-level client declared in another file of the same package", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "app/build.gradle.kts", androidModuleBuildFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/ConfigDirectorSetup.kt",
+      [
+        "package com.example.app",
+        "",
+        "import com.configdirector.ConfigDirectorClient",
+        "",
+        "lateinit var client: ConfigDirectorClient",
+        "",
+      ].join("\n"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/src/main/java/com/example/app/Checkout.kt",
+      [
+        "package com.example.app",
+        "",
+        "class Checkout {",
+        '    fun isNewCheckout() = client.getBoolean("new-checkout", false)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+});
+
 describe("scan OpenFeature provider imports", () => {
   it("skips a Swift SDK look-alike call in a file that imports only the OpenFeature provider", async () => {
     const adminApi = await startScanAdminApi();
