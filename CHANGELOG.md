@@ -4,6 +4,8 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.1.0-beta.1] - 2026-10-16
+
 ### Added
 
 - `configdirector login` asks for an API token, checks that it can list your projects, and saves it for later runs where only you can read it. The token is hidden while you paste it. `configdirector login --token <token>` saves a token without asking.
