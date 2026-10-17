@@ -4,6 +4,12 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.1.0-beta.2] - 2026-10-16
+
+### Changed
+
+- The package is published from the `Release` workflow through npm trusted publishing, so its npm page shows a provenance attestation linking it to the commit and the workflow run that built it.
+
 ## [0.1.0-beta.1] - 2026-10-16
 
 ### Added
