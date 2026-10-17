@@ -9,10 +9,10 @@ export class NearestDeclarations<T> {
   ) {}
 
   public declarationAbove(file: string): Promise<T | undefined> {
-    return this.declarationFrom(dirname(file));
+    return this.declarationAtOrAbove(dirname(file));
   }
 
-  private declarationFrom(directory: string): Promise<T | undefined> {
+  public declarationAtOrAbove(directory: string): Promise<T | undefined> {
     const declarationLookedUpBefore = this.declarationOfDirectory.get(directory);
     if (declarationLookedUpBefore !== undefined) {
       return declarationLookedUpBefore;
@@ -20,7 +20,8 @@ export class NearestDeclarations<T> {
     const parent = dirname(directory);
     const isLastSearched = directory === this.highestDirectory || parent === directory;
     const declaration = this.declaredIn(directory).then(
-      (declarationHere) => declarationHere ?? (isLastSearched ? undefined : this.declarationFrom(parent)),
+      (declarationHere) =>
+        declarationHere ?? (isLastSearched ? undefined : this.declarationAtOrAbove(parent)),
     );
     this.declarationOfDirectory.set(directory, declaration);
     return declaration;

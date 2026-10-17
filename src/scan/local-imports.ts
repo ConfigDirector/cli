@@ -1,16 +1,19 @@
 import { readdir } from "node:fs/promises";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, relative, sep } from "node:path";
 import { fileExists, readFileIfPresent } from "../file-contents.js";
 import { plainStringContent } from "./literals.js";
 import { NearestDeclarations } from "./nearest-declarations.js";
 import { PathAliases } from "./path-aliases.js";
-import type { SourceCode } from "./source-code.js";
+import { readFileWithinSizeLimit } from "./scanned-files.js";
+import { SourceCode } from "./source-code.js";
 
 type PythonImport = { level: number; modulePath: string[]; names: string[] };
 
 type DartPackage = { root: string; name: string };
 
 type GoModule = { root: string; path: string };
+
+type SwiftProject = { kind: "swiftPackage" | "xcodeProject"; root: string };
 
 const JAVASCRIPT_SOURCE_EXTENSIONS = [
   ".ts",
@@ -35,6 +38,9 @@ const DART_PACKAGE_SCHEME = "package:";
 const DART_LIBRARY_SCHEME = "dart:";
 const DART_IMPORT_DIRECTIVES = ["import", "export", "part"];
 const DART_RE_EXPORT_DIRECTIVES = ["export"];
+const SWIFT_PACKAGE_MANIFEST = "Package.swift";
+const SWIFT_PACKAGE_TARGETS_DIRECTORIES = ["Sources", "Tests"];
+const XCODE_PROJECT_EXTENSION = ".xcodeproj";
 
 const stringAt = (code: SourceCode, index: number): string | undefined =>
   code.token(index)?.kind === "string" ? plainStringContent(code, { first: index, last: index }) : undefined;
@@ -244,16 +250,48 @@ const goImportPaths = (code: SourceCode): string[] =>
     return paths;
   });
 
+const swiftProjectDeclaredIn = async (directory: string): Promise<SwiftProject | undefined> => {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  if (entries.some((entry) => entry.isFile() && entry.name === SWIFT_PACKAGE_MANIFEST)) {
+    return { kind: "swiftPackage", root: directory };
+  }
+  return entries.some((entry) => entry.isDirectory() && extname(entry.name) === XCODE_PROJECT_EXTENSION)
+    ? { kind: "xcodeProject", root: directory }
+    : undefined;
+};
+
+const swiftPackageTargetOf = (packageRoot: string, directory: string): string => {
+  const [targetsDirectory, targetName] = relative(packageRoot, directory).split(sep);
+  if (targetsDirectory === undefined || !SWIFT_PACKAGE_TARGETS_DIRECTORIES.includes(targetsDirectory)) {
+    return packageRoot;
+  }
+  return targetName === undefined
+    ? join(packageRoot, targetsDirectory)
+    : join(packageRoot, targetsDirectory, targetName);
+};
+
+const goPackageNameIn = (code: SourceCode): string | undefined => {
+  const name = code.token(1);
+  return code.isIdentifier(0, "package") && name?.kind === "identifier" ? name.text : undefined;
+};
+
+const goPackageNameOfFile = async (file: string): Promise<string | undefined> => {
+  const contents = await readFileWithinSizeLimit(file);
+  return contents === undefined ? undefined : goPackageNameIn(new SourceCode(contents, "go"));
+};
+
 export class LocalImports {
   private readonly dartPackages: NearestDeclarations<DartPackage>;
   private readonly goModules: NearestDeclarations<GoModule>;
+  private readonly swiftProjects: NearestDeclarations<SwiftProject>;
   private readonly pathAliases: PathAliases;
-  private readonly goPackageFiles = new Map<string, Promise<string[]>>();
+  private readonly goFilesOfDirectory = new Map<string, Promise<string[]>>();
   private readonly fileExistence = new Map<string, Promise<boolean>>();
 
   constructor(private readonly highestDirectory: string) {
     this.dartPackages = new NearestDeclarations(highestDirectory, dartPackageDeclaredIn);
     this.goModules = new NearestDeclarations(highestDirectory, goModuleDeclaredIn);
+    this.swiftProjects = new NearestDeclarations(highestDirectory, swiftProjectDeclaredIn);
     this.pathAliases = new PathAliases(highestDirectory);
   }
 
@@ -268,6 +306,22 @@ export class LocalImports {
       case "go":
         return this.goFilesImportedBy(code, file);
       case "swift":
+      case "kotlin":
+      case "java":
+      case "csharp":
+        return Promise.resolve([]);
+    }
+  }
+
+  public filesOfSamePackageOrTarget(code: SourceCode, file: string): Promise<string[]> {
+    switch (code.language) {
+      case "go":
+        return this.goFilesOfSamePackage(code, file);
+      case "swift":
+        return this.swiftFilesOfSameTarget(file);
+      case "javascript":
+      case "python":
+      case "dart":
       case "kotlin":
       case "java":
       case "csharp":
@@ -383,8 +437,54 @@ export class LocalImports {
     return (await Promise.all(packageDirectories.map((directory) => this.goFilesIn(directory)))).flat();
   }
 
+  private async goFilesOfSamePackage(code: SourceCode, file: string): Promise<string[]> {
+    const packageName = goPackageNameIn(code);
+    if (packageName === undefined) {
+      return [];
+    }
+    const files = await this.goFilesIn(dirname(file));
+    const packageNames = await Promise.all(files.map(goPackageNameOfFile));
+    return files.filter((_file, index) => packageNames[index] === packageName);
+  }
+
+  private async swiftFilesOfSameTarget(file: string): Promise<string[]> {
+    const target = await this.swiftTargetOfDirectory(dirname(file));
+    return this.swiftFilesOfTargetIn(target, target);
+  }
+
+  private async swiftFilesOfTargetIn(target: string, directory: string): Promise<string[]> {
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    const files = entries
+      .filter((entry) => entry.isFile() && extname(entry.name) === ".swift")
+      .map((entry) => join(directory, entry.name));
+    const filesOfSubdirectories = await Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory())
+        .map(async (entry) => {
+          const subdirectory = join(directory, entry.name);
+          return (await this.swiftTargetOfDirectory(subdirectory)) === target
+            ? this.swiftFilesOfTargetIn(target, subdirectory)
+            : [];
+        }),
+    );
+    return [...files, ...filesOfSubdirectories.flat()];
+  }
+
+  private async swiftTargetOfDirectory(directory: string): Promise<string> {
+    const project = await this.swiftProjects.declarationAtOrAbove(directory);
+    if (project === undefined) {
+      return directory;
+    }
+    switch (project.kind) {
+      case "swiftPackage":
+        return swiftPackageTargetOf(project.root, directory);
+      case "xcodeProject":
+        return project.root;
+    }
+  }
+
   private goFilesIn(directory: string): Promise<string[]> {
-    const filesListedBefore = this.goPackageFiles.get(directory);
+    const filesListedBefore = this.goFilesOfDirectory.get(directory);
     if (filesListedBefore !== undefined) {
       return filesListedBefore;
     }
@@ -395,7 +495,7 @@ export class LocalImports {
           .map((entry) => join(directory, entry.name)),
       () => [],
     );
-    this.goPackageFiles.set(directory, files);
+    this.goFilesOfDirectory.set(directory, files);
     return files;
   }
 }

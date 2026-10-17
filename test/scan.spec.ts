@@ -351,6 +351,54 @@ describe("scan local imports", () => {
   const callsThroughLocalClient = (specifier: string) =>
     [`import { client } from "${specifier}";`, "", 'client.getValue("new-checkout", false);', ""].join("\n");
 
+  const swiftPackageManifest = [
+    "// swift-tools-version: 5.9",
+    "import PackageDescription",
+    "",
+    "let package = Package(",
+    '    name: "Shop",',
+    "    dependencies: [",
+    '        .package(url: "https://github.com/ConfigDirector/configdirector-swift-sdk", from: "1.8.0"),',
+    "    ],",
+    "    targets: [",
+    "        .target(",
+    '            name: "Shop",',
+    '            dependencies: [.product(name: "ConfigDirector", package: "configdirector-swift-sdk")]',
+    "        ),",
+    "    ]",
+    ")",
+    "",
+  ].join("\n");
+
+  const swiftClientSetup = [
+    "import ConfigDirector",
+    "",
+    'let client = try ConfigDirectorClient(clientSDKKey: "YOUR-CLIENT-SDK-KEY")',
+    "",
+    "await client.initialize()",
+    "",
+  ].join("\n");
+
+  const xcodeProjectFile = "// !$*UTF8*$!\n{\n\tarchiveVersion = 1;\n}\n";
+
+  const goPackageDeclaringClient = [
+    "package shop",
+    "",
+    'import "github.com/ConfigDirector/go-sdks/configdirector"',
+    "",
+    "var Client *configdirector.Client",
+    "",
+  ].join("\n");
+
+  const swiftCallThroughClientOfTarget = [
+    "import SwiftUI",
+    "",
+    "struct ContentView: View {",
+    '    let newCheckout = client.value(for: "new-checkout", default: false)',
+    "}",
+    "",
+  ].join("\n");
+
   it("finds the SDK calls of a file that imports the client from a local setup module, as the docs show", async () => {
     const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
@@ -1552,6 +1600,352 @@ describe("scan local imports", () => {
 
     expect(exitCode).toEqual(0);
     expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "cmd/shop/main.go", "go"]]);
+  });
+
+  it("finds the Swift SDK calls of a file that uses the client declared in another file of its package target, as the docs show", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Package.swift", swiftPackageManifest);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/Shop/ConfigDirectorSetup.swift",
+      [
+        "import ConfigDirector",
+        "",
+        "// Creating the client makes no network calls. It throws only when the SDK key is",
+        "// blank or a custom base URL is invalid.",
+        'let client = try ConfigDirectorClient(clientSDKKey: "YOUR-CLIENT-SDK-KEY")',
+        "",
+        "// Connects and waits until config values are received, or until it times out.",
+        "// After a timeout the client keeps trying to connect in the background.",
+        "await client.initialize()",
+        "",
+      ].join("\n"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/Shop/ContentView.swift",
+      [
+        "// Retrieve the current value. The default value decides the type the config",
+        "// is read as, and is returned until the client is ready.",
+        'let darkMode = client.value(for: "my-config-key", default: false)',
+        "",
+        "// Subscribe to value updates. The stream yields the current value right away",
+        "// and then every time the evaluated value changes.",
+        'for await darkMode in client.values(for: "my-config-key", default: false) {',
+        '    print("Value updated: \\(darkMode)")',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(
+      output.references.map((reference: { file: string; line: number; call: string; sdk: string }) => [
+        reference.file,
+        reference.line,
+        reference.call,
+        reference.sdk,
+      ]),
+    ).toEqual([
+      ["Sources/Shop/ContentView.swift", 3, "value", "swift"],
+      ["Sources/Shop/ContentView.swift", 7, "values", "swift"],
+    ]);
+  });
+
+  it("finds the Swift SDK calls of a file in a subdirectory of the package target whose other subdirectory declares the client", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Package.swift", swiftPackageManifest);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/Shop/Setup/ConfigDirectorSetup.swift",
+      swiftClientSetup,
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/Shop/Views/ContentView.swift",
+      swiftCallThroughClientOfTarget,
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "Sources/Shop/Views/ContentView.swift", "swift"],
+    ]);
+  });
+
+  it("finds the Swift SDK calls of a file that uses the client declared in another file of its Xcode project", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop.xcodeproj/project.pbxproj", xcodeProjectFile);
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop/ConfigDirectorSetup.swift", swiftClientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Shop/Views/ContentView.swift",
+      swiftCallThroughClientOfTarget,
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "Shop/Views/ContentView.swift", "swift"],
+    ]);
+  });
+
+  it("skips a Swift SDK look-alike call in a package target where no file imports ConfigDirector, even when another target of the package does", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Package.swift", swiftPackageManifest);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/ShopFlags/ConfigDirectorSetup.swift",
+      swiftClientSetup,
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/Shop/ContentView.swift",
+      swiftCallThroughClientOfTarget,
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a Swift SDK look-alike call in a package target where no file imports ConfigDirector, when the package directory also holds an Xcode project", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Package.swift", swiftPackageManifest);
+    await writeRepositoryFile(sandbox.workingDirectory, "Shop.xcodeproj/project.pbxproj", xcodeProjectFile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/ShopFlags/ConfigDirectorSetup.swift",
+      swiftClientSetup,
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/Shop/ContentView.swift",
+      swiftCallThroughClientOfTarget,
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("finds the Swift SDK calls of a file next to the file declaring the client when no Package.swift or Xcode project is above them", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "App/ConfigDirectorSetup.swift", swiftClientSetup);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "App/ContentView.swift",
+      swiftCallThroughClientOfTarget,
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "App/ContentView.swift", "swift"]]);
+  });
+
+  it("finds the OpenFeature Swift calls of a file that uses the client declared in another file of its target", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Package.swift", swiftPackageManifest);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/Shop/ConfigDirectorSetup.swift",
+      [
+        "import ConfigDirectorOpenFeatureProvider",
+        "import OpenFeature",
+        "",
+        'let provider = try ConfigDirectorProvider(clientSDKKey: "YOUR-CLIENT-SDK-KEY")',
+        "let client = OpenFeatureAPI.shared.getClient()",
+        "",
+      ].join("\n"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/Shop/Views/ContentView.swift",
+      [
+        "import SwiftUI",
+        "",
+        "struct ContentView: View {",
+        '    let newCheckout = client.getBooleanValue(key: "new-checkout", defaultValue: false)',
+        '    let theme = preferences.value(for: "theme-name", default: "light")',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "Sources/Shop/Views/ContentView.swift", "openfeature-swift"],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("finds the Swift SDK calls of a file whose target declares the client in a file outside the scanned directory", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Package.swift", swiftPackageManifest);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/Shop/ConfigDirectorSetup.swift",
+      swiftClientSetup,
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Sources/Shop/Views/ContentView.swift",
+      swiftCallThroughClientOfTarget,
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl, ["Sources/Shop/Views"]);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "Sources/Shop/Views/ContentView.swift", "swift"],
+    ]);
+  });
+
+  it("finds the Go SDK calls of a file that uses the client declared in another file of its package, without a go.mod", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "main.go",
+      [
+        "package main",
+        "",
+        'import "github.com/ConfigDirector/go-sdks/configdirector"',
+        "",
+        "var client *configdirector.Client",
+        "",
+        "func currentUser() configdirector.UserContext {",
+        '\treturn configdirector.UserContext{ID: "user-id"}',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "handlers.go",
+      [
+        "package main",
+        "",
+        "func newCheckout() bool {",
+        "\tuser := currentUser()",
+        '\treturn client.BoolValue("new-checkout", false, user)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "handlers.go", "go"]]);
+  });
+
+  it("finds the OpenFeature Go calls of a file that uses the client declared in another file of its package", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "main.go",
+      [
+        "package main",
+        "",
+        'import "github.com/open-feature/go-sdk/openfeature"',
+        "",
+        'var client = openfeature.NewClient("my-app")',
+        "",
+        "var evaluationContext = openfeature.EvaluationContext{}",
+        "",
+      ].join("\n"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "handlers.go",
+      [
+        "package main",
+        "",
+        'import "context"',
+        "",
+        "func newCheckout(ctx context.Context) bool {",
+        '\treturn client.Boolean(ctx, "new-checkout", false, evaluationContext)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "handlers.go", "openfeature-go"]]);
+  });
+
+  it("skips a Go SDK look-alike call in an external test package next to the package that declares the client", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "shop/shop.go", goPackageDeclaringClient);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "shop/settings_test.go",
+      [
+        "package shop_test",
+        "",
+        'import "testing"',
+        "",
+        "func TestTheme(t *testing.T) {",
+        '\ttheme := settings.StringValue("theme-name", "light", user)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a Go SDK look-alike call in another directory that does not import the package declaring the client", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "go.mod", "module example.com/shop\n\ngo 1.24\n");
+    await writeRepositoryFile(sandbox.workingDirectory, "shop/shop.go", goPackageDeclaringClient);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "shop/admin/settings.go",
+      [
+        "package shop",
+        "",
+        "func theme() string {",
+        '\treturn settings.StringValue("theme-name", "light", user)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
   });
 });
 

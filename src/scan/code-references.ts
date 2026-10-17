@@ -38,7 +38,7 @@ type KnownKeyTextMatch = {
 
 type FileMatch = SdkCallMatch | KnownKeyTextMatch;
 
-type ImportedFile =
+type ReachedFile =
   { kind: "marked"; families: SdkFamily[] } | { kind: "unmarked"; reExportedFiles: string[] };
 
 type ScanMatch = FileMatch & { file: string };
@@ -123,7 +123,7 @@ const callsAnyOf = (code: SourceCode, families: readonly SdkFamily[]): boolean =
 const familiesOfExtension = (extension: SourceExtension): SdkFamily[] =>
   allSdkFamilies.filter((family) => sdkFamilies[family].extensions.includes(extension));
 
-const readImportedFile = async (path: string, localImports: LocalImports): Promise<ImportedFile> => {
+const readReachedFile = async (path: string, localImports: LocalImports): Promise<ReachedFile> => {
   const extension = extname(path);
   const contents = await readFileWithinSizeLimit(path);
   if (contents === undefined || !isSourceExtension(extension)) {
@@ -145,20 +145,21 @@ const readImportedFile = async (path: string, localImports: LocalImports): Promi
 const sdkFamiliesUsedIn = (highestDirectory: string) => {
   const projectAreas = new ProjectAreas(highestDirectory);
   const localImports = new LocalImports(highestDirectory);
-  const importedFileOfPath = new Map<string, Promise<ImportedFile>>();
+  const reachedFileOfPath = new Map<string, Promise<ReachedFile>>();
+  const familiesMarkedInPackageOrTargetOfFile = new Map<string, Promise<SdkFamily[]>>();
 
-  const importedFile = (path: string): Promise<ImportedFile> => {
-    const importedFileReadBefore = importedFileOfPath.get(path);
-    if (importedFileReadBefore !== undefined) {
-      return importedFileReadBefore;
+  const reachedFileAt = (path: string): Promise<ReachedFile> => {
+    const reachedFileReadBefore = reachedFileOfPath.get(path);
+    if (reachedFileReadBefore !== undefined) {
+      return reachedFileReadBefore;
     }
-    const importedFileRead = readImportedFile(path, localImports);
-    importedFileOfPath.set(path, importedFileRead);
-    return importedFileRead;
+    const reachedFileRead = readReachedFile(path, localImports);
+    reachedFileOfPath.set(path, reachedFileRead);
+    return reachedFileRead;
   };
 
   const familiesReachedThrough = async (path: string, reExportStepsLeft: number): Promise<SdkFamily[]> => {
-    const reachedFile = await importedFile(path);
+    const reachedFile = await reachedFileAt(path);
     switch (reachedFile.kind) {
       case "marked":
         return reachedFile.families;
@@ -182,17 +183,42 @@ const sdkFamiliesUsedIn = (highestDirectory: string) => {
     return reachedFamilies.flat();
   };
 
+  const familiesMarkedInSamePackageOrTarget = async (
+    file: ScannedFile,
+    code: SourceCode,
+  ): Promise<SdkFamily[]> => {
+    const familiesFoundBefore = familiesMarkedInPackageOrTargetOfFile.get(file.path);
+    if (familiesFoundBefore !== undefined) {
+      return familiesFoundBefore;
+    }
+    const filesOfPackageOrTarget = await localImports.filesOfSamePackageOrTarget(code, file.path);
+    const families = Promise.all(
+      filesOfPackageOrTarget.map((fileOfPackageOrTarget) =>
+        familiesReachedThrough(fileOfPackageOrTarget, RE_EXPORT_STEPS_FOLLOWED),
+      ),
+    ).then((familiesOfFiles) => familiesOfFiles.flat());
+    for (const fileOfPackageOrTarget of filesOfPackageOrTarget) {
+      familiesMarkedInPackageOrTargetOfFile.set(fileOfPackageOrTarget, families);
+    }
+    return families;
+  };
+
+  const familiesMarkedByOtherFiles = async (file: ScannedFile, code: SourceCode): Promise<SdkFamily[]> => [
+    ...(await familiesMarkedThroughImports(file, code)),
+    ...(await familiesMarkedInSamePackageOrTarget(file, code)),
+  ];
+
   return async (file: ScannedFile, code: SourceCode): Promise<SdkFamily[]> => {
     const familiesForExtension = familiesOfExtension(file.extension);
     const markedHere = familiesWithMarkerIn(file.contents, familiesForExtension);
     const unmarkedFamilies = familiesForExtension.filter((family) => !markedHere.includes(family));
-    const markedThroughImports = callsAnyOf(code, unmarkedFamilies)
-      ? await familiesMarkedThroughImports(file, code)
+    const markedByOtherFiles = callsAnyOf(code, unmarkedFamilies)
+      ? await familiesMarkedByOtherFiles(file, code)
       : [];
     const usedFamilies: SdkFamily[] = [];
     for (const family of familiesForExtension) {
       const requiredArea = sdkFamilies[family].projectArea;
-      const isMarked = markedHere.includes(family) || markedThroughImports.includes(family);
+      const isMarked = markedHere.includes(family) || markedByOtherFiles.includes(family);
       if (isMarked && (requiredArea === undefined || (await projectAreas.contain(requiredArea, file.path)))) {
         usedFamilies.push(family);
       }
