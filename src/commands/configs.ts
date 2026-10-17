@@ -6,12 +6,14 @@ import type {
   ListedConfig,
   Project,
 } from "../admin-api/AdminApiClient.js";
-import { ifPermitted } from "../admin-api/admin-api-errors.js";
+import { ApiValidationError, ifPermitted } from "../admin-api/admin-api-errors.js";
+import type { CreateConfigRequest, CreatedConfig } from "../admin-api/config-creation.js";
 import type { ConfigWithTargetingRules } from "../admin-api/config-with-targeting-rules.js";
 import { alignedColumns } from "../aligned-columns.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
-import { configText } from "../configs/config-text.js";
+import { availabilityDescription, configText } from "../configs/config-text.js";
+import { newConfigOf, type NewConfig, type NewConfigOptions } from "../configs/new-config.js";
 import { ExitCode } from "../ExitCode.js";
 import { connectToLinkedProject } from "../project-selection.js";
 import type { SegmentsById } from "../rule-sentences.js";
@@ -30,6 +32,14 @@ const tagIdNamed = async (client: AdminApiClient, project: Project, name: string
   return tag.id;
 };
 
+const tagIdsNamed = async (client: AdminApiClient, project: Project, names: string[]): Promise<string[]> => {
+  const tagIds: string[] = [];
+  for (const name of names) {
+    tagIds.push(await tagIdNamed(client, project, name));
+  }
+  return tagIds;
+};
+
 const tagFilterOf = async (
   client: AdminApiClient,
   project: Project,
@@ -41,11 +51,7 @@ const tagFilterOf = async (
   if (options.tag === undefined) {
     return { form: "every-config" };
   }
-  const tagIds: string[] = [];
-  for (const name of options.tag) {
-    tagIds.push(await tagIdNamed(client, project, name));
-  }
-  return { form: "tagged", tagIds };
+  return { form: "tagged", tagIds: await tagIdsNamed(client, project, options.tag) };
 };
 
 const configsInState = (listedConfigs: ListedConfig[], state: LifecycleState | undefined): ListedConfig[] =>
@@ -53,12 +59,20 @@ const configsInState = (listedConfigs: ListedConfig[], state: LifecycleState | u
     ? listedConfigs
     : listedConfigs.filter((listedConfig) => listedConfig.config.state === state);
 
+type ConfigSummary = Pick<Config, "key" | "type" | "role" | "lifetime" | "state">;
+
+const summaryColumnsOf = (config: ConfigSummary): string[] => [
+  config.key,
+  config.type,
+  config.role,
+  config.lifetime,
+  config.state,
+];
+
 const configLines = (projectSlug: string, configs: Config[]): string[] =>
   configs.length === 0
     ? [`No configs found in ${projectSlug}.`]
-    : alignedColumns(
-        configs.map((config) => [config.key, config.type, config.role, config.lifetime, config.state]),
-      );
+    : alignedColumns(configs.map(summaryColumnsOf));
 
 export const listConfigs = async (
   context: CommandContext,
@@ -120,6 +134,89 @@ export const getConfig = async (
     text: configText(config, configKey, await segmentNamesFor(client, project, config)),
     exitCode: ExitCode.success,
   };
+};
+
+const createdConfigLines = (projectSlug: string, createdConfig: CreatedConfig, newConfig: NewConfig) => {
+  const settings = [
+    createdConfig.type,
+    createdConfig.role,
+    createdConfig.lifetime,
+    availabilityDescription(createdConfig),
+  ];
+  return [
+    `Created ${createdConfig.key} in ${projectSlug}: ${settings.join(", ")}.`,
+    `Default targeting rule in every environment: ${String(newConfig.defaultValue)}`,
+  ];
+};
+
+const keyTakenLines = (projectSlug: string, configKey: string, existingConfig: ConfigSummary) => [
+  `${projectSlug} already has a config with the key ${configKey}, so no config was created:`,
+  ...alignedColumns([summaryColumnsOf(existingConfig)]),
+];
+
+type CreationOutcome =
+  | { outcome: "created"; createdConfig: CreatedConfig; responseBody: unknown }
+  | { outcome: "key-taken"; existingConfig: ConfigWithTargetingRules; responseBody: unknown };
+
+const rejectsKey = (error: unknown): boolean =>
+  error instanceof ApiValidationError && error.fieldErrors.some((fieldError) => fieldError.name === "key");
+
+const requestCreation = async (
+  client: AdminApiClient,
+  project: Project,
+  request: CreateConfigRequest,
+): Promise<CreationOutcome> => {
+  try {
+    const { parsedBody: createdConfig, responseBody } = await client.createConfig(project.id, request);
+    return { outcome: "created", createdConfig, responseBody };
+  } catch (error) {
+    if (!rejectsKey(error)) {
+      throw error;
+    }
+    const existingConfig = await client.getConfig(project.id, request.key);
+    if (existingConfig === undefined) {
+      throw error;
+    }
+    return {
+      outcome: "key-taken",
+      existingConfig: existingConfig.parsedBody,
+      responseBody: existingConfig.responseBody,
+    };
+  }
+};
+
+const creationOutput = (project: Project, newConfig: NewConfig, creation: CreationOutcome): CommandOutput => {
+  switch (creation.outcome) {
+    case "created":
+      return {
+        json: creation.responseBody,
+        text: [...createdConfigLines(project.slug, creation.createdConfig, newConfig), ""].join("\n"),
+        exitCode: ExitCode.success,
+      };
+    case "key-taken":
+      return {
+        json: creation.responseBody,
+        text: [...keyTakenLines(project.slug, newConfig.key, creation.existingConfig), ""].join("\n"),
+        exitCode: ExitCode.problemsFound,
+      };
+  }
+};
+
+type CreateConfigOptions = NewConfigOptions & { tag?: string[] };
+
+export const createConfig = async (
+  context: CommandContext,
+  _commandArguments: readonly [],
+  options: CreateConfigOptions,
+): Promise<CommandOutput> => {
+  const newConfig = await newConfigOf(options, context.invocation.workingDirectory);
+  const { client, project } = await connectToLinkedProject(context);
+  const creation = await requestCreation(client, project, {
+    ...newConfig,
+    tagIds: await tagIdsNamed(client, project, options.tag ?? []),
+  });
+
+  return creationOutput(project, newConfig, creation);
 };
 
 type LatestEvaluation = ConfigActivity["latestEvaluations"][number];

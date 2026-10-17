@@ -1,7 +1,6 @@
-import { resolve } from "node:path";
 import type { SavedContextReference } from "../admin-api/config-evaluation.js";
 import { CliError } from "../CliError.js";
-import { parseJson, readFileIfPresent } from "../file-contents.js";
+import { atFileArgumentText, parseJson } from "../file-contents.js";
 
 export type ContextOptions = {
   contextKind?: string;
@@ -59,22 +58,8 @@ const contextJsonUsageError = () =>
 const isJsonObject = (value: unknown): value is object =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const CONTEXT_FILE_MARKER = "@";
-
-const contextJsonText = async (contextJson: string, workingDirectory: string): Promise<string> => {
-  if (!contextJson.startsWith(CONTEXT_FILE_MARKER)) {
-    return contextJson;
-  }
-  const file = resolve(workingDirectory, contextJson.slice(CONTEXT_FILE_MARKER.length));
-  const contents = await readFileIfPresent(file);
-  if (contents === undefined) {
-    throw new CliError(`--context-json names ${file}, which does not exist.`);
-  }
-  return contents;
-};
-
 const contextOfJson = async (contextJson: string, workingDirectory: string): Promise<object> => {
-  const context = parseJson(await contextJsonText(contextJson, workingDirectory));
+  const context = parseJson(await atFileArgumentText("--context-json", contextJson, workingDirectory));
   if (!isJsonObject(context)) {
     throw contextJsonUsageError();
   }

@@ -42,9 +42,9 @@ export const ifPermitted = async <Result>(request: Promise<Result>): Promise<Res
 };
 
 export class ApiValidationError extends CliError {
-  constructor(errors: FieldError[]) {
+  constructor(public readonly fieldErrors: FieldError[]) {
     super(
-      `The Admin API rejected the request:\n${errors.map((error) => `  ${describeFieldError(error)}`).join("\n")}`,
+      `The Admin API rejected the request:\n${fieldErrors.map((error) => `  ${describeFieldError(error)}`).join("\n")}`,
     );
   }
 }

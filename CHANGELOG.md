@@ -4,6 +4,15 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.4.0-beta.1] - 2026-10-17
+
+### Added
+
+- `configdirector configs create` creates a config from options that match the Admin API's fields one to one, with no guessing and no prompts. `--key`, `--type`, `--role`, `--lifetime` and `--default-value` are required; `--default-value` is the default targeting rule value every environment starts with, not the in-code default value. `--description`, `--client-only` or `--server-only` (client and server SDKs without either), `--tag <name>`, repeatable, naming an existing tag, and `--variation <name=value>`, repeatable, for an experiment, are optional.
+- The values of `--default-value` and `--variation` are read in the config's type: `true` or `false`, a number, text, or JSON for a JSON config, with `@file` reading the JSON from a file. A value that does not fit the type is a usage error, and nothing is sent.
+- Constraint options, each accepted only by its types: `--min` and `--max`, which a value may equal, for an integer, float or timespan; `--exclusive-min` and `--exclusive-max` for an integer or float; `--unit` and `--allow-fractions` for a timespan, which needs `--unit`, `--min` and `--max`; `--allowed-value`, repeatable, and `--enum-value-type string|number` (default `string`) for an enum; `--https-only` for a URL, without which any HTTP or HTTPS URL is accepted; and `--json-schema <file>` for a JSON config. An option of another type is a usage error naming the types it belongs to. A timespan without `--unit`, `--min` or `--max` is a usage error too. `configs create --help` lists them grouped by type.
+- `configs create` prints the created config's key, type, role, lifetime and availability, and the default targeting rule value every environment starts with; `--json` prints the created config as received. When the project already has a config with the key, nothing is created: it prints that config's key, type, role, lifetime and lifecycle state and exits with 1, and `--json` prints that config as received. Any other refusal exits with 2 and lists the Admin API's reasons. It needs `projects:read`, `configs:create` and `configs:read`, and `tags:read` and `config-settings:update` for `--tag`. The config shows in the audit log with the source CLI.
+
 ## [0.3.0-beta.1] - 2026-10-17
 
 ### Added

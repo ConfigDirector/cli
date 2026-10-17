@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
-import { projectPath, requestLinesOf, startBrowseAdminApi } from "./support/browse-admin-api.js";
+import {
+  checkoutTag,
+  projectPath,
+  requestLinesOf,
+  startBrowseAdminApi,
+  webTeamTag,
+} from "./support/browse-admin-api.js";
 import { productionEnvironment, testEnvironment } from "./support/evaluate-admin-api.js";
 import { createSandbox } from "./support/sandbox.js";
 import { projectConfig, webApp } from "./support/scan-admin-api.js";
@@ -34,18 +40,6 @@ const maxCartItems = projectConfig("max-cart-items", [], {
 });
 
 const legacyBanner = projectConfig("legacy-banner", [], { state: "archive-ready" });
-
-const tagNamed = (id: string, name: string) => ({
-  id,
-  projectId: webApp.id,
-  name,
-  createdAt: "2026-09-01T10:00:00.000Z",
-  updatedAt: "2026-09-01T10:00:00.000Z",
-});
-
-const checkoutTag = tagNamed("5a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "checkout");
-
-const webTeamTag = tagNamed("6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e", "Web team");
 
 describe("configs list", () => {
   it("prints one line per config with its key, type, role, lifetime and lifecycle state", async () => {

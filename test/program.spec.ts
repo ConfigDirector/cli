@@ -8,6 +8,15 @@ const packageVersion = async () => {
   return packageJson.version as string;
 };
 
+const optionNamesUnder = (help: string, heading: string): string[] => {
+  const lines = help.split("\n");
+  const firstOptionLine = lines.indexOf(heading) + 1;
+  return lines
+    .slice(firstOptionLine, lines.indexOf("", firstOptionLine))
+    .map((line) => line.trim().split(" ")[0] ?? "")
+    .filter((word) => word.startsWith("--"));
+};
+
 describe("program", () => {
   it("prints the package version for --version", async () => {
     const sandbox = await createSandbox();
@@ -99,7 +108,7 @@ describe("program", () => {
     expect(help).toContain("Beta: commands and output may change before 1.0.");
   });
 
-  it("lists the list, get and activity verbs with the beta label in the help of configs", async () => {
+  it("lists the list, get, activity and create verbs with the beta label in the help of configs", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["configs", "--help"] });
 
@@ -108,9 +117,47 @@ describe("program", () => {
     const help = invocation.stdout.text();
     expect(exitCode).toEqual(0);
     expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toEqual(
-      expect.arrayContaining(["list", "get", "activity"]),
+      expect.arrayContaining(["list", "get", "activity", "create"]),
     );
     expect(help).toContain("Beta: commands and output may change before 1.0.");
+  });
+
+  it("groups the options of configs create by the types they apply to, with the beta label, in its help", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["configs", "create", "--help"] });
+
+    const exitCode = await run(invocation);
+
+    const help = invocation.stdout.text();
+    expect(exitCode).toEqual(0);
+    expect(optionNamesUnder(help, "Options for --type integer, float or timespan:")).toEqual([
+      "--min",
+      "--max",
+    ]);
+    expect(optionNamesUnder(help, "Options for --type integer or float:")).toEqual([
+      "--exclusive-min",
+      "--exclusive-max",
+    ]);
+    expect(optionNamesUnder(help, "Options for --type timespan:")).toEqual(["--unit", "--allow-fractions"]);
+    expect(optionNamesUnder(help, "Options for --type enum:")).toEqual([
+      "--allowed-value",
+      "--enum-value-type",
+    ]);
+    expect(optionNamesUnder(help, "Options for --type url:")).toEqual(["--https-only"]);
+    expect(optionNamesUnder(help, "Options for --type json:")).toEqual(["--json-schema"]);
+    expect(help).toContain("Beta: commands and output may change before 1.0.");
+  });
+
+  it("calls --default-value the default targeting rule value in the help of configs create", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["configs", "create", "--help"] });
+
+    const exitCode = await run(invocation);
+
+    expect(exitCode).toEqual(0);
+    expect(invocation.stdout.text().replace(/\s+/g, " ")).toContain(
+      "--default-value <value> the default targeting rule value every environment starts with",
+    );
   });
 
   it("lists the list and get verbs with the beta label in the help of segments", async () => {

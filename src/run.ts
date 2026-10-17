@@ -4,7 +4,13 @@ import { CliError } from "./CliError.js";
 import type { CommandContext, CommandOutput } from "./CommandContext.js";
 import { ExitCode } from "./ExitCode.js";
 import { nonEmptyVariable, type Invocation } from "./Invocation.js";
-import { getConfig, LIFECYCLE_STATES, listConfigs, showConfigActivity } from "./commands/configs.js";
+import {
+  createConfig,
+  getConfig,
+  LIFECYCLE_STATES,
+  listConfigs,
+  showConfigActivity,
+} from "./commands/configs.js";
 import { listEnvironments } from "./commands/environments.js";
 import { evaluate } from "./commands/evaluate.js";
 import { init } from "./commands/init.js";
@@ -13,6 +19,14 @@ import { listProjects } from "./commands/projects.js";
 import { scan } from "./commands/scan.js";
 import { getSegment, listSegments } from "./commands/segments.js";
 import { validate } from "./commands/validate.js";
+import {
+  CONFIG_LIFETIMES,
+  CONFIG_ROLES,
+  CONFIG_TYPES,
+  ENUM_VALUE_TYPES,
+  TIMESPAN_UNITS,
+  typeConstraintHelpGroup,
+} from "./configs/new-config.js";
 
 const DEFAULT_BASE_URL = "https://api.configdirector.com";
 
@@ -170,9 +184,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .description("list the project's environments with their slugs, marking the live ones")
     .action(commandAction(listEnvironments));
 
-  const configsCommand = program
-    .command("configs")
-    .description("list a project's configs and show one config");
+  const configsCommand = program.command("configs").description("list, show and create a project's configs");
 
   configsCommand
     .command("list")
@@ -203,6 +215,97 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
       "show when SDKs last evaluated a config, per environment, SDK key kind, SDK name and SDK version",
     )
     .action(commandAction(showConfigActivity));
+
+  configsCommand
+    .command("create")
+    .description("create a config from options that mirror the Admin API's fields")
+    .requiredOption("--key <key>", "the config's key (required)")
+    .option("--description <text>", "a description shown with the config in the dashboard")
+    .addOption(
+      new Option("--type <type>", "the type of the config's values (required)")
+        .choices(CONFIG_TYPES)
+        .makeOptionMandatory(),
+    )
+    .addOption(
+      new Option("--role <role>", "what the config is for (required)")
+        .choices(CONFIG_ROLES)
+        .makeOptionMandatory(),
+    )
+    .addOption(
+      new Option("--lifetime <lifetime>", "whether the config is expected to be removed (required)")
+        .choices(CONFIG_LIFETIMES)
+        .makeOptionMandatory(),
+    )
+    .requiredOption(
+      "--default-value <value>",
+      "the default targeting rule value every environment starts with, in the type given by --type; " +
+        "not the in-code default value an application passes to the SDK (required)",
+    )
+    .option("--client-only", "serve the config to client SDKs only (default: client and server SDKs)")
+    .addOption(
+      new Option(
+        "--server-only",
+        "serve the config to server SDKs only (default: client and server SDKs)",
+      ).conflicts("clientOnly"),
+    )
+    .option("--tag <name>", "assign the project's tag with this name; repeatable", repeatedOption)
+    .option(
+      "--variation <name=value>",
+      "a variation of an experiment, its value in the type given by --type; repeatable",
+      repeatedOption,
+    )
+    .addOption(
+      new Option("--min <number>", "the smallest value allowed, included").helpGroup(
+        typeConstraintHelpGroup("min"),
+      ),
+    )
+    .addOption(
+      new Option("--max <number>", "the largest value allowed, included").helpGroup(
+        typeConstraintHelpGroup("max"),
+      ),
+    )
+    .addOption(
+      new Option("--exclusive-min <number>", "values must be greater than this number")
+        .conflicts("min")
+        .helpGroup(typeConstraintHelpGroup("exclusiveMin")),
+    )
+    .addOption(
+      new Option("--exclusive-max <number>", "values must be less than this number")
+        .conflicts("max")
+        .helpGroup(typeConstraintHelpGroup("exclusiveMax")),
+    )
+    .addOption(
+      new Option("--unit <unit>", "the unit of the number the SDKs receive (required)")
+        .choices(TIMESPAN_UNITS)
+        .helpGroup(typeConstraintHelpGroup("unit")),
+    )
+    .addOption(
+      new Option("--allow-fractions", "allow values with a fraction of the unit").helpGroup(
+        typeConstraintHelpGroup("allowFractions"),
+      ),
+    )
+    .addOption(
+      new Option("--allowed-value <value>", "a value the config can take; repeatable")
+        .argParser(repeatedOption)
+        .helpGroup(typeConstraintHelpGroup("allowedValue")),
+    )
+    .addOption(
+      new Option(
+        "--enum-value-type <type>",
+        "whether the allowed values are strings or numbers (default: string)",
+      )
+        .choices(ENUM_VALUE_TYPES)
+        .helpGroup(typeConstraintHelpGroup("enumValueType")),
+    )
+    .addOption(
+      new Option("--https-only", "allow only HTTPS URLs").helpGroup(typeConstraintHelpGroup("httpsOnly")),
+    )
+    .addOption(
+      new Option("--json-schema <file>", "a file holding the JSON Schema every value must match").helpGroup(
+        typeConstraintHelpGroup("jsonSchema"),
+      ),
+    )
+    .action(commandAction(createConfig));
 
   const segmentsCommand = program
     .command("segments")

@@ -1,4 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
+import { resolve } from "node:path";
+import { CliError } from "./CliError.js";
 
 export const readFileIfPresent = async (file: string): Promise<string | undefined> => {
   try {
@@ -9,6 +11,33 @@ export const readFileIfPresent = async (file: string): Promise<string | undefine
     }
     throw error;
   }
+};
+
+export const readOptionFile = async (
+  argumentLabel: string,
+  path: string,
+  workingDirectory: string,
+): Promise<{ file: string; contents: string }> => {
+  const file = resolve(workingDirectory, path);
+  const contents = await readFileIfPresent(file);
+  if (contents === undefined) {
+    throw new CliError(`${argumentLabel} names ${file}, which does not exist.`);
+  }
+  return { file, contents };
+};
+
+const FILE_ARGUMENT_MARKER = "@";
+
+export const atFileArgumentText = async (
+  argumentLabel: string,
+  argument: string,
+  workingDirectory: string,
+): Promise<string> => {
+  if (!argument.startsWith(FILE_ARGUMENT_MARKER)) {
+    return argument;
+  }
+  const path = argument.slice(FILE_ARGUMENT_MARKER.length);
+  return (await readOptionFile(argumentLabel, path, workingDirectory)).contents;
 };
 
 export const parseJson = (contents: string): unknown => {

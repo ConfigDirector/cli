@@ -43,7 +43,7 @@ const typeConstraintDescriptions = (config: ConfigWithTargetingRules): string[] 
   }
 };
 
-const availabilityDescription = (config: ConfigWithTargetingRules): string => {
+export const availabilityDescription = (config: { client: boolean; server: boolean }): string => {
   if (config.client && config.server) {
     return "client and server SDKs";
   }

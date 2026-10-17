@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, and reads a project's environments, configs, targeting rules and segments.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, and creates configs.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
@@ -149,6 +149,33 @@ With `--json`, each prints the Admin API's response as received, except `configs
 
 `projects list` needs `projects:read`. The others need `projects:read` to find the project, and `environments list` needs `environments:read`, `configs list`, `configs get` and `configs activity` need `configs:read`, plus `tags:read` for `--tag`, and `segments list` and `segments get` need `segments:read`. Without `segments:read`, `configs get` shows a segment condition's segment ID instead of its name; without `environments:read`, `segments get` names an override's environment by its ID instead of its slug.
 
+## Create a config
+
+```bash
+configdirector configs create --key new-checkout --type boolean --role flag --lifetime temporary --default-value false
+```
+
+`configs create` creates a config from options that match the Admin API's fields one to one, with no guessing and no prompts:
+
+```txt
+Created new-checkout in web-app: boolean, flag, temporary, client and server SDKs.
+Default targeting rule in every environment: false
+```
+
+- `--key`, `--type` (`boolean`, `string`, `integer`, `float`, `timespan`, `enum`, `url` or `json`), `--role` (`config`, `flag`, `kill-switch` or `experiment`), `--lifetime` (`temporary` or `permanent`) and `--default-value` are required. `--default-value` is the default targeting rule value every environment starts with, not the in-code default value an application passes to the SDK.
+- `--description <text>`; `--client-only` or `--server-only`, without which client and server SDKs both receive the config; `--tag <name>`, repeatable, naming an existing tag of the project; and `--variation <name=value>`, repeatable, for an experiment's variations.
+- The values of `--default-value` and `--variation` are read in the config's type: `true` or `false`, a number for an integer, float or timespan, the text as written for a string, enum or URL, and JSON for a JSON config, with `@file` reading it from a file. A value that does not fit the type is a usage error.
+- Constraints, each accepted only by its types: `--min` and `--max` (a value may equal them) for an integer, float or timespan; `--exclusive-min` and `--exclusive-max` for an integer or float; `--unit` (`milliseconds`, `seconds` or `minutes`) and `--allow-fractions` for a timespan, which needs `--unit`, `--min` and `--max`; `--allowed-value`, repeatable, and `--enum-value-type string|number` (default `string`) for an enum; `--https-only` for a URL, without which any HTTP or HTTPS URL is accepted; and `--json-schema <file>` for a JSON config. An option of another type is a usage error naming the types it belongs to. A timespan without `--unit`, `--min` or `--max` is a usage error too.
+
+```bash
+configdirector configs create --key checkout-timeout --type timespan --role config --lifetime permanent \
+  --unit seconds --min 1 --max 120 --default-value 30 --server-only
+```
+
+When the project already has a config with the key, as its current key or an old one, nothing is created: the command prints that config's key, type, role, lifetime and lifecycle state, and exits with 1. When ConfigDirector refuses the config for another reason, it exits with 2 and lists the reasons. With `--json`, it prints the created config as received, or the existing config when the key is taken.
+
+`configs create` needs `projects:read`, `configs:create`, and `configs:read` to show the config that already has the key; `--tag` also needs `tags:read` and `config-settings:update`. The config shows in the audit log with the source CLI.
+
 ## Options
 
 | Option             | Environment variable      | Meaning                                                                                                       |
@@ -158,7 +185,7 @@ With `--json`, each prints the Admin API's response as received, except `configs
 | `--project <slug>` | `CONFIGDIRECTOR_PROJECT`  | Project slug. Without either, every command that reads a project uses the `project` in `configdirector.json`. |
 | `--json`           |                           | Print JSON on stdout. Errors always go to stderr.                                                             |
 
-The command exits with 0 when it succeeds, 1 when `validate` found a problem, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or something the command names that does not exist, such as a config key, an environment, a saved context, a segment key or a tag. A CI job can therefore tell a wrong config key from an outage.
+The command exits with 0 when it succeeds, 1 when `validate` found a problem or `configs create` found a config that already has the key, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or something the command names that does not exist, such as a config key, an environment, a saved context, a segment key or a tag. A CI job can therefore tell a wrong config key from an outage.
 
 ## License
 

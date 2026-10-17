@@ -13,6 +13,7 @@ import {
   ServiceSuspendedError,
   UnexpectedApiResponseError,
 } from "./admin-api-errors.js";
+import { CreatedConfigSchema, type CreateConfigRequest, type CreatedConfig } from "./config-creation.js";
 import {
   ConfigWithTargetingRulesSchema,
   type ConfigWithTargetingRules,
@@ -232,6 +233,16 @@ export class AdminApiClient {
         TagSchema,
       )
     )?.parsedBody;
+  }
+
+  public createConfig(
+    projectId: string,
+    request: CreateConfigRequest,
+  ): Promise<ParsedResponse<CreatedConfig>> {
+    return this.requestJson(`/v1/projects/${encodeURIComponent(projectId)}/configs`, CreatedConfigSchema, {
+      method: "POST",
+      body: request,
+    });
   }
 
   public async evaluateConfig(
