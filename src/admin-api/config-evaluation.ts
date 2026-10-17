@@ -1,4 +1,5 @@
 import * as v from "valibot";
+import { RuleSchema } from "./targeting-rules.js";
 
 export type SavedContextReference = { kind: string; identifier: string };
 
@@ -7,56 +8,6 @@ export type EvaluateConfigRequest = {
   context?: object;
   savedContext?: SavedContextReference;
 };
-
-const RuleValueSchema = v.union([v.string(), v.number(), v.boolean()]);
-
-const AttributeConditionSchema = v.object({
-  id: v.string(),
-  kind: v.literal("attribute"),
-  attribute: v.string(),
-  trait: v.nullish(v.string()),
-  operator: v.string(),
-  targetValues: v.array(v.unknown()),
-});
-
-export type AttributeCondition = v.InferOutput<typeof AttributeConditionSchema>;
-
-const SegmentConditionSchema = v.object({
-  id: v.string(),
-  kind: v.literal("segment"),
-  operator: v.string(),
-  segmentId: v.string(),
-});
-
-const ConditionSchema = v.variant("kind", [AttributeConditionSchema, SegmentConditionSchema]);
-
-export type Condition = v.InferOutput<typeof ConditionSchema>;
-
-const PercentageSchema = v.object({ percentage: v.number(), value: RuleValueSchema });
-
-export type Percentage = v.InferOutput<typeof PercentageSchema>;
-
-const RuleSchema = v.variant("type", [
-  v.variant("target", [
-    v.object({
-      id: v.string(),
-      type: v.literal("conditional"),
-      conditions: v.array(ConditionSchema),
-      target: v.literal("value"),
-      value: RuleValueSchema,
-    }),
-    v.object({
-      id: v.string(),
-      type: v.literal("conditional"),
-      conditions: v.array(ConditionSchema),
-      target: v.literal("percentage"),
-      percentages: v.array(PercentageSchema),
-    }),
-  ]),
-  v.object({ id: v.string(), type: v.literal("percentage"), percentages: v.array(PercentageSchema) }),
-]);
-
-export type Rule = v.InferOutput<typeof RuleSchema>;
 
 const CheckedOutcomeSchema = v.picklist(["matched", "not-matched"]);
 

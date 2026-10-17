@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, and shows the value a context gets for a config and why.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, and reads a project's environments, configs, targeting rules and segments.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
@@ -105,16 +105,60 @@ Without any of them, the config is evaluated for an empty context, as an SDK giv
 
 `evaluate` needs a token with `environments:read` as well as `projects:read` and `configs:read`, and `contexts:read` for `--saved-context`. Nothing is recorded: an evaluation from the CLI is not SDK activity.
 
+## Browse the project
+
+```bash
+configdirector projects list
+configdirector environments list
+configdirector configs list [--tag <name>] [--untagged] [--state <state>]
+configdirector configs get <key>
+configdirector configs activity <key>
+configdirector segments list
+configdirector segments get <key>
+```
+
+`projects list` lists your organization's projects with their slugs and names, whichever project is selected. The other commands read the project from `--project`, `CONFIGDIRECTOR_PROJECT` or `configdirector.json`, as `scan` does:
+
+- `environments list` lists the environments with their slugs and names, marking the live ones.
+- `configs list` lists the configs with their type, role, lifetime and lifecycle state. `--tag <name>`, repeatable, lists the configs that have any of the tags; `--untagged` lists the configs without tags and cannot be combined with `--tag`; `--state` lists the configs in one lifecycle state: `new`, `in-use`, `settled`, `archive-ready` or `stale`. A tag name no tag has exits with 2.
+- `configs get <key>` shows the config's settings, including its type's constraints, then each environment's targeting rules in order, written as `evaluate` writes them, with the default targeting rule value last. An old key works, and the output then starts with a line naming the current key.
+- `configs activity <key>` shows when SDKs last evaluated the config, one line per environment, SDK key kind, SDK name and SDK version, with the time in UTC.
+- `segments list` lists the segments with how many configs use each, and `segments get <key>` shows a segment's condition groups and its environment overrides.
+
+```txt
+new-checkout
+  Description: Shows the new checkout flow
+  Type: boolean
+  Role: flag
+  Lifetime: temporary
+  Availability: client and server SDKs
+  Lifecycle state: in-use
+  Tags: checkout
+
+test
+  Default targeting rule: false
+
+production (live)
+  1. plan is one of pro, team: true
+  2. 30% get true, 70% get false
+  3. in segment Beta testers: true
+  Default targeting rule: false
+```
+
+With `--json`, each prints the Admin API's response as received, except `configs list --state`, which prints only the configs in that state. A key no config or segment has exits with 2.
+
+`projects list` needs `projects:read`. The others need `projects:read` to find the project, and `environments list` needs `environments:read`, `configs list`, `configs get` and `configs activity` need `configs:read`, plus `tags:read` for `--tag`, and `segments list` and `segments get` need `segments:read`. Without `segments:read`, `configs get` shows a segment condition's segment ID instead of its name; without `environments:read`, `segments get` names an override's environment by its ID instead of its slug.
+
 ## Options
 
-| Option             | Environment variable      | Meaning                                                                                                     |
-| ------------------ | ------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `--token <token>`  | `CONFIGDIRECTOR_TOKEN`    | API token. Without either, the token saved by `login` is used.                                              |
-| `--base-url <url>` | `CONFIGDIRECTOR_BASE_URL` | API host. Defaults to `https://api.configdirector.com`.                                                     |
-| `--project <slug>` | `CONFIGDIRECTOR_PROJECT`  | Project slug. Without either, `scan`, `validate` and `evaluate` use the `project` in `configdirector.json`. |
-| `--json`           |                           | Print JSON on stdout. Errors always go to stderr.                                                           |
+| Option             | Environment variable      | Meaning                                                                                                       |
+| ------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `--token <token>`  | `CONFIGDIRECTOR_TOKEN`    | API token. Without either, the token saved by `login` is used.                                                |
+| `--base-url <url>` | `CONFIGDIRECTOR_BASE_URL` | API host. Defaults to `https://api.configdirector.com`.                                                       |
+| `--project <slug>` | `CONFIGDIRECTOR_PROJECT`  | Project slug. Without either, every command that reads a project uses the `project` in `configdirector.json`. |
+| `--json`           |                           | Print JSON on stdout. Errors always go to stderr.                                                             |
 
-The command exits with 0 when it succeeds, 1 when `validate` found a problem, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or for `evaluate`, a key, environment or saved context that does not exist. A CI job can therefore tell a wrong config key from an outage.
+The command exits with 0 when it succeeds, 1 when `validate` found a problem, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or something the command names that does not exist, such as a config key, an environment, a saved context, a segment key or a tag. A CI job can therefore tell a wrong config key from an outage.
 
 ## License
 

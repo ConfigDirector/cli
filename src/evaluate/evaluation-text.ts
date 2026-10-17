@@ -1,31 +1,17 @@
 import type {
-  AttributeCondition,
   AttributeConditionExplanation,
   Bucket,
-  Condition,
   ConfigEvaluation,
-  Percentage,
-  Rule,
   RuleExplanation,
   SegmentConditionExplanation,
 } from "../admin-api/config-evaluation.js";
+import type { Condition, Rule } from "../admin-api/targeting-rules.js";
+import { alignedColumns } from "../aligned-columns.js";
+import { oldKeyLines } from "../old-key-lines.js";
+import { describeCondition, describeRule, formatPercentage, type SegmentsById } from "../rule-sentences.js";
 import type { ContextForm } from "./context-form.js";
 
-type Segments = ConfigEvaluation["segments"];
-
 type CheckedConditionExplanation = AttributeConditionExplanation | SegmentConditionExplanation;
-
-const RULE_COLUMN_GAP = "   ";
-
-const TRAIT_POINTER_PREFIX = "/";
-
-const ATTRIBUTE_LABELS: Readonly<Record<string, string>> = {
-  identifier: "context identifier",
-  kind: "context kind",
-  name: "context name",
-  appName: "app name",
-  appVersion: "app version",
-};
 
 const RESOLVED_VALUE_DESCRIPTIONS: {
   [T in AttributeConditionExplanation["resolvedType"]]: (resolvedValue: unknown) => string;
@@ -36,8 +22,6 @@ const RESOLVED_VALUE_DESCRIPTIONS: {
   array: (resolvedValue) => JSON.stringify(resolvedValue),
   object: (resolvedValue) => JSON.stringify(resolvedValue),
 };
-
-const formatPercentage = (value: number): string => Number(value.toFixed(3)).toString();
 
 const contextDescription = (evaluation: ConfigEvaluation, contextForm: ContextForm): string => {
   const evaluatedContext = evaluation.context;
@@ -59,40 +43,6 @@ const servedByDescription = (evaluation: ConfigEvaluation): string => {
     case "default":
       return "served by the default targeting rule";
   }
-};
-
-const subjectOf = (condition: AttributeCondition): string => {
-  if (condition.attribute === "traits" && condition.trait != null) {
-    return condition.trait.startsWith(TRAIT_POINTER_PREFIX)
-      ? condition.trait.slice(TRAIT_POINTER_PREFIX.length)
-      : condition.trait;
-  }
-  return ATTRIBUTE_LABELS[condition.attribute] ?? condition.attribute;
-};
-
-const segmentNameOf = (segmentId: string, segments: Segments): string =>
-  segments[segmentId]?.name ?? segmentId;
-
-const describeCondition = (condition: Condition, segments: Segments): string => {
-  switch (condition.kind) {
-    case "attribute":
-      return `${subjectOf(condition)} ${condition.operator} ${condition.targetValues.map(String).join(", ")}`;
-    case "segment":
-      return `${condition.operator} segment ${segmentNameOf(condition.segmentId, segments)}`;
-  }
-};
-
-const describePercentages = (percentages: Percentage[]): string =>
-  percentages
-    .map((percentage) => `${formatPercentage(percentage.percentage)}% get ${String(percentage.value)}`)
-    .join(", ");
-
-const describeRule = (rule: Rule, segments: Segments): string => {
-  if (rule.type === "percentage") {
-    return describePercentages(rule.percentages);
-  }
-  const conditions = rule.conditions.map((condition) => describeCondition(condition, segments)).join(" and ");
-  return `${conditions}: ${rule.target === "value" ? String(rule.value) : describePercentages(rule.percentages)}`;
 };
 
 const describeShareRange = (from: number, to: number): string =>
@@ -143,7 +93,7 @@ const isFailingCondition = (
 const failingConditionDescription = (
   explanation: RuleExplanation,
   conditions: Condition[],
-  segments: Segments,
+  segments: SegmentsById,
 ): string | undefined => {
   const failingCondition = explanation.conditions.find(isFailingCondition);
   const condition = conditions.find((ruleCondition) => ruleCondition.id === failingCondition?.conditionId);
@@ -155,7 +105,7 @@ const failingConditionDescription = (
 const describeNotMatched = (
   explanation: RuleExplanation,
   conditions: Condition[],
-  segments: Segments,
+  segments: SegmentsById,
 ): string => {
   const failingCondition = failingConditionDescription(explanation, conditions, segments);
   return failingCondition === undefined
@@ -167,7 +117,7 @@ const RULE_OUTCOME_DESCRIPTIONS: {
   [O in RuleExplanation["outcome"]]: (
     explanation: RuleExplanation,
     conditions: Condition[],
-    segments: Segments,
+    segments: SegmentsById,
   ) => string;
 } = {
   matched: (explanation) => withBucket("matched", explanation.bucket),
@@ -178,33 +128,23 @@ const RULE_OUTCOME_DESCRIPTIONS: {
 
 const ruleLines = (evaluation: ConfigEvaluation): string[] => {
   const rulesById = new Map(evaluation.targetingRules.rules.map((rule) => [rule.id, rule]));
-  const describedRules = evaluation.rules.map((explanation, index) => {
-    const rule = rulesById.get(explanation.ruleId);
-    return {
-      rule: `${index + 1}. ${rule === undefined ? explanation.ruleId : describeRule(rule, evaluation.segments)}`,
-      outcome: RULE_OUTCOME_DESCRIPTIONS[explanation.outcome](
-        explanation,
-        conditionsOf(rule),
-        evaluation.segments,
-      ),
-    };
-  });
-  const ruleColumnWidth = Math.max(0, ...describedRules.map((describedRule) => describedRule.rule.length));
-  return describedRules.map(
-    (describedRule) =>
-      `${describedRule.rule.padEnd(ruleColumnWidth)}${RULE_COLUMN_GAP}${describedRule.outcome}`,
+  return alignedColumns(
+    evaluation.rules.map((explanation, index) => {
+      const rule = rulesById.get(explanation.ruleId);
+      return [
+        `${index + 1}. ${rule === undefined ? explanation.ruleId : describeRule(rule, evaluation.segments)}`,
+        RULE_OUTCOME_DESCRIPTIONS[explanation.outcome](explanation, conditionsOf(rule), evaluation.segments),
+      ];
+    }),
   );
 };
-
-const oldKeyLines = (evaluation: ConfigEvaluation, requestedKey: string): string[] =>
-  requestedKey === evaluation.key ? [] : [`${requestedKey} is an old key of ${evaluation.key}.`];
 
 export const evaluationText = (
   evaluation: ConfigEvaluation,
   requested: { configKey: string; contextForm: ContextForm },
 ): string =>
   [
-    ...oldKeyLines(evaluation, requested.configKey),
+    ...oldKeyLines(requested.configKey, evaluation.key),
     `${evaluation.key} in ${evaluation.environment.name} for ${contextDescription(evaluation, requested.contextForm)}`,
     "",
     `${evaluation.value ?? "no value"}, ${servedByDescription(evaluation)}`,

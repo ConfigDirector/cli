@@ -4,8 +4,17 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.3.0-beta.1] - 2026-10-17
+
 ### Added
 
+- `configdirector projects list` lists your organization's projects with their slugs and names, whichever project `--project`, `CONFIGDIRECTOR_PROJECT` or `configdirector.json` selects.
+- `configdirector environments list` lists the project's environments with their slugs and names, marking the live ones.
+- `configdirector configs list` lists the project's configs with their type, role, lifetime and lifecycle state. `--tag <name>`, repeatable, lists the configs that have any of the tags, and a name no tag has exits with 2; it needs the `tags:read` permission. `--untagged` lists the configs without tags and cannot be combined with `--tag`. `--state <state>` lists the configs in one lifecycle state: `new`, `in-use`, `settled`, `archive-ready` or `stale`.
+- `configdirector configs get <key>` shows a config's settings, including its type's constraints, then its targeting rules in every environment, written as `evaluate` writes them, with the default targeting rule value last. A segment condition names the segment, or shows its ID when the token lacks `segments:read`. An old key works, and the output says which key is current.
+- `configdirector configs activity <key>` shows when SDKs last evaluated a config, one line per environment, SDK key kind, SDK name and SDK version, with the time in UTC.
+- `configdirector segments list` lists the project's segments with how many configs use each, and `configdirector segments get <key>` shows a segment's condition groups and its environment overrides, naming each override's environment by its slug, or by its ID when the token lacks `environments:read`.
+- With `--json`, each new command prints the Admin API's response as received, except `configs list --state`, which prints only the configs in that state. A key no config or segment has exits with 2. Every new command but `projects list` takes the project from `--project`, `CONFIGDIRECTOR_PROJECT` or `configdirector.json`, as `scan` does.
 - `scan` finds the calls of a Kotlin, Java or C# file that reaches the client through a class of your own whose file imports the SDK, such as `Flags.client.getBoolean("new-checkout", false)` with an `object Flags` holding the client, in a file that never names the SDK. The class must be in a file named after it, such as `Flags.kt`, `Flags.java` or `Flags.cs`. Kotlin and Java find it through an import, a static import, a wildcard import, or in the file's own directory for a class of the same package; C# finds it anywhere in the project of the nearest `.csproj`, so a global using of the SDK's namespace works. Only that one class is read, not the classes it uses in turn, and a Kotlin client declared at the top level of a file is not followed. A call that only looks like an SDK call, such as Android's `SharedPreferences.getBoolean` or ASP.NET's `IConfiguration.GetValue`, is still not reported in a file that uses no such class.
 
 ## [0.2.0-beta.1] - 2026-10-17

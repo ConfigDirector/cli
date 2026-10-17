@@ -1,14 +1,12 @@
-import { AdminApiClient, type Environment, type Project } from "../admin-api/AdminApiClient.js";
+import type { AdminApiClient, Environment, Project } from "../admin-api/AdminApiClient.js";
 import { EvaluationNotFoundError, type EvaluationNotFoundCode } from "../admin-api/admin-api-errors.js";
 import type { EvaluateConfigRequest } from "../admin-api/config-evaluation.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
-import { configuredApiToken } from "../configured-api-token.js";
 import { contextFormOf, type ContextForm, type ContextOptions } from "../evaluate/context-form.js";
 import { evaluationText } from "../evaluate/evaluation-text.js";
 import { ExitCode } from "../ExitCode.js";
-import { findProjectBySlug, requireLinkedProjectSlug } from "../project-selection.js";
-import { readProjectSettings } from "../project-settings.js";
+import { connectToLinkedProject } from "../project-selection.js";
 
 type EvaluateOptions = ContextOptions & { environment: string };
 
@@ -33,7 +31,7 @@ const findEnvironmentBySlug = async (
   project: Project,
   slug: string,
 ): Promise<Environment> => {
-  const environments = await client.listEnvironments(project.id);
+  const { parsedBody: environments } = await client.listEnvironments(project.id);
   const environment = environments.find((listedEnvironment) => listedEnvironment.slug === slug);
   if (environment === undefined) {
     throw new CliError(
@@ -82,11 +80,8 @@ export const evaluate = async (
   [configKey]: readonly [string],
   options: EvaluateOptions,
 ): Promise<CommandOutput> => {
-  const { workingDirectory } = context.invocation;
-  const contextForm = await contextFormOf(options, workingDirectory);
-  const projectSlug = requireLinkedProjectSlug(context, await readProjectSettings(workingDirectory));
-  const client = new AdminApiClient({ baseUrl: context.baseUrl, token: await configuredApiToken(context) });
-  const project = await findProjectBySlug(client, projectSlug);
+  const contextForm = await contextFormOf(options, context.invocation.workingDirectory);
+  const { client, project } = await connectToLinkedProject(context);
   const environment = await findEnvironmentBySlug(client, project, options.environment);
   const requested = { project, configKey, environment, contextForm };
   const { evaluation, responseBody } = await requestEvaluation(client, requested);

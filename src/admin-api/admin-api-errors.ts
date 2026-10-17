@@ -22,10 +22,24 @@ const describeFieldError = (fieldError: FieldError): string =>
   fieldError.name === undefined ? fieldError.message : `${fieldError.name}: ${fieldError.message}`;
 
 export class ApiAuthorizationError extends CliError {
-  constructor(code: string, apiMessage: string) {
+  constructor(
+    public readonly code: string,
+    apiMessage: string,
+  ) {
     super(`The Admin API refused the request: ${apiMessage} (${code})`);
   }
 }
+
+export const ifPermitted = async <Result>(request: Promise<Result>): Promise<Result | undefined> => {
+  try {
+    return await request;
+  } catch (error) {
+    if (error instanceof ApiAuthorizationError && error.code === "INSUFFICIENT_PERMISSIONS") {
+      return undefined;
+    }
+    throw error;
+  }
+};
 
 export class ApiValidationError extends CliError {
   constructor(errors: FieldError[]) {

@@ -7,7 +7,7 @@ const environmentFields = {
   updatedAt: "2026-09-01T10:00:00.000Z",
 };
 
-const testEnvironment = {
+export const testEnvironment = {
   ...environmentFields,
   id: "0b5f3c1a-6d2e-4f7a-9c8b-1a2b3c4d5e6f",
   slug: "test",

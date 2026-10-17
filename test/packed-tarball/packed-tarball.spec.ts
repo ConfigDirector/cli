@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { startBrowseAdminApi } from "../support/browse-admin-api.js";
 import { productionEnvironment, startEvaluateAdminApi } from "../support/evaluate-admin-api.js";
 import { startScanAdminApi, webApp } from "../support/scan-admin-api.js";
 import { startStubAdminApi } from "../support/stub-admin-api.js";
@@ -153,6 +154,21 @@ describe("the packed tarball installed into an empty directory", () => {
       environmentId: productionEnvironment.id,
       context: { kind: "user", identifier: "123", traits: { beta: true } },
     });
+  });
+
+  it("lists a project's environments against a stub Admin API", async () => {
+    const adminApi = await startBrowseAdminApi();
+
+    const result = await runInstalledBinary(
+      ["environments", "list", "--project", "web-app", "--token", "cd_flag_token"],
+      {
+        environmentVariables: { CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl },
+        input: "",
+      },
+    );
+
+    expect(result.exitCode).toEqual(0);
+    expect(result.stdout.split("\n")).toEqual(["test         Test", "production   Production   live", ""]);
   });
 
   it("ships the JSON Schema of the scan output", async () => {

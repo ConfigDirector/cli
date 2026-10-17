@@ -60,6 +60,73 @@ describe("program", () => {
     expect(invocation.stdout.text()).toContain("Beta: commands and output may change before 1.0.");
   });
 
+  it("lists the projects, environments, configs and segments commands with the beta label on stdout for --help", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["--help"] });
+
+    const exitCode = await run(invocation);
+
+    const firstWords = invocation.stdout
+      .text()
+      .split("\n")
+      .map((line) => line.trim().split(" ")[0]);
+    expect(exitCode).toEqual(0);
+    expect(firstWords).toEqual(expect.arrayContaining(["projects", "environments", "configs", "segments"]));
+    expect(invocation.stdout.text()).toContain("Beta: commands and output may change before 1.0.");
+  });
+
+  it("lists the list verb with the beta label in the help of projects", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["projects", "--help"] });
+
+    const exitCode = await run(invocation);
+
+    const help = invocation.stdout.text();
+    expect(exitCode).toEqual(0);
+    expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toContain("list");
+    expect(help).toContain("Beta: commands and output may change before 1.0.");
+  });
+
+  it("lists the list verb with the beta label in the help of environments", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["environments", "--help"] });
+
+    const exitCode = await run(invocation);
+
+    const help = invocation.stdout.text();
+    expect(exitCode).toEqual(0);
+    expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toContain("list");
+    expect(help).toContain("Beta: commands and output may change before 1.0.");
+  });
+
+  it("lists the list, get and activity verbs with the beta label in the help of configs", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["configs", "--help"] });
+
+    const exitCode = await run(invocation);
+
+    const help = invocation.stdout.text();
+    expect(exitCode).toEqual(0);
+    expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toEqual(
+      expect.arrayContaining(["list", "get", "activity"]),
+    );
+    expect(help).toContain("Beta: commands and output may change before 1.0.");
+  });
+
+  it("lists the list and get verbs with the beta label in the help of segments", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["segments", "--help"] });
+
+    const exitCode = await run(invocation);
+
+    const help = invocation.stdout.text();
+    expect(exitCode).toEqual(0);
+    expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toEqual(
+      expect.arrayContaining(["list", "get"]),
+    );
+    expect(help).toContain("Beta: commands and output may change before 1.0.");
+  });
+
   it("lists evaluate's options without defaults for options that have none, and the beta label, in its help", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["evaluate", "--help"] });

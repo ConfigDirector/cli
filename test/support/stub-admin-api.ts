@@ -2,7 +2,7 @@ import { createServer, type IncomingHttpHeaders, type IncomingMessage } from "no
 import type { AddressInfo } from "node:net";
 import { onTestFinished } from "vitest";
 
-type StubReply = {
+export type StubReply = {
   status: number;
   body?: unknown;
   rawBody?: string;

@@ -11,7 +11,15 @@ export const webApp = {
 
 type Project = typeof webApp;
 
-type ConfigOverrides = { type?: string; typeOptions?: object | null; client?: boolean; server?: boolean };
+type ConfigOverrides = {
+  type?: string;
+  typeOptions?: object | null;
+  role?: string;
+  lifetime?: string;
+  state?: string;
+  client?: boolean;
+  server?: boolean;
+};
 
 export const projectConfig = (
   key: string,
@@ -23,6 +31,8 @@ export const projectConfig = (
   key,
   type: "boolean",
   typeOptions: null,
+  role: "flag",
+  lifetime: "temporary",
   state: "in-use",
   client: true,
   server: true,

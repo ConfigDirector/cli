@@ -24,7 +24,9 @@ export const scanProject = async (
   const root = await scanRootAt(workingDirectory, path);
   const client = new AdminApiClient({ baseUrl: context.baseUrl, token: await configuredApiToken(context) });
   const project = await findProjectBySlug(client, projectSlug);
-  const configs = await client.listConfigs(project.id);
+  const configs = (await client.listConfigs(project.id, { form: "every-config" })).map(
+    (listedConfig) => listedConfig.config,
+  );
   const projectKeys = new Set(
     configs.flatMap((config) => [
       config.key,
