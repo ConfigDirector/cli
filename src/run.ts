@@ -1,9 +1,10 @@
-import { Command, CommanderError } from "commander";
+import { Command, CommanderError, type OptionValues } from "commander";
 import { version } from "../package.json";
 import { CliError } from "./CliError.js";
 import type { CommandContext, CommandOutput } from "./CommandContext.js";
 import { ExitCode } from "./ExitCode.js";
 import { nonEmptyVariable, type Invocation } from "./Invocation.js";
+import { evaluate } from "./commands/evaluate.js";
 import { init } from "./commands/init.js";
 import { login } from "./commands/login.js";
 import { scan } from "./commands/scan.js";
@@ -26,14 +27,17 @@ const withoutTrailingSlashes = (url: string): string => {
   return trimmedUrl;
 };
 
-type CommandImplementation = (
+type CommandArguments = ReadonlyArray<string | undefined>;
+
+type CommandImplementation<Arguments extends CommandArguments, CommandOptions extends OptionValues> = (
   context: CommandContext,
-  commandArguments: ReadonlyArray<string | undefined>,
+  commandArguments: Arguments,
+  commandOptions: CommandOptions,
 ) => Promise<CommandOutput>;
 
-const runCommand = async (
+const runCommand = async <Arguments extends CommandArguments, CommandOptions extends OptionValues>(
   invocation: Invocation,
-  command: CommandImplementation,
+  command: CommandImplementation<Arguments, CommandOptions>,
   actionArguments: unknown[],
 ): Promise<ExitCode> => {
   const parsedCommand = actionArguments.at(-1) as Command;
@@ -47,7 +51,8 @@ const runCommand = async (
       tokenOption: options.token,
       projectSlug: options.project ?? nonEmptyVariable(invocation, "CONFIGDIRECTOR_PROJECT"),
     },
-    parsedCommand.processedArgs,
+    parsedCommand.processedArgs as unknown as Arguments,
+    parsedCommand.opts<CommandOptions>(),
   );
   invocation.stdout.write(options.json ? `${JSON.stringify(output.json, null, 2)}\n` : output.text);
   return output.exitCode;
@@ -68,7 +73,9 @@ const reportFailure = (invocation: Invocation, error: unknown): ExitCode => {
 export const run = async (invocation: Invocation): Promise<ExitCode> => {
   let exitCode: ExitCode = ExitCode.success;
   const commandAction =
-    (command: CommandImplementation) =>
+    <Arguments extends CommandArguments, CommandOptions extends OptionValues>(
+      command: CommandImplementation<Arguments, CommandOptions>,
+    ) =>
     async (...actionArguments: unknown[]) => {
       exitCode = await runCommand(invocation, command, actionArguments);
     };
@@ -114,6 +121,34 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
       "check every config key the code reads against the project's configs, exiting 1 when one is wrong",
     )
     .action(commandAction(validate));
+
+  program
+    .command("evaluate")
+    .argument("<key>", "the config's key")
+    .description("show the value a context gets for a config in an environment, and why")
+    .requiredOption(
+      "--environment <slug>",
+      "slug of the environment whose targeting rules to evaluate (required)",
+    )
+    .option("--context-kind <kind>", "context kind of the context to evaluate for (default: user)")
+    .option("--context-id <identifier>", "identifier of the context")
+    .option("--context-name <name>", "name of the context")
+    .option(
+      "--context-trait <name=value>",
+      "a trait of the context, as a string, or name:=<json> for a number, boolean, array or object; repeatable",
+      (trait: string, traits: string[] | undefined) => [...(traits ?? []), trait],
+    )
+    .option("--context-json <json>", "the whole context as a JSON object, or @<file> to read it from a file")
+    .option(
+      "--saved-context <kind:identifier>",
+      "a context ConfigDirector saved from SDK evaluations in the environment, such as user:123",
+    )
+    .addHelpText(
+      "after",
+      "\nGive the context with the --context-* options, with --context-json, or with --saved-context. " +
+        "Without any of them, the config is evaluated for an empty context, as an SDK given none would.",
+    )
+    .action(commandAction(evaluate));
 
   try {
     await program.parseAsync(invocation.commandLineArguments, { from: "user" });

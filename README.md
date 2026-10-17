@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, and checks those keys against the project's configs.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, and shows the value a context gets for a config and why.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
@@ -74,16 +74,47 @@ A test client call, such as `setValue` or `createTestClient`, is checked for unk
 
 The output lists the problems grouped by kind, with the file, the line, the key and what is wrong, such as the type a timespan is served as, then counts the references checked. With `--json`, `validate` prints the scan's JSON with a `findings` array; `schema/scan-output.schema.json` describes it.
 
+## See what a context gets for a config
+
+```bash
+configdirector evaluate new-checkout --environment production --context-id 123 --context-trait plan=pro
+```
+
+`evaluate` evaluates the environment's saved targeting rules for a context with the evaluator the SDKs use, so the value it shows is the one your application gets. It also shows the rule that served the value, and what each rule tests and what happened to it:
+
+```txt
+new-checkout in Production for user 123
+
+true, served by rule 2
+
+1. 50% get true                     not matched: bucket 71.3 is outside 0 to 50
+2. plan is one of pro, team: true   matched
+3. in segment Beta testers: true    not evaluated
+Default targeting rule: false
+```
+
+A rule that did not match names the first condition that failed and the context's value for it, as in `plan is one of pro, team, but it is "free"`, or the bucket a percentage rollout put the context in. A rule after the one that served the value is not evaluated, and a rule that could not be evaluated is shown as errored.
+
+`--environment` takes the environment's slug and is required. Give the context one of three ways:
+
+- `--context-kind` (default `user`), `--context-id`, `--context-name`, and `--context-trait name=value` for each trait. A trait's value is a string; write `name:=` followed by JSON for a number, boolean, array or object, as in `--context-trait beta:=true` or `--context-trait age:=30`. For nested traits, use `--context-json`.
+- `--context-json '{"identifier": "123", "traits": {"plan": "pro"}}'`, or `--context-json @context.json` to read it from a file. The object takes `kind`, `identifier`, `name` and `traits`.
+- `--saved-context user:123`, the context kind and identifier of a context ConfigDirector saved from SDK evaluations in that environment. It is evaluated with its stored name and traits.
+
+Without any of them, the config is evaluated for an empty context, as an SDK given none would. A renamed config can be evaluated by an old key; the output then starts with a line naming the current key. With `--json`, `evaluate` prints the Admin API's response as received.
+
+`evaluate` needs a token with `environments:read` as well as `projects:read` and `configs:read`, and `contexts:read` for `--saved-context`. Nothing is recorded: an evaluation from the CLI is not SDK activity.
+
 ## Options
 
-| Option             | Environment variable      | Meaning                                                                                         |
-| ------------------ | ------------------------- | ----------------------------------------------------------------------------------------------- |
-| `--token <token>`  | `CONFIGDIRECTOR_TOKEN`    | API token. Without either, the token saved by `login` is used.                                  |
-| `--base-url <url>` | `CONFIGDIRECTOR_BASE_URL` | API host. Defaults to `https://api.configdirector.com`.                                         |
-| `--project <slug>` | `CONFIGDIRECTOR_PROJECT`  | Project slug. Without either, `scan` and `validate` use the `project` in `configdirector.json`. |
-| `--json`           |                           | Print JSON on stdout. Errors always go to stderr.                                               |
+| Option             | Environment variable      | Meaning                                                                                                     |
+| ------------------ | ------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `--token <token>`  | `CONFIGDIRECTOR_TOKEN`    | API token. Without either, the token saved by `login` is used.                                              |
+| `--base-url <url>` | `CONFIGDIRECTOR_BASE_URL` | API host. Defaults to `https://api.configdirector.com`.                                                     |
+| `--project <slug>` | `CONFIGDIRECTOR_PROJECT`  | Project slug. Without either, `scan`, `validate` and `evaluate` use the `project` in `configdirector.json`. |
+| `--json`           |                           | Print JSON on stdout. Errors always go to stderr.                                                           |
 
-The command exits with 0 when it succeeds, 1 when `validate` found a problem, and 2 when it could not run: a usage mistake, a rejected token, a suspended service or an unreachable API. A CI job can therefore tell a wrong config key from an outage.
+The command exits with 0 when it succeeds, 1 when `validate` found a problem, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or for `evaluate`, a key, environment or saved context that does not exist. A CI job can therefore tell a wrong config key from an outage.
 
 ## License
 

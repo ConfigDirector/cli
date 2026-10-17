@@ -45,6 +45,45 @@ describe("program", () => {
     expect(firstWords).toContain("init");
   });
 
+  it("lists the evaluate command with the beta label on stdout for --help", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["--help"] });
+
+    const exitCode = await run(invocation);
+
+    const firstWords = invocation.stdout
+      .text()
+      .split("\n")
+      .map((line) => line.trim().split(" ")[0]);
+    expect(exitCode).toEqual(0);
+    expect(firstWords).toContain("evaluate");
+    expect(invocation.stdout.text()).toContain("Beta: commands and output may change before 1.0.");
+  });
+
+  it("lists evaluate's options without defaults for options that have none, and the beta label, in its help", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["evaluate", "--help"] });
+
+    const exitCode = await run(invocation);
+
+    const help = invocation.stdout.text();
+    const firstWords = help.split("\n").map((line) => line.trim().split(" ")[0]);
+    expect(exitCode).toEqual(0);
+    expect(firstWords).toEqual(
+      expect.arrayContaining([
+        "--environment",
+        "--context-kind",
+        "--context-id",
+        "--context-name",
+        "--context-trait",
+        "--context-json",
+        "--saved-context",
+      ]),
+    );
+    expect(help).not.toContain("(default: [])");
+    expect(help).toContain("Beta: commands and output may change before 1.0.");
+  });
+
   it("exits 2 with nothing on stdout when no command is given", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: [] });

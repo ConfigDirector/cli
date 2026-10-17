@@ -7,10 +7,17 @@ import {
   ApiUnreachableError,
   ApiValidationError,
   ApiValidationErrorBodySchema,
+  EvaluationNotFoundBodySchema,
+  EvaluationNotFoundError,
   ServiceSuspendedBodySchema,
   ServiceSuspendedError,
   UnexpectedApiResponseError,
 } from "./admin-api-errors.js";
+import {
+  ConfigEvaluationSchema,
+  type EvaluateConfigRequest,
+  type ReceivedConfigEvaluation,
+} from "./config-evaluation.js";
 
 const ProjectSchema = v.object({
   id: v.string(),
@@ -44,6 +51,14 @@ type EnumConfig = v.InferOutput<typeof EnumConfigSchema>;
 
 export const isEnumConfig = (config: Config): config is EnumConfig => config.type === "enum";
 
+const EnvironmentSchema = v.object({
+  id: v.string(),
+  slug: v.string(),
+  name: v.string(),
+});
+
+export type Environment = v.InferOutput<typeof EnvironmentSchema>;
+
 const readJsonBody = async (response: Response): Promise<unknown> => {
   try {
     return await response.json();
@@ -68,6 +83,12 @@ const failureFor = (url: string, response: Response, body: unknown): CliError =>
         ? new ApiAuthorizationError(authorizationError.output.code, authorizationError.output.error)
         : new UnexpectedApiResponseError(url, describeStatus(response));
     }
+    case 404: {
+      const notFoundError = v.safeParse(EvaluationNotFoundBodySchema, body);
+      return notFoundError.success
+        ? new EvaluationNotFoundError(notFoundError.output.code, notFoundError.output.error)
+        : new UnexpectedApiResponseError(url, describeStatus(response));
+    }
     case 429: {
       const retryAfterSeconds = response.headers.get("retry-after");
       return v.is(ServiceSuspendedBodySchema, body) && retryAfterSeconds !== null
@@ -77,6 +98,13 @@ const failureFor = (url: string, response: Response, body: unknown): CliError =>
     default:
       return new UnexpectedApiResponseError(url, describeStatus(response));
   }
+};
+
+type JsonRequest = { method: "GET" } | { method: "POST"; body: object };
+
+type ParsedResponse<TSchema extends v.GenericSchema> = {
+  responseBody: unknown;
+  parsedBody: v.InferOutput<TSchema>;
 };
 
 export class AdminApiClient {
@@ -90,12 +118,37 @@ export class AdminApiClient {
     return this.get(`/v1/projects/${encodeURIComponent(projectId)}/configs`, v.array(ConfigSchema));
   }
 
+  public listEnvironments(projectId: string): Promise<Environment[]> {
+    return this.get(`/v1/projects/${encodeURIComponent(projectId)}/environments`, v.array(EnvironmentSchema));
+  }
+
+  public async evaluateConfig(
+    projectId: string,
+    configKey: string,
+    request: EvaluateConfigRequest,
+  ): Promise<ReceivedConfigEvaluation> {
+    const { responseBody, parsedBody } = await this.requestJson(
+      `/v1/projects/${encodeURIComponent(projectId)}/configs/${encodeURIComponent(configKey)}/evaluate`,
+      ConfigEvaluationSchema,
+      { method: "POST", body: request },
+    );
+    return { evaluation: parsedBody, responseBody };
+  }
+
   private async get<TSchema extends v.GenericSchema>(
     path: string,
     schema: TSchema,
   ): Promise<v.InferOutput<TSchema>> {
+    return (await this.requestJson(path, schema, { method: "GET" })).parsedBody;
+  }
+
+  private async requestJson<TSchema extends v.GenericSchema>(
+    path: string,
+    schema: TSchema,
+    request: JsonRequest,
+  ): Promise<ParsedResponse<TSchema>> {
     const url = `${this.connection.baseUrl}${path}`;
-    const response = await this.fetchResponse(url);
+    const response = await this.fetchResponse(url, request);
     const body = await readJsonBody(response);
     if (!response.ok) {
       throw failureFor(url, response, body);
@@ -107,19 +160,27 @@ export class AdminApiClient {
         `an ${describeStatus(response)} response the CLI cannot read`,
       );
     }
-    return parsedBody.output;
+    return { responseBody: body, parsedBody: parsedBody.output };
   }
 
-  private async fetchResponse(url: string): Promise<Response> {
+  private async fetchResponse(url: string, request: JsonRequest): Promise<Response> {
+    const headers = {
+      Accept: "application/json",
+      Authorization: `Bearer ${this.connection.token}`,
+      "User-Agent": `configdirector-cli/${version}`,
+      "X-SourceClient": "cli",
+    };
     try {
-      return await fetch(url, {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${this.connection.token}`,
-          "User-Agent": `configdirector-cli/${version}`,
-          "X-SourceClient": "cli",
-        },
-      });
+      return await fetch(
+        url,
+        request.method === "POST"
+          ? {
+              method: "POST",
+              headers: { ...headers, "Content-Type": "application/json" },
+              body: JSON.stringify(request.body),
+            }
+          : { headers },
+      );
     } catch (error) {
       throw new ApiUnreachableError(this.connection.baseUrl, error);
     }

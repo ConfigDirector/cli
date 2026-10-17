@@ -9,6 +9,13 @@ export const ApiValidationErrorBodySchema = v.object({
 
 export const ServiceSuspendedBodySchema = v.object({ code: v.literal("SERVICE_SUSPENDED") });
 
+export const EvaluationNotFoundBodySchema = v.object({
+  error: v.string(),
+  code: v.picklist(["CONFIG_NOT_FOUND", "ENVIRONMENT_NOT_FOUND", "CONTEXT_NOT_FOUND"]),
+});
+
+export type EvaluationNotFoundCode = v.InferOutput<typeof EvaluationNotFoundBodySchema>["code"];
+
 type FieldError = v.InferOutput<typeof ApiValidationErrorBodySchema>["errors"][number];
 
 const describeFieldError = (fieldError: FieldError): string =>
@@ -25,6 +32,15 @@ export class ApiValidationError extends CliError {
     super(
       `The Admin API rejected the request:\n${errors.map((error) => `  ${describeFieldError(error)}`).join("\n")}`,
     );
+  }
+}
+
+export class EvaluationNotFoundError extends CliError {
+  constructor(
+    public readonly code: EvaluationNotFoundCode,
+    apiMessage: string,
+  ) {
+    super(`The Admin API could not evaluate the config: ${apiMessage} (${code})`);
   }
 }
 

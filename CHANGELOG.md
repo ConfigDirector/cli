@@ -4,6 +4,16 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.2.0-beta.1] - 2026-10-17
+
+### Added
+
+- `configdirector evaluate <key> --environment <slug>` shows the value a context gets for a config in an environment, and why. It uses the evaluator the SDKs use, so the value is the one your application gets.
+- `evaluate` prints the value and the rule that served it, or the default targeting rule. Then it lists each rule in order with what it tests and its outcome. A rule that did not match names the first condition that failed and the context's value for it, or the bucket a percentage rollout put the context in. A rule after the one that served the value is not evaluated, and a rule that could not be evaluated is shown as errored.
+- An old key of a renamed config evaluates the config, and the output says which key is current. `--json` prints the Admin API's response as received. Nothing is recorded: an evaluation from the CLI is not SDK activity.
+- `evaluate` takes the context one of three ways. `--context-kind` (default `user`), `--context-id`, `--context-name` and the repeatable `--context-trait name=value` give it option by option, and `name:=<json>` gives a trait a number, boolean, array or object value, as in `--context-trait beta:=true`. `--context-json '{...}'` or `--context-json @file` gives the whole context as a JSON object. `--saved-context <kind>:<identifier>` names a context ConfigDirector saved from SDK evaluations in that environment. Combining two of these ways is a usage error. With none, the config is evaluated for an empty context, as an SDK given none would.
+- `evaluate` needs the `environments:read` permission as well as `projects:read` and `configs:read`, and `contexts:read` for `--saved-context`. It exits with 2 when no config in the project has the key, when no environment has the slug, listing the project's environment slugs, or when no saved context in the environment has the context kind and identifier. The project comes from `--project`, `CONFIGDIRECTOR_PROJECT` or `configdirector.json`, as for `scan`.
+
 ## [0.1.0-beta.2] - 2026-10-16
 
 ### Changed

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { productionEnvironment, startEvaluateAdminApi } from "../support/evaluate-admin-api.js";
 import { startScanAdminApi, webApp } from "../support/scan-admin-api.js";
 import { startStubAdminApi } from "../support/stub-admin-api.js";
 
@@ -116,6 +117,42 @@ describe("the packed tarball installed into an empty directory", () => {
         test: false,
       },
     ]);
+  });
+
+  it("evaluates a config for an inline context against a stub Admin API", async () => {
+    const adminApi = await startEvaluateAdminApi();
+
+    const result = await runInstalledBinary(
+      [
+        "evaluate",
+        "new-checkout",
+        "--environment",
+        "production",
+        "--context-id",
+        "123",
+        "--context-trait",
+        "beta:=true",
+        "--project",
+        "web-app",
+        "--token",
+        "cd_flag_token",
+      ],
+      {
+        environmentVariables: { CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl },
+        input: "",
+      },
+    );
+
+    expect(result.exitCode).toEqual(0);
+    expect(result.stdout.split("\n").slice(0, 3)).toEqual([
+      "new-checkout in Production for user 123",
+      "",
+      "true, served by rule 2",
+    ]);
+    expect(adminApi.receivedRequests.at(-1)?.body).toEqual({
+      environmentId: productionEnvironment.id,
+      context: { kind: "user", identifier: "123", traits: { beta: true } },
+    });
   });
 
   it("ships the JSON Schema of the scan output", async () => {
