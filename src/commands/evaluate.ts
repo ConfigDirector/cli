@@ -3,6 +3,7 @@ import { EvaluationNotFoundError, type EvaluationNotFoundCode } from "../admin-a
 import type { EvaluateConfigRequest } from "../admin-api/config-evaluation.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
+import { findEnvironmentBySlug } from "../environment-selection.js";
 import { contextFormOf, type ContextForm, type ContextOptions } from "../evaluate/context-form.js";
 import { evaluationText } from "../evaluate/evaluation-text.js";
 import { ExitCode } from "../ExitCode.js";
@@ -19,26 +20,6 @@ const contextFieldsOf = (contextForm: ContextForm): Omit<EvaluateConfigRequest, 
     case "empty":
       return {};
   }
-};
-
-const listedSlugs = (environments: Environment[]): string =>
-  environments.length === 0
-    ? "The project has no environments."
-    : `Its environments are ${environments.map((environment) => environment.slug).join(", ")}.`;
-
-const findEnvironmentBySlug = async (
-  client: AdminApiClient,
-  project: Project,
-  slug: string,
-): Promise<Environment> => {
-  const { parsedBody: environments } = await client.listEnvironments(project.id);
-  const environment = environments.find((listedEnvironment) => listedEnvironment.slug === slug);
-  if (environment === undefined) {
-    throw new CliError(
-      `No environment in ${project.slug} has the slug "${slug}". ${listedSlugs(environments)}`,
-    );
-  }
-  return environment;
 };
 
 type RequestedEvaluation = {

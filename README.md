@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, and creates configs.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, and replaces a config's targeting rules in an environment.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
@@ -175,6 +175,47 @@ configdirector configs create --key checkout-timeout --type timespan --role conf
 When the project already has a config with the key, as its current key or an old one, nothing is created: the command prints that config's key, type, role, lifetime and lifecycle state, and exits with 1. When ConfigDirector refuses the config for another reason, it exits with 2 and lists the reasons. With `--json`, it prints the created config as received, or the existing config when the key is taken.
 
 `configs create` needs `projects:read`, `configs:create`, and `configs:read` to show the config that already has the key; `--tag` also needs `tags:read` and `config-settings:update`. The config shows in the audit log with the source CLI.
+
+## Change targeting rules
+
+```bash
+configdirector targeting-rules set new-checkout --environment production --rules rules.json
+```
+
+`targeting-rules set` replaces every targeting rule of the config in one environment with the rules in the file, or in stdin with `--rules -`:
+
+```json
+{
+  "defaultValue": false,
+  "rules": [
+    {
+      "type": "conditional",
+      "order": 0,
+      "conditions": [
+        {
+          "kind": "attribute",
+          "attribute": "traits",
+          "trait": "/plan",
+          "operator": "is one of",
+          "targetType": "text",
+          "targetValues": ["pro", "team"]
+        }
+      ],
+      "target": "value",
+      "value": true
+    }
+  ]
+}
+```
+
+- The file holds `defaultValue`, the default targeting rule value, and `rules`, exactly as the Admin API takes them. An environment's entry of `targets` in `configs get --json` has that shape, so you can edit it and write it back. Rules left out of the file are removed.
+- A rule, condition or percentage without an `id` gets a new one, and the IDs given are kept.
+- The CLI checks only that the file holds a JSON object. ConfigDirector checks the rules, and when it refuses them the command exits with 2 and lists its reasons.
+- It asks for no confirmation and treats a live environment like any other. It prints what it wrote: `Replaced the targeting rules of new-checkout in production with 1 rule and the default targeting rule value false.` With `--json`, it prints the request it sent, with the IDs it gave.
+
+`targeting-rules reference` prints the format: notes on how rules are evaluated, the condition kinds, the attributes a condition can test, and the operators for context kinds, segments and each target type. With `--json`, it prints the whole document as received, including the JSON Schema of the request `targeting-rules set` sends. Its notes name the MCP server's tools: `update_targeting_rules` is what `targeting-rules set` does, and `get_config` what `configs get` does.
+
+`targeting-rules set` needs `projects:read`, `environments:read` and `config-targeting-rules:update`. `targeting-rules reference` needs only a valid token and no project.
 
 ## Options
 

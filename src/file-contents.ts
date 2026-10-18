@@ -40,6 +40,11 @@ export const atFileArgumentText = async (
   return (await readOptionFile(argumentLabel, path, workingDirectory)).contents;
 };
 
+export type JsonObject = { [field: string]: unknown };
+
+export const isJsonObject = (value: unknown): value is JsonObject =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
 export const parseJson = (contents: string): unknown => {
   try {
     return JSON.parse(contents);

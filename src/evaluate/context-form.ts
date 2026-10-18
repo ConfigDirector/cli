@@ -1,6 +1,6 @@
 import type { SavedContextReference } from "../admin-api/config-evaluation.js";
 import { CliError } from "../CliError.js";
-import { atFileArgumentText, parseJson } from "../file-contents.js";
+import { atFileArgumentText, isJsonObject, parseJson } from "../file-contents.js";
 
 export type ContextOptions = {
   contextKind?: string;
@@ -54,9 +54,6 @@ const contextJsonUsageError = () =>
   new CliError(
     '--context-json takes the context as a JSON object, as in {"kind":"user","identifier":"123"}, or @<file>.',
   );
-
-const isJsonObject = (value: unknown): value is object =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const contextOfJson = async (contextJson: string, workingDirectory: string): Promise<object> => {
   const context = parseJson(await atFileArgumentText("--context-json", contextJson, workingDirectory));

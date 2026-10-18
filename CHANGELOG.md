@@ -4,6 +4,14 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.5.0-beta.1] - 2026-10-17
+
+### Added
+
+- `configdirector targeting-rules set <key> --environment <slug> --rules <file>` replaces a config's targeting rules in one environment with the rules in a JSON file, or in stdin with `--rules -`. The file holds `defaultValue`, the default targeting rule value, and `rules`, exactly as the Admin API takes them, so you can take an environment's entry of `targets` from `configs get --json`, edit it and write it back. Every rule of the environment is replaced. A rule, condition or percentage without an `id` gets a new one, and the IDs given are kept. The CLI checks only that the file holds a JSON object: ConfigDirector checks the rules, and when it refuses them `set` exits with 2 and lists its reasons.
+- `targeting-rules set` asks for no confirmation and treats a live environment like any other. It prints the key, the environment, the number of rules and the default targeting rule value it wrote. `--json` prints the request it sent, with the IDs it gave, since the Admin API answers with no body. It exits with 2 when no config in the project has the key, or when no environment has the slug, listing the project's environment slugs. It needs `projects:read`, `environments:read` and `config-targeting-rules:update`. The change shows in the audit log with the source CLI.
+- `configdirector targeting-rules reference` prints the format targeting rules take: notes on how rules are evaluated, then the condition kinds, the attributes a condition can test, the context kind operators, the segment operators and the operators for each target type. `--json` prints the whole document as received, including the JSON Schema of the request `targeting-rules set` sends. It needs an API token, with any permissions, and no project. The notes are the ones the MCP server's `get_targeting_rules_reference` tool gives, so they name the MCP tools: `update_targeting_rules` is what `targeting-rules set` does, and `get_config` what `configs get` does.
+
 ## [0.4.0-beta.1] - 2026-10-17
 
 ### Added

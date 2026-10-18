@@ -19,6 +19,7 @@ import {
   type ConfigWithTargetingRules,
 } from "./config-with-targeting-rules.js";
 import { SegmentDefinitionSchema, SegmentSchema, type Segment, type SegmentDefinition } from "./segments.js";
+import { TargetingRulesReferenceSchema, type TargetingRulesReference } from "./targeting-rules-reference.js";
 import {
   ConfigEvaluationSchema,
   type EvaluateConfigRequest,
@@ -103,6 +104,10 @@ const tagFilterQuery = (tagFilter: ConfigTagFilter): string => {
   }
 };
 
+type ReplaceTargetingRulesRequest = { [field: string]: unknown; environmentId: string };
+
+type TargetingRulesReplacementOutcome = "replaced" | "not-found";
+
 const MissingResourceBodySchema = v.strictObject({});
 
 const readJsonBody = async (response: Response): Promise<unknown> => {
@@ -146,7 +151,7 @@ const failureFor = (url: string, response: Response, body: unknown): CliError =>
   }
 };
 
-type JsonRequest = { method: "GET" } | { method: "POST"; body: object };
+type JsonRequest = { method: "GET" } | { method: "POST" | "PUT"; body: object };
 
 type ReceivedResponse = { url: string; response: Response; body: unknown };
 
@@ -258,6 +263,23 @@ export class AdminApiClient {
     return { evaluation: parsedBody, responseBody };
   }
 
+  public getTargetingRulesReference(): Promise<ParsedResponse<TargetingRulesReference>> {
+    return this.get("/v1/targeting-rules-reference", TargetingRulesReferenceSchema);
+  }
+
+  public async replaceTargetingRules(
+    projectId: string,
+    configKey: string,
+    request: ReplaceTargetingRulesRequest,
+  ): Promise<TargetingRulesReplacementOutcome> {
+    const response = await this.requestIfFound(
+      `/v1/projects/${encodeURIComponent(projectId)}/configs/${encodeURIComponent(configKey)}/targets`,
+      v.unknown(),
+      { method: "PUT", body: request },
+    );
+    return response === undefined ? "not-found" : "replaced";
+  }
+
   private get<TSchema extends v.GenericSchema>(
     path: string,
     schema: TSchema,
@@ -265,11 +287,19 @@ export class AdminApiClient {
     return this.requestJson(path, schema, { method: "GET" });
   }
 
-  private async getIfFound<TSchema extends v.GenericSchema>(
+  private getIfFound<TSchema extends v.GenericSchema>(
     path: string,
     schema: TSchema,
   ): Promise<ParsedResponse<v.InferOutput<TSchema>> | undefined> {
-    const received = await this.send(path, { method: "GET" });
+    return this.requestIfFound(path, schema, { method: "GET" });
+  }
+
+  private async requestIfFound<TSchema extends v.GenericSchema>(
+    path: string,
+    schema: TSchema,
+    request: JsonRequest,
+  ): Promise<ParsedResponse<v.InferOutput<TSchema>> | undefined> {
+    const received = await this.send(path, request);
     return isMissingResource(received) ? undefined : parsedResponseOf(received, schema);
   }
 
@@ -297,13 +327,13 @@ export class AdminApiClient {
     try {
       return await fetch(
         url,
-        request.method === "POST"
-          ? {
-              method: "POST",
+        request.method === "GET"
+          ? { headers }
+          : {
+              method: request.method,
               headers: { ...headers, "Content-Type": "application/json" },
               body: JSON.stringify(request.body),
-            }
-          : { headers },
+            },
       );
     } catch (error) {
       throw new ApiUnreachableError(this.connection.baseUrl, error);

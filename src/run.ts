@@ -18,6 +18,7 @@ import { login } from "./commands/login.js";
 import { listProjects } from "./commands/projects.js";
 import { scan } from "./commands/scan.js";
 import { getSegment, listSegments } from "./commands/segments.js";
+import { setTargetingRules, showTargetingRulesReference } from "./commands/targeting-rules.js";
 import { validate } from "./commands/validate.js";
 import {
   CONFIG_LIFETIMES,
@@ -321,6 +322,38 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .argument("<key>", "the segment's key")
     .description("show a segment's condition groups and its environment overrides")
     .action(commandAction(getSegment));
+
+  const targetingRulesCommand = program
+    .command("targeting-rules")
+    .description("replace a config's targeting rules in one environment and show the format they take");
+
+  targetingRulesCommand
+    .command("set")
+    .argument("<key>", "the config's key, or an old key of it")
+    .description("replace a config's targeting rules in one environment with the rules of a JSON file")
+    .requiredOption(
+      "--environment <slug>",
+      "slug of the environment whose targeting rules to replace (required)",
+    )
+    .requiredOption(
+      "--rules <file>",
+      "a JSON file holding defaultValue and rules as the Admin API takes them, or - to read it from stdin (required)",
+    )
+    .addHelpText(
+      "after",
+      '\nThe file holds {"defaultValue": ..., "rules": [...]}, like an entry of targets in configs get --json, ' +
+        "so you can edit that output and write it back. Every rule of the environment is replaced. " +
+        "A rule, condition or percentage without an id gets a new one. " +
+        "configdirector targeting-rules reference lists the condition kinds, attributes and operators.",
+    )
+    .action(commandAction(setTargetingRules));
+
+  targetingRulesCommand
+    .command("reference")
+    .description(
+      "show the format targeting rules take: the condition kinds, the attributes a condition can test and the operators",
+    )
+    .action(commandAction(showTargetingRulesReference));
 
   try {
     await program.parseAsync(invocation.commandLineArguments, { from: "user" });

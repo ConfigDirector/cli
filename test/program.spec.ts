@@ -174,6 +174,20 @@ describe("program", () => {
     expect(help).toContain("Beta: commands and output may change before 1.0.");
   });
 
+  it("lists the set and reference verbs with the beta label in the help of targeting-rules", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["targeting-rules", "--help"] });
+
+    const exitCode = await run(invocation);
+
+    const help = invocation.stdout.text();
+    expect(exitCode).toEqual(0);
+    expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toEqual(
+      expect.arrayContaining(["set", "reference"]),
+    );
+    expect(help).toContain("Beta: commands and output may change before 1.0.");
+  });
+
   it("lists evaluate's options without defaults for options that have none, and the beta label, in its help", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["evaluate", "--help"] });
