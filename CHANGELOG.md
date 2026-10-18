@@ -4,6 +4,13 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.6.0-beta.1] - 2026-10-17
+
+### Added
+
+- `configdirector configs archive <key>` archives a config: it is removed from the project and from what SDKs receive, so applications get their in-code default value for it. It can be restored from the dashboard for 30 days, and after that it is deleted for good. The key can be the config's current key or an old one.
+- `configs archive` asks for no confirmation and does not check whether the code still reads the key, so run `configdirector scan` first. It prints `Archived new-checkout in web-app. It can be restored from the dashboard for 30 days.`, and `--json` prints `{ "archivedConfigKey": "new-checkout" }` with the key as given, as the MCP server's `archive_config` tool does. It exits with 2 when no config in the project has the key, which includes a config already archived. It needs `projects:read` and `configs:archive`. The change shows in the audit log with the source CLI.
+
 ## [0.5.0-beta.1] - 2026-10-17
 
 ### Added

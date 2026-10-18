@@ -108,6 +108,8 @@ type ReplaceTargetingRulesRequest = { [field: string]: unknown; environmentId: s
 
 type TargetingRulesReplacementOutcome = "replaced" | "not-found";
 
+type ConfigArchiveOutcome = "archived" | "not-found";
+
 const MissingResourceBodySchema = v.strictObject({});
 
 const readJsonBody = async (response: Response): Promise<unknown> => {
@@ -151,7 +153,7 @@ const failureFor = (url: string, response: Response, body: unknown): CliError =>
   }
 };
 
-type JsonRequest = { method: "GET" } | { method: "POST" | "PUT"; body: object };
+type JsonRequest = { method: "GET" | "DELETE" } | { method: "POST" | "PUT"; body: object };
 
 type ReceivedResponse = { url: string; response: Response; body: unknown };
 
@@ -280,6 +282,15 @@ export class AdminApiClient {
     return response === undefined ? "not-found" : "replaced";
   }
 
+  public async archiveConfig(projectId: string, configKey: string): Promise<ConfigArchiveOutcome> {
+    const response = await this.requestIfFound(
+      `/v1/projects/${encodeURIComponent(projectId)}/configs/${encodeURIComponent(configKey)}`,
+      v.unknown(),
+      { method: "DELETE" },
+    );
+    return response === undefined ? "not-found" : "archived";
+  }
+
   private get<TSchema extends v.GenericSchema>(
     path: string,
     schema: TSchema,
@@ -327,13 +338,13 @@ export class AdminApiClient {
     try {
       return await fetch(
         url,
-        request.method === "GET"
-          ? { headers }
-          : {
+        "body" in request
+          ? {
               method: request.method,
               headers: { ...headers, "Content-Type": "application/json" },
               body: JSON.stringify(request.body),
-            },
+            }
+          : { method: request.method, headers },
       );
     } catch (error) {
       throw new ApiUnreachableError(this.connection.baseUrl, error);

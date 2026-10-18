@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, and replaces a config's targeting rules in an environment.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, and archives configs.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
@@ -216,6 +216,22 @@ configdirector targeting-rules set new-checkout --environment production --rules
 `targeting-rules reference` prints the format: notes on how rules are evaluated, the condition kinds, the attributes a condition can test, and the operators for context kinds, segments and each target type. With `--json`, it prints the whole document as received, including the JSON Schema of the request `targeting-rules set` sends. Its notes name the MCP server's tools: `update_targeting_rules` is what `targeting-rules set` does, and `get_config` what `configs get` does.
 
 `targeting-rules set` needs `projects:read`, `environments:read` and `config-targeting-rules:update`. `targeting-rules reference` needs only a valid token and no project.
+
+## Archive a config
+
+```bash
+configdirector configs archive new-checkout
+```
+
+`configs archive` archives a config: it is removed from the project and from what SDKs receive, so applications get their in-code default value for it. It can be restored from the dashboard for 30 days, and after that it is deleted for good:
+
+```txt
+Archived new-checkout in web-app. It can be restored from the dashboard for 30 days.
+```
+
+It asks for no confirmation and does not check whether the code still reads the key, so run `configdirector scan` first. A renamed config can be archived by an old key. When no config in the project has the key, which includes a config already archived, it exits with 2. With `--json`, it prints `{ "archivedConfigKey": "new-checkout" }`, with the key as given.
+
+`configs archive` needs `projects:read` and `configs:archive`. The change shows in the audit log with the source CLI.
 
 ## Options
 

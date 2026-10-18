@@ -219,6 +219,26 @@ export const createConfig = async (
   return creationOutput(project, newConfig, creation);
 };
 
+export const archiveConfig = async (
+  context: CommandContext,
+  [configKey]: readonly [string],
+): Promise<CommandOutput> => {
+  const { client, project } = await connectToLinkedProject(context);
+  const outcome = await client.archiveConfig(project.id, configKey);
+  if (outcome === "not-found") {
+    throw new CliError(`No config in ${project.slug} has the key "${configKey}".`);
+  }
+
+  return {
+    json: { archivedConfigKey: configKey },
+    text: [
+      `Archived ${configKey} in ${project.slug}. It can be restored from the dashboard for 30 days.`,
+      "",
+    ].join("\n"),
+    exitCode: ExitCode.success,
+  };
+};
+
 type LatestEvaluation = ConfigActivity["latestEvaluations"][number];
 
 const sdkDescription = (evaluation: LatestEvaluation): string =>

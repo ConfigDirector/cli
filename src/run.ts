@@ -5,6 +5,7 @@ import type { CommandContext, CommandOutput } from "./CommandContext.js";
 import { ExitCode } from "./ExitCode.js";
 import { nonEmptyVariable, type Invocation } from "./Invocation.js";
 import {
+  archiveConfig,
   createConfig,
   getConfig,
   LIFECYCLE_STATES,
@@ -185,7 +186,9 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .description("list the project's environments with their slugs, marking the live ones")
     .action(commandAction(listEnvironments));
 
-  const configsCommand = program.command("configs").description("list, show and create a project's configs");
+  const configsCommand = program
+    .command("configs")
+    .description("list, show, create and archive a project's configs");
 
   configsCommand
     .command("list")
@@ -307,6 +310,17 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
       ),
     )
     .action(commandAction(createConfig));
+
+  configsCommand
+    .command("archive")
+    .argument("<key>", "the config's key, or an old key of it")
+    .description("archive a config, so SDKs stop receiving it; the dashboard can restore it for 30 days")
+    .addHelpText(
+      "after",
+      "\nThe config is archived with no confirmation and no check of whether the code still reads its key, " +
+        "so run configdirector scan first. Applications that still read it get their in-code default value.",
+    )
+    .action(commandAction(archiveConfig));
 
   const segmentsCommand = program
     .command("segments")
