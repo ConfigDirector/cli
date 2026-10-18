@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, and archives configs.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, archives configs, and uploads the repository's code references to the project.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
@@ -53,6 +53,22 @@ A path alias such as `@/lib/config-director` is resolved the way TypeScript reso
 The scan skips what `.gitignore` ignores, the `node_modules`, `vendor`, `build`, `dist` and `target` directories, binary files and files over 1 MB. In `configdirector.json`, `include` limits the scan to the files matching its globs, and `exclude` skips the files matching its globs.
 
 With `--json`, `scan` prints the references for scripts and CI; `schema/scan-output.schema.json` in the package describes that output. Each reference has a `kind`, `direct` or `indirect`, and a direct reference resolved from a constant carries the constant as `argument`.
+
+## Upload the scan to ConfigDirector
+
+From the repository root, on the default branch:
+
+```bash
+configdirector scan --upload
+```
+
+`--upload` sends the scan to the project, so the dashboard can show where each config is read and which configs no repository reads. Each upload replaces all the references the project held for the repository. The CLI does not check which branch is checked out, so run it on pushes to the default branch, and keep `validate` for pull requests.
+
+The repository is named after the path of its git remote `origin`, without the host and `.git`: `https://github.com/acme/shop.git`, `git@github.com:acme/shop.git` and `ssh://git@github.com/acme/shop.git` all upload to `acme/shop`, and a GitLab subgroup keeps its whole path, such as `group/subgroup/app`. The upload also sends the remote's URL, without the user name and password of an `https` remote, such as the job token GitLab CI puts there, and the commit checked out, both read by running `git`. `--repository <name>` names the repository yourself. Without it, `scan --upload` exits with 2 when `git` is not installed, when the directory is not in a git repository, or when that repository has no `origin` remote; with it, each of those cases uploads with no remote URL and no commit. A repository with no commit yet uploads with no commit.
+
+The upload holds the references and dynamic references `scan --json` prints, whatever `ignoreKeys` lists, except a reference to a key that cannot be a config key, such as one shorter than 4 characters, which is left out and counted. The output is the scan's, then a line naming the repository, the commit, the project, how many references were sent and how many were left out. A scan that finds no source file exits with 2 and uploads nothing, so a wrong path or `include` never empties the repository's references; a scan that reads files and finds no reference uploads an empty set. With `--json`, it prints the Admin API's response as received.
+
+A project holds at most 50 scanned repositories, and one upload holds at most 10,000 references, dynamic references included; going over either exits with 2. `scan --upload` needs `projects:read`, `configs:read` and `code-references:update`. Uploads do not appear in the audit log.
 
 ## Check the keys the code reads
 

@@ -9,6 +9,8 @@ export const ApiValidationErrorBodySchema = v.object({
 
 export const ServiceSuspendedBodySchema = v.object({ code: v.literal("SERVICE_SUSPENDED") });
 
+export const RepositoryLimitReachedBodySchema = v.object({ code: v.literal("REPOSITORY_LIMIT_REACHED") });
+
 export const EvaluationNotFoundBodySchema = v.object({
   error: v.string(),
   code: v.picklist(["CONFIG_NOT_FOUND", "ENVIRONMENT_NOT_FOUND", "CONTEXT_NOT_FOUND"]),
@@ -55,6 +57,16 @@ export class EvaluationNotFoundError extends CliError {
     apiMessage: string,
   ) {
     super(`The Admin API could not evaluate the config: ${apiMessage} (${code})`);
+  }
+}
+
+export class RepositoryLimitReachedError extends CliError {
+  constructor() {
+    super(
+      "The project already holds its maximum of scanned repositories, so the Admin API refused the upload " +
+        "(REPOSITORY_LIMIT_REACHED). Remove a repository it no longer needs with " +
+        "`configdirector repositories remove <name>`, then upload again.",
+    );
   }
 }
 

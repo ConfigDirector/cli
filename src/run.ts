@@ -134,6 +134,14 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .command("scan")
     .argument("[path]", "directory or file to scan (default: the current directory)")
     .description("list where the code reads config keys through a ConfigDirector SDK")
+    .option(
+      "--upload",
+      "send the code references to the project, replacing those it holds for this repository",
+    )
+    .option(
+      "--repository <name>",
+      "the repository name to upload under (default: the path of the git remote origin, such as ConfigDirector/cli)",
+    )
     .action(commandAction(scan));
 
   program

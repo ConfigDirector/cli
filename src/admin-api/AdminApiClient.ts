@@ -9,6 +9,8 @@ import {
   ApiValidationErrorBodySchema,
   EvaluationNotFoundBodySchema,
   EvaluationNotFoundError,
+  RepositoryLimitReachedBodySchema,
+  RepositoryLimitReachedError,
   ServiceSuspendedBodySchema,
   ServiceSuspendedError,
   UnexpectedApiResponseError,
@@ -18,6 +20,11 @@ import {
   ConfigWithTargetingRulesSchema,
   type ConfigWithTargetingRules,
 } from "./config-with-targeting-rules.js";
+import {
+  ScannedRepositorySchema,
+  type RepositoryScanUpload,
+  type ScannedRepository,
+} from "./repository-scan-upload.js";
 import { SegmentDefinitionSchema, SegmentSchema, type Segment, type SegmentDefinition } from "./segments.js";
 import { TargetingRulesReferenceSchema, type TargetingRulesReference } from "./targeting-rules-reference.js";
 import {
@@ -125,6 +132,9 @@ const describeStatus = (response: Response): string => `HTTP ${response.status}`
 const failureFor = (url: string, response: Response, body: unknown): CliError => {
   switch (response.status) {
     case 400: {
+      if (v.is(RepositoryLimitReachedBodySchema, body)) {
+        return new RepositoryLimitReachedError();
+      }
       const validationError = v.safeParse(ApiValidationErrorBodySchema, body);
       return validationError.success
         ? new ApiValidationError(validationError.output.errors)
@@ -280,6 +290,18 @@ export class AdminApiClient {
       { method: "PUT", body: request },
     );
     return response === undefined ? "not-found" : "replaced";
+  }
+
+  public uploadRepositoryScan(
+    projectId: string,
+    repositoryName: string,
+    upload: RepositoryScanUpload,
+  ): Promise<ParsedResponse<ScannedRepository>> {
+    return this.requestJson(
+      `/v1/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repositoryName)}`,
+      ScannedRepositorySchema,
+      { method: "PUT", body: upload },
+    );
   }
 
   public async archiveConfig(projectId: string, configKey: string): Promise<ConfigArchiveOutcome> {

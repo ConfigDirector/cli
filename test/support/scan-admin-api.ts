@@ -1,4 +1,4 @@
-import { startStubAdminApi } from "./stub-admin-api.js";
+import { startStubAdminApi, type StubReply } from "./stub-admin-api.js";
 
 export const webApp = {
   id: "4f0c1d2e-8a51-4c3b-9b6e-2d7f8a9b0c1d",
@@ -47,12 +47,23 @@ export const projectConfig = (
 
 export type ProjectConfig = ReturnType<typeof projectConfig>;
 
-type ScanAdminApiOptions = { configs?: ProjectConfig[]; projects?: Project[] };
+type ScanAdminApiOptions = {
+  configs?: ProjectConfig[];
+  projects?: Project[];
+  repliesByPath?: Record<string, StubReply>;
+};
 
-export const startScanAdminApi = ({ configs = [], projects = [webApp] }: ScanAdminApiOptions = {}) =>
+export const startScanAdminApi = ({
+  configs = [],
+  projects = [webApp],
+  repliesByPath = {},
+}: ScanAdminApiOptions = {}) =>
   startStubAdminApi(
     { status: 200, body: projects },
-    Object.fromEntries(
-      projects.map((project) => [`/v1/projects/${project.id}/configs`, { status: 200, body: configs }]),
-    ),
+    {
+      ...Object.fromEntries(
+        projects.map((project) => [`/v1/projects/${project.id}/configs`, { status: 200, body: configs }]),
+      ),
+      ...repliesByPath,
+    },
   );

@@ -4,6 +4,15 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.7.0-beta.1] - 2026-10-17
+
+### Added
+
+- `configdirector scan --upload` sends the scan to the project, so the dashboard can show where each config is read and which configs no repository reads. Each upload replaces all the references the project held for the repository. The CLI does not check which branch is checked out, so run it on pushes to the default branch, and keep `validate` for pull requests.
+- The repository is named after the path of its git remote `origin`, without the host and `.git`, so `https://github.com/acme/shop.git`, `git@github.com:acme/shop.git` and `ssh://git@github.com/acme/shop.git` all upload to `acme/shop`. The upload also sends the remote's URL and the commit checked out, both read by running `git`; the user name and password of an `https` remote, such as the job token GitLab CI puts there, are removed first. `--repository <name>` names the repository yourself. Without it, `scan --upload` exits with 2 when `git` is not installed, when the directory is not in a git repository, or when that repository has no `origin` remote; with it, each of those cases uploads with no remote URL and no commit. A repository with no commit yet uploads with no commit.
+- The upload holds the references and dynamic references `scan --json` prints, whatever `ignoreKeys` lists, except a reference to a key that cannot be a config key, which is left out and counted. The output is the scan's, then a line such as `Uploaded the scan of acme/shop at 4d40f50 to web-app: 12 references and 1 dynamic reference, with 0 left out for a key that cannot be a config key.` With `--json`, it prints the Admin API's response as received.
+- A scan that finds no source file exits with 2 and uploads nothing, so a wrong path or `include` never empties the repository's references; a scan that reads files and finds no reference uploads an empty set. When the project already holds its maximum of scanned repositories, `scan --upload` exits with 2 and names `configdirector repositories remove`. It needs `projects:read`, `configs:read` and `code-references:update`.
+
 ## [0.6.0-beta.1] - 2026-10-17
 
 ### Added

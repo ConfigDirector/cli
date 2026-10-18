@@ -9,7 +9,7 @@ import { isSourceExtension, type SourceExtension } from "./source-languages.js";
 
 export type ScannedFile = { path: string; displayPath: string; extension: SourceExtension; contents: string };
 
-type ScanRoot = { path: string; isDirectory: boolean; description: string };
+export type ScanRoot = { path: string; isDirectory: boolean; description: string };
 
 export type ScanScope = {
   root: ScanRoot;
@@ -55,6 +55,9 @@ export const scanRootAt = async (workingDirectory: string, path: string | undefi
     description: path ?? "the current directory",
   };
 };
+
+export const scanRootDirectory = (root: ScanRoot): string =>
+  root.isDirectory ? root.path : dirname(root.path);
 
 const gitignoreRulesIn = async (directory: string): Promise<GitignoreRules[]> => {
   const contents = await readFileIfPresent(join(directory, ".gitignore"));

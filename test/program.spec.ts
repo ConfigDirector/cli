@@ -122,6 +122,18 @@ describe("program", () => {
     expect(help).toContain("Beta: commands and output may change before 1.0.");
   });
 
+  it("lists the --upload and --repository options with the beta label in the help of scan", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["scan", "--help"] });
+
+    const exitCode = await run(invocation);
+
+    const help = invocation.stdout.text();
+    expect(exitCode).toEqual(0);
+    expect(optionNamesUnder(help, "Options:")).toEqual(["--upload", "--repository"]);
+    expect(help).toContain("Beta: commands and output may change before 1.0.");
+  });
+
   it("groups the options of configs create by the types they apply to, with the beta label, in its help", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["configs", "create", "--help"] });

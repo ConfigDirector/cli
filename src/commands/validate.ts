@@ -4,6 +4,7 @@ import { plural } from "../plural.js";
 import { scanProject } from "../project-scan.js";
 import type { CodeReferenceScan } from "../scan/code-references.js";
 import type { InCodeDefaultValue } from "../scan/literals.js";
+import { scanRootAt } from "../scan/scanned-files.js";
 import type { SdkType } from "../scan/sdk-families.js";
 import {
   checkCodeReferences,
@@ -151,15 +152,13 @@ export const validate = async (
   context: CommandContext,
   [path]: ReadonlyArray<string | undefined>,
 ): Promise<CommandOutput> => {
-  const { project, configs, ignoredKeys, scannedLocation, codeReferenceScan } = await scanProject(
-    context,
-    path,
-  );
+  const root = await scanRootAt(context.invocation.workingDirectory, path);
+  const { project, configs, ignoredKeys, codeReferenceScan } = await scanProject(context, root);
   const check = checkCodeReferences(codeReferenceScan.references, configs, ignoredKeys);
 
   return {
     json: { ...scanJson(project.slug, codeReferenceScan), findings: check.findings.map(findingJson) },
-    text: validateText(project.slug, codeReferenceScan, scannedLocation, check),
+    text: validateText(project.slug, codeReferenceScan, root.description, check),
     exitCode: check.findings.length === 0 ? ExitCode.success : ExitCode.problemsFound,
   };
 };
