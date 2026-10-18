@@ -4,6 +4,14 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.9.0-beta.1] - 2026-10-18
+
+### Added
+
+- `configdirector scan --json` prints, and `scan --upload` sends, a snippet with each direct and indirect reference: its line and the 2 lines before and after it, so the dashboard can show the code around the reference. A snippet stops at the start and end of the file, leaves out line endings, and cuts a line longer than 250 characters to its first 250, listing it in `truncatedLines`. Dynamic references have no snippet, and the text output is unchanged. `schema/scan-output.schema.json` describes the `snippet` field.
+- `--context-lines <number>` sets how many lines before and after each reference the snippet includes, from 0 to 5; `--context-lines 0` includes the reference line alone. `--no-snippets` sends no snippet. Giving both, or a `--context-lines` that is not a whole number from 0 to 5, exits with 2.
+- When the project's Code snippets setting is off, `scan --upload` sends no snippets and ends with `Code snippets were not sent: this project does not store them.` `scan` without `--upload` still prints them with `--json`.
+
 ## [0.8.0-beta.1] - 2026-10-18
 
 ### Added

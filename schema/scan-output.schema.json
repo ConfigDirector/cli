@@ -149,6 +149,9 @@
         },
         "test": {
           "$ref": "#/$defs/test"
+        },
+        "snippet": {
+          "$ref": "#/$defs/snippet"
         }
       }
     },
@@ -174,6 +177,58 @@
         "test": {
           "description": "Whether the file is in a test directory or has a test name.",
           "type": "boolean"
+        },
+        "snippet": {
+          "$ref": "#/$defs/snippet"
+        }
+      }
+    },
+    "snippet": {
+      "description": "The reference line and the lines around it, as many before and after it as --context-lines asks for and the file holds. Absent with --no-snippets, and in `configdirector validate --json` output.",
+      "type": "object",
+      "required": ["firstLine", "lines", "language", "truncatedLines"],
+      "additionalProperties": false,
+      "properties": {
+        "firstLine": {
+          "description": "The number of the snippet's first line in the file, starting at 1.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "lines": {
+          "description": "The lines, in order, without their line endings. A line longer than 250 characters is cut to its first 250.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 11,
+          "items": {
+            "type": "string",
+            "maxLength": 250
+          }
+        },
+        "language": {
+          "description": "The language to highlight the lines as, from the file's extension.",
+          "enum": [
+            "typescript",
+            "tsx",
+            "javascript",
+            "jsx",
+            "vue",
+            "svelte",
+            "dart",
+            "swift",
+            "kotlin",
+            "java",
+            "python",
+            "csharp",
+            "go"
+          ]
+        },
+        "truncatedLines": {
+          "description": "The numbers of the lines that were cut to 250 characters, empty when none was.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       }
     },

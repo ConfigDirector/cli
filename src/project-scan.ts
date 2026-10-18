@@ -5,16 +5,17 @@ import { findProjectBySlug, requireLinkedProjectSlug } from "./project-selection
 import { readProjectSettings } from "./project-settings.js";
 import { scanCodeReferences, type CodeReferenceScan } from "./scan/code-references.js";
 import type { ScanRoot } from "./scan/scanned-files.js";
+import type { SnippetCut } from "./scan/snippets.js";
 
-type ProjectScan = {
+type ScannableProject = {
   client: AdminApiClient;
   project: Project;
   configs: Config[];
   ignoredKeys: ReadonlySet<string>;
-  codeReferenceScan: CodeReferenceScan;
+  codeReferencesIn: (root: ScanRoot, snippetCut: SnippetCut) => Promise<CodeReferenceScan>;
 };
 
-export const scanProject = async (context: CommandContext, root: ScanRoot): Promise<ProjectScan> => {
+export const connectToScannableProject = async (context: CommandContext): Promise<ScannableProject> => {
   const { workingDirectory } = context.invocation;
   const settings = await readProjectSettings(workingDirectory);
   const projectSlug = requireLinkedProjectSlug(context, settings);
@@ -29,20 +30,21 @@ export const scanProject = async (context: CommandContext, root: ScanRoot): Prom
       ...config.deprecatedKeys.map((deprecatedKey) => deprecatedKey.key),
     ]),
   );
-  const codeReferenceScan = await scanCodeReferences(
-    {
-      root,
-      workingDirectory,
-      include: settings?.include ?? "everyFile",
-      exclude: settings?.exclude ?? [],
-    },
-    projectKeys,
-  );
   return {
     client,
     project,
     configs,
     ignoredKeys: new Set(settings?.ignoreKeys ?? []),
-    codeReferenceScan,
+    codeReferencesIn: (root, snippetCut) =>
+      scanCodeReferences(
+        {
+          root,
+          workingDirectory,
+          include: settings?.include ?? "everyFile",
+          exclude: settings?.exclude ?? [],
+        },
+        projectKeys,
+        snippetCut,
+      ),
   };
 };

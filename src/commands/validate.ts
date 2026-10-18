@@ -1,7 +1,7 @@
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { ExitCode } from "../ExitCode.js";
 import { plural } from "../plural.js";
-import { scanProject } from "../project-scan.js";
+import { connectToScannableProject } from "../project-scan.js";
 import type { CodeReferenceScan } from "../scan/code-references.js";
 import type { InCodeDefaultValue } from "../scan/literals.js";
 import { scanRootAt } from "../scan/scanned-files.js";
@@ -153,7 +153,8 @@ export const validate = async (
   [path]: ReadonlyArray<string | undefined>,
 ): Promise<CommandOutput> => {
   const root = await scanRootAt(context.invocation.workingDirectory, path);
-  const { project, configs, ignoredKeys, codeReferenceScan } = await scanProject(context, root);
+  const { project, configs, ignoredKeys, codeReferencesIn } = await connectToScannableProject(context);
+  const codeReferenceScan = await codeReferencesIn(root, { kind: "no-snippets" });
   const check = checkCodeReferences(codeReferenceScan.references, configs, ignoredKeys);
 
   return {

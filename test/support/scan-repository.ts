@@ -38,8 +38,9 @@ const runOnRepositoryJson = async (
   command: RepositoryCommand,
   files: RepositoryFiles,
   configs: ProjectConfig[],
+  outputOptions: string[],
 ) => {
-  const { exitCode, stdout, stderr } = await runOnRepository(command, files, configs, ["--json"]);
+  const { exitCode, stdout, stderr } = await runOnRepository(command, files, configs, outputOptions);
   return { exitCode, stderr, output: JSON.parse(stdout) };
 };
 
@@ -47,10 +48,10 @@ export const scanRepositoryText = (files: RepositoryFiles, configs: ProjectConfi
   runOnRepository("scan", files, configs, []);
 
 export const scanRepositoryJson = (files: RepositoryFiles, configs: ProjectConfig[] = []) =>
-  runOnRepositoryJson("scan", files, configs);
+  runOnRepositoryJson("scan", files, configs, ["--json", "--no-snippets"]);
 
 export const validateRepositoryText = (files: RepositoryFiles, configs: ProjectConfig[] = []) =>
   runOnRepository("validate", files, configs, []);
 
 export const validateRepositoryJson = (files: RepositoryFiles, configs: ProjectConfig[] = []) =>
-  runOnRepositoryJson("validate", files, configs);
+  runOnRepositoryJson("validate", files, configs, ["--json"]);

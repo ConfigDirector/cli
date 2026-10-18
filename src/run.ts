@@ -18,7 +18,7 @@ import { init } from "./commands/init.js";
 import { login } from "./commands/login.js";
 import { listProjects } from "./commands/projects.js";
 import { listScannedRepositories, removeScannedRepository } from "./commands/repositories.js";
-import { scan } from "./commands/scan.js";
+import { DEFAULT_CONTEXT_LINES, MAXIMUM_CONTEXT_LINES, scan } from "./commands/scan.js";
 import { getSegment, listSegments } from "./commands/segments.js";
 import { setTargetingRules, showTargetingRulesReference } from "./commands/targeting-rules.js";
 import { validate } from "./commands/validate.js";
@@ -143,6 +143,14 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
       "--repository <name>",
       "the repository name to upload under (default: the path of the git remote origin, such as ConfigDirector/cli)",
     )
+    .addOption(
+      new Option(
+        "--context-lines <number>",
+        "how many lines of code to include before and after each reference, " +
+          `from 0 to ${MAXIMUM_CONTEXT_LINES} (default: ${DEFAULT_CONTEXT_LINES})`,
+      ).conflicts("snippets"),
+    )
+    .option("--no-snippets", "leave out the lines of code around each reference")
     .action(commandAction(scan));
 
   program

@@ -54,6 +54,8 @@ The scan skips what `.gitignore` ignores, the `node_modules`, `vendor`, `build`,
 
 With `--json`, `scan` prints the references for scripts and CI; `schema/scan-output.schema.json` in the package describes that output. Each reference has a `kind`, `direct` or `indirect`, and a direct reference resolved from a constant carries the constant as `argument`.
 
+Each direct and indirect reference in the JSON also carries a `snippet`: its line and the 2 lines before and after it, without line endings, with any line longer than 250 characters cut to its first 250. `--context-lines <number>` includes from 0 to 5 lines on each side, and `--no-snippets` leaves every snippet out; giving both exits with 2. Dynamic references have no snippet, and the text output shows none.
+
 ## Upload the scan to ConfigDirector
 
 From the repository root, on the default branch:
@@ -67,6 +69,8 @@ configdirector scan --upload
 The repository is named after the path of its git remote `origin`, without the host and `.git`: `https://github.com/acme/shop.git`, `git@github.com:acme/shop.git` and `ssh://git@github.com/acme/shop.git` all upload to `acme/shop`, and a GitLab subgroup keeps its whole path, such as `group/subgroup/app`. The upload also sends the remote's URL, without the user name and password of an `https` remote, such as the job token GitLab CI puts there, and the commit checked out, both read by running `git`. `--repository <name>` names the repository yourself. Without it, `scan --upload` exits with 2 when `git` is not installed, when the directory is not in a git repository, or when that repository has no `origin` remote; with it, each of those cases uploads with no remote URL and no commit. A repository with no commit yet uploads with no commit.
 
 The upload holds the references and dynamic references `scan --json` prints, whatever `ignoreKeys` lists, except a reference to a key that cannot be a config key, such as one shorter than 4 characters, which is left out and counted. The output is the scan's, then a line naming the repository, the commit, the project, how many references were sent and how many were left out. A scan that finds no source file exits with 2 and uploads nothing, so a wrong path or `include` never empties the repository's references; a scan that reads files and finds no reference uploads an empty set. With `--json`, it prints the Admin API's response as received.
+
+Each direct and indirect reference is sent with its snippet, so the dashboard can show the code around it; `--no-snippets` sends no code, and `--context-lines` sets how many lines are sent. When the project's Code snippets setting is off, `scan --upload` sends no snippets and ends with `Code snippets were not sent: this project does not store them.`
 
 A project holds at most 50 scanned repositories, and one upload holds at most 10,000 references, dynamic references included; going over either exits with 2. `scan --upload` needs `projects:read`, `configs:read` and `code-references:update`. Uploads do not appear in the audit log.
 

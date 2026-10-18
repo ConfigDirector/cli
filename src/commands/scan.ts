@@ -1,12 +1,14 @@
+import type { Project } from "../admin-api/AdminApiClient.js";
 import type { ScannedRepository } from "../admin-api/scanned-repositories.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { ExitCode } from "../ExitCode.js";
 import { plural } from "../plural.js";
-import { scanProject } from "../project-scan.js";
+import { connectToScannableProject } from "../project-scan.js";
 import type { CodeReference, CodeReferenceScan } from "../scan/code-references.js";
 import { fitsKeyGrammar } from "../scan/literals.js";
 import { scanRootAt, scanRootDirectory, type ScanRoot } from "../scan/scanned-files.js";
+import type { SnippetCut } from "../scan/snippets.js";
 import { readGitCheckout } from "../scanned-repository/git-checkout.js";
 import { repositoryIdentityOf } from "../scanned-repository/repository-identity.js";
 import { shortCommit } from "../scanned-repository/short-commit.js";
@@ -25,6 +27,7 @@ const referenceJson = (reference: CodeReference) => {
         ...(reference.inCodeDefault === undefined ? {} : { default: reference.inCodeDefault }),
         ...(reference.getterType === undefined ? {} : { getterType: reference.getterType }),
         test: reference.test,
+        ...(reference.snippet === undefined ? {} : { snippet: reference.snippet }),
       };
     case "indirect":
       return {
@@ -33,6 +36,7 @@ const referenceJson = (reference: CodeReference) => {
         line: reference.line,
         kind: reference.kind,
         test: reference.test,
+        ...(reference.snippet === undefined ? {} : { snippet: reference.snippet }),
       };
   }
 };
@@ -138,17 +142,38 @@ const uploadLine = (projectSlug: string, repository: ScannedRepository, leftOutC
   `${repository.dynamicReferenceCount} ${plural(repository.dynamicReferenceCount, "dynamic reference", "dynamic references")}, ` +
   `with ${leftOutCount} left out for a key that cannot be a config key.`;
 
+type SnippetsSent =
+  | { kind: "as-requested"; snippetCut: SnippetCut }
+  | { kind: "project-stores-none"; snippetCut: { kind: "no-snippets" } };
+
+const snippetsSentTo = (project: Project, requestedSnippetCut: SnippetCut): SnippetsSent =>
+  project.storeCodeSnippets
+    ? { kind: "as-requested", snippetCut: requestedSnippetCut }
+    : { kind: "project-stores-none", snippetCut: { kind: "no-snippets" } };
+
+const snippetsSentText = (snippetsSent: SnippetsSent): string => {
+  switch (snippetsSent.kind) {
+    case "as-requested":
+      return "";
+    case "project-stores-none":
+      return "Code snippets were not sent: this project does not store them.\n";
+  }
+};
+
 const uploadScan = async (
   context: CommandContext,
   root: ScanRoot,
   repositoryOption: string | undefined,
+  requestedSnippetCut: SnippetCut,
 ): Promise<CommandOutput> => {
   const repository = repositoryIdentityOf(
     await readGitCheckout(scanRootDirectory(root), context.invocation.environmentVariables),
     repositoryOption,
     root.description,
   );
-  const { client, project, codeReferenceScan } = await scanProject(context, root);
+  const { client, project, codeReferencesIn } = await connectToScannableProject(context);
+  const snippetsSent = snippetsSentTo(project, requestedSnippetCut);
+  const codeReferenceScan = await codeReferencesIn(root, snippetsSent.snippetCut);
   if (codeReferenceScan.filesScanned === 0) {
     throw new CliError(
       `No source files to scan in ${root.description}, so nothing was uploaded ` +
@@ -172,23 +197,48 @@ const uploadScan = async (
 
   return {
     json: responseBody,
-    text: `${scanText(codeReferenceScan, root.description)}\n${uploadLine(project.slug, scannedRepository, leftOutCount)}\n`,
+    text:
+      `${scanText(codeReferenceScan, root.description)}\n${uploadLine(project.slug, scannedRepository, leftOutCount)}\n` +
+      snippetsSentText(snippetsSent),
     exitCode: ExitCode.success,
   };
 };
 
-type ScanOptions = { upload?: true; repository?: string };
+type ScanOptions = { upload?: true; repository?: string; contextLines?: string; snippets: boolean };
+
+export const DEFAULT_CONTEXT_LINES = 2;
+export const MAXIMUM_CONTEXT_LINES = 5;
+
+const contextLinesOf = (text: string | undefined): number => {
+  if (text === undefined) {
+    return DEFAULT_CONTEXT_LINES;
+  }
+  const contextLines = /^\d+$/.test(text) ? Number(text) : undefined;
+  if (contextLines === undefined || contextLines > MAXIMUM_CONTEXT_LINES) {
+    throw new CliError(
+      `--context-lines takes a whole number from 0 to ${MAXIMUM_CONTEXT_LINES}, not ${text}.`,
+    );
+  }
+  return contextLines;
+};
+
+const snippetCutOf = (options: ScanOptions): SnippetCut =>
+  options.snippets
+    ? { kind: "around-each-reference", contextLines: contextLinesOf(options.contextLines) }
+    : { kind: "no-snippets" };
 
 export const scan = async (
   context: CommandContext,
   [path]: ReadonlyArray<string | undefined>,
   options: ScanOptions,
 ): Promise<CommandOutput> => {
+  const snippetCut = snippetCutOf(options);
   const root = await scanRootAt(context.invocation.workingDirectory, path);
   if (options.upload) {
-    return uploadScan(context, root, options.repository);
+    return uploadScan(context, root, options.repository, snippetCut);
   }
-  const { project, codeReferenceScan } = await scanProject(context, root);
+  const { project, codeReferencesIn } = await connectToScannableProject(context);
+  const codeReferenceScan = await codeReferencesIn(root, snippetCut);
 
   return {
     json: scanJson(project.slug, codeReferenceScan),

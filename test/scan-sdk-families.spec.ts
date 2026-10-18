@@ -31,7 +31,15 @@ const scanFixture = async (fixtureName: string) => {
   const sandbox = await createSandbox();
   await copyFixtureRepository(sandbox.workingDirectory, fixtureName);
   const invocation = sandbox.invocation({
-    commandLineArguments: ["scan", "--project", "web-app", "--token", "cd_flag_token", "--json"],
+    commandLineArguments: [
+      "scan",
+      "--project",
+      "web-app",
+      "--token",
+      "cd_flag_token",
+      "--json",
+      "--no-snippets",
+    ],
     environmentVariables: { CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl },
   });
 

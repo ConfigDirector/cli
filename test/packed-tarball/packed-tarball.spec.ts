@@ -116,6 +116,16 @@ describe("the packed tarball installed into an empty directory", () => {
         call: "getValue",
         default: { type: "boolean", value: false },
         test: false,
+        snippet: {
+          firstLine: 1,
+          lines: [
+            'import { createClient } from "@configdirector/server-sdk";',
+            "",
+            'createClient("key").getValue("new-checkout", false);',
+          ],
+          language: "typescript",
+          truncatedLines: [],
+        },
       },
     ]);
   });

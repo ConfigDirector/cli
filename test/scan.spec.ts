@@ -57,7 +57,7 @@ const scanServerSdkCalls = async (lines: string[]) => {
   const adminApi = await startScanAdminApi();
   const sandbox = await createSandbox();
   await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", serverSdkFile(lines));
-  return scanJson(sandbox, adminApi.baseUrl);
+  return scanJson(sandbox, adminApi.baseUrl, ["--no-snippets"]);
 };
 
 describe("scan", () => {
@@ -76,7 +76,7 @@ describe("scan", () => {
       ].join("\n"),
     );
 
-    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl, ["--no-snippets"]);
 
     expect(exitCode).toEqual(0);
     expect(output).toEqual({
@@ -3105,16 +3105,19 @@ describe("scan output", () => {
 
     expect(exitCode).toEqual(0);
     expect(
-      output.references.map((reference: { kind: string; argument?: string }) => [
-        reference.kind,
-        reference.argument,
-      ]),
+      output.references.map(
+        (reference: { kind: string; argument?: string; snippet: { firstLine: number } }) => [
+          reference.kind,
+          reference.argument,
+          reference.snippet.firstLine,
+        ],
+      ),
     ).toEqual([
-      ["direct", undefined],
-      ["direct", "DARK_MODE_FLAG"],
-      ["indirect", undefined],
-      ["direct", undefined],
-      ["direct", undefined],
+      ["direct", undefined, 5],
+      ["direct", "DARK_MODE_FLAG", 7],
+      ["indirect", undefined, 8],
+      ["direct", undefined, 1],
+      ["direct", undefined, 2],
     ]);
     expect(output.dynamicReferences.length).toEqual(1);
     expect(validateScanOutput(output)).toEqual(true);

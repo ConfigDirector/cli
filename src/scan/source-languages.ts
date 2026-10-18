@@ -25,6 +25,41 @@ export type SourceExtension = keyof typeof languageOfExtension;
 export const isSourceExtension = (extension: string): extension is SourceExtension =>
   Object.hasOwn(languageOfExtension, extension);
 
+export type SnippetLanguage =
+  | "typescript"
+  | "tsx"
+  | "javascript"
+  | "jsx"
+  | "vue"
+  | "svelte"
+  | "dart"
+  | "swift"
+  | "kotlin"
+  | "java"
+  | "python"
+  | "csharp"
+  | "go";
+
+export const snippetLanguageOfExtension: { [E in SourceExtension]: SnippetLanguage } = {
+  ".js": "javascript",
+  ".jsx": "jsx",
+  ".mjs": "javascript",
+  ".cjs": "javascript",
+  ".ts": "typescript",
+  ".tsx": "tsx",
+  ".mts": "typescript",
+  ".cts": "typescript",
+  ".vue": "vue",
+  ".svelte": "svelte",
+  ".dart": "dart",
+  ".swift": "swift",
+  ".kt": "kotlin",
+  ".java": "java",
+  ".py": "python",
+  ".cs": "csharp",
+  ".go": "go",
+};
+
 export type LanguageSyntax = {
   lineComment: "//" | "#";
   blockComments: boolean;

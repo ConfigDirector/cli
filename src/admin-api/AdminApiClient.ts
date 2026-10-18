@@ -39,6 +39,7 @@ const ProjectSchema = v.object({
   id: v.string(),
   name: v.string(),
   slug: v.string(),
+  storeCodeSnippets: v.optional(v.boolean(), true),
 });
 
 export type Project = v.InferOutput<typeof ProjectSchema>;

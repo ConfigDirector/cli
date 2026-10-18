@@ -1,6 +1,6 @@
 import { startStubAdminApi, type StubReply } from "./stub-admin-api.js";
 
-export const webApp = {
+export const webAppFromOlderServer = {
   id: "4f0c1d2e-8a51-4c3b-9b6e-2d7f8a9b0c1d",
   name: "Web App",
   slug: "web-app",
@@ -9,7 +9,9 @@ export const webApp = {
   updatedAt: "2026-09-01T10:00:00.000Z",
 };
 
-type Project = typeof webApp;
+export const webApp = { ...webAppFromOlderServer, storeCodeSnippets: true };
+
+export type ListedProject = typeof webAppFromOlderServer & { storeCodeSnippets?: boolean };
 
 type ConfigOverrides = {
   type?: string;
@@ -49,7 +51,7 @@ export type ProjectConfig = ReturnType<typeof projectConfig>;
 
 type ScanAdminApiOptions = {
   configs?: ProjectConfig[];
-  projects?: Project[];
+  projects?: ListedProject[];
   repliesByPath?: Record<string, StubReply>;
 };
 

@@ -13,13 +13,14 @@ import {
   type SdkCallMatch,
 } from "./sdk-calls.js";
 import { readFileWithinSizeLimit, scannedFiles, type ScannedFile, type ScanScope } from "./scanned-files.js";
+import { snippetCutterFor, type Snippet, type SnippetCut } from "./snippets.js";
 import { isSourceExtension, languageOfExtension, type SourceExtension } from "./source-languages.js";
 import { SourceCode } from "./source-code.js";
 import { isTestFile } from "./test-files.js";
 
 type IndirectReference = { key: string; line: number; test: boolean };
 
-export type CodeReference = { file: string } & (
+export type CodeReference = { file: string; snippet: Snippet | undefined } & (
   ({ kind: "direct" } & DirectReference) | ({ kind: "indirect" } & IndirectReference)
 );
 
@@ -41,11 +42,11 @@ type FileMatch = SdkCallMatch | KnownKeyTextMatch;
 type ReachedFile =
   { kind: "marked"; families: SdkFamily[] } | { kind: "unmarked"; reExportedFiles: string[] };
 
-type ScanMatch = FileMatch & { file: string };
+type ScanMatch = FileMatch & { file: string; snippet: Snippet | undefined };
 
 type MatchOutcome = { file: string } & (
-  | { kind: "direct"; reference: DirectReference }
-  | { kind: "indirect"; reference: IndirectReference }
+  | { kind: "direct"; reference: DirectReference; snippet: Snippet | undefined }
+  | { kind: "indirect"; reference: IndirectReference; snippet: Snippet | undefined }
   | { kind: "dynamic"; reference: DynamicReference }
   | { kind: "definitionOfConstantRead" }
 );
@@ -81,22 +82,22 @@ const matchOutcomes = (matches: readonly ScanMatch[], constantIndex: ConstantInd
       match.kind === "named" && constantIndex.keyOf(match.name) !== undefined ? [match.name] : [],
     ),
   );
-  return matches.map(({ file, ...match }): MatchOutcome => {
+  return matches.map(({ file, snippet, ...match }): MatchOutcome => {
     switch (match.kind) {
       case "direct":
-        return { file, kind: "direct", reference: match.reference };
+        return { file, kind: "direct", reference: match.reference, snippet };
       case "dynamic":
         return { file, kind: "dynamic", reference: match.reference };
       case "named": {
         const key = constantIndex.keyOf(match.name);
         return key === undefined
           ? { file, kind: "dynamic", reference: dynamicReferenceOf(match.reference) }
-          : { file, kind: "direct", reference: { ...match.reference, key } };
+          : { file, kind: "direct", reference: { ...match.reference, key }, snippet };
       }
       case "indirect":
         return match.constantName !== undefined && constantsReadByCalls.has(match.constantName)
           ? { file, kind: "definitionOfConstantRead" }
-          : { file, kind: "indirect", reference: match.reference };
+          : { file, kind: "indirect", reference: match.reference, snippet };
     }
   });
 };
@@ -232,6 +233,7 @@ const sdkFamiliesUsedIn = (highestDirectory: string) => {
 export const scanCodeReferences = async (
   scope: ScanScope,
   projectKeys: ReadonlySet<string>,
+  snippetCut: SnippetCut,
 ): Promise<CodeReferenceScan> => {
   const scan: CodeReferenceScan = { filesScanned: 0, references: [], dynamicReferences: [] };
   const familiesUsedIn = sdkFamiliesUsedIn(scope.workingDirectory);
@@ -250,20 +252,32 @@ export const scanCodeReferences = async (
     const constantNameOfToken = new Map(
       constantAssignments.map((assignment) => [assignment.tokenIndex, assignment.name]),
     );
+    const snippetAround = snippetCutterFor(file, snippetCut);
     matches.push(
       ...matchesIn(file, code, callShapes, projectKeys, constantNameOfToken).map((match) => ({
         ...match,
         file: file.displayPath,
+        snippet: snippetAround(match.reference.line),
       })),
     );
   }
   for (const outcome of matchOutcomes(matches, constantIndex)) {
     switch (outcome.kind) {
       case "direct":
-        scan.references.push({ ...outcome.reference, kind: "direct", file: outcome.file });
+        scan.references.push({
+          ...outcome.reference,
+          kind: "direct",
+          file: outcome.file,
+          snippet: outcome.snippet,
+        });
         break;
       case "indirect":
-        scan.references.push({ ...outcome.reference, kind: "indirect", file: outcome.file });
+        scan.references.push({
+          ...outcome.reference,
+          kind: "indirect",
+          file: outcome.file,
+          snippet: outcome.snippet,
+        });
         break;
       case "dynamic":
         scan.dynamicReferences.push({ ...outcome.reference, file: outcome.file });

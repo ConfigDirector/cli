@@ -11,7 +11,13 @@ import {
 } from "./support/git-repository.js";
 import { writeRepositoryFile } from "./support/repository-files.js";
 import { createSandbox, type Sandbox } from "./support/sandbox.js";
-import { projectConfig, startScanAdminApi } from "./support/scan-admin-api.js";
+import {
+  projectConfig,
+  startScanAdminApi,
+  webApp,
+  webAppFromOlderServer,
+  type ListedProject,
+} from "./support/scan-admin-api.js";
 import type { StubReply } from "./support/stub-admin-api.js";
 
 const checkoutFile = [
@@ -32,7 +38,7 @@ const checkoutScanLines = [
 
 const checkoutCommit = "4d40f509d1331d512f3afe8201f97339c808d651";
 
-const newCheckoutReference = {
+const newCheckoutReferenceWithoutSnippet = {
   key: "new-checkout",
   file: "src/checkout.ts",
   line: 4,
@@ -41,6 +47,20 @@ const newCheckoutReference = {
   call: "getValue",
   default: { type: "boolean", value: false },
   test: false,
+};
+
+const newCheckoutReference = {
+  ...newCheckoutReferenceWithoutSnippet,
+  snippet: {
+    firstLine: 2,
+    lines: [
+      "",
+      'const client = createClient("YOUR-SERVER-SDK-KEY");',
+      'export const newCheckout = () => client.getValue("new-checkout", false);',
+    ],
+    language: "typescript",
+    truncatedLines: [],
+  },
 };
 
 const scannedRepository = (overrides: object = {}) => ({
@@ -107,6 +127,29 @@ const uploadRepositoryWithOrigin = async (
   await createRepositoryWithOrigin(sandbox.workingDirectory, remoteUrl);
 
   const result = await uploadScan(sandbox, adminApi.baseUrl, commandLineArguments);
+
+  return { ...result, adminApi };
+};
+
+const uploadStorefrontScanTo = async (project: ListedProject, commandLineArguments: string[] = []) => {
+  const adminApi = await startScanAdminApi({
+    configs: [projectConfig("new-checkout")],
+    projects: [project],
+    repliesByPath: {
+      [projectPath("/repositories/acme%2Fstorefront")]: {
+        status: 200,
+        body: scannedRepository({ name: "acme/storefront", remoteUrl: "", commit: "" }),
+      },
+    },
+  });
+  const sandbox = await createSandbox();
+  await writeRepositoryFile(sandbox.workingDirectory, "src/checkout.ts", checkoutFile);
+
+  const result = await uploadScan(sandbox, adminApi.baseUrl, [
+    "--repository",
+    "acme/storefront",
+    ...commandLineArguments,
+  ]);
 
   return { ...result, adminApi };
 };
@@ -539,8 +582,31 @@ describe("scan --upload", () => {
               argument: "NEW_CHECKOUT",
               default: { type: "boolean", value: false },
               test: false,
+              snippet: {
+                firstLine: 3,
+                lines: [
+                  'const client = createClient("YOUR-SERVER-SDK-KEY");',
+                  'const NEW_CHECKOUT = "new-checkout";',
+                  "export const newCheckout = () => client.getValue(NEW_CHECKOUT, false);",
+                  "export const setting = (key: string) => client.getValue(key, 0);",
+                ],
+                language: "typescript",
+                truncatedLines: [],
+              },
             },
-            { key: "new-checkout", file: "test/checkout.test.ts", line: 1, kind: "indirect", test: true },
+            {
+              key: "new-checkout",
+              file: "test/checkout.test.ts",
+              line: 1,
+              kind: "indirect",
+              test: true,
+              snippet: {
+                firstLine: 1,
+                lines: ['export const fixtureKeys = ["new-checkout"];'],
+                language: "typescript",
+                truncatedLines: [],
+              },
+            },
           ],
           dynamicReferences: [
             { file: "src/checkout.ts", line: 6, sdk: "js-server", call: "getValue", argument: "key" },
@@ -795,6 +861,136 @@ describe("scan --upload of an empty scan", () => {
       {
         path: projectPath("/repositories/acme%2Fstorefront"),
         body: { remoteUrl: "", commit: "", filesScanned: 1, references: [], dynamicReferences: [] },
+      },
+    ]);
+  });
+});
+
+describe("scan --upload snippets", () => {
+  it("sends the snippet of each reference by default", async () => {
+    const { exitCode, stdout, stderr, adminApi } = await uploadStorefrontScanTo(webApp);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      ...checkoutScanLines,
+      "Uploaded the scan of acme/storefront to web-app: 1 reference and 0 dynamic references, with 0 left out for a key that cannot be a config key.",
+      "",
+    ]);
+    expect(uploadRequestsOf(adminApi)).toEqual([
+      {
+        path: projectPath("/repositories/acme%2Fstorefront"),
+        body: {
+          remoteUrl: "",
+          commit: "",
+          filesScanned: 1,
+          references: [newCheckoutReference],
+          dynamicReferences: [],
+        },
+      },
+    ]);
+  });
+
+  it("sends no snippet and says so when the project stores none", async () => {
+    const { exitCode, stdout, stderr, adminApi } = await uploadStorefrontScanTo({
+      ...webApp,
+      storeCodeSnippets: false,
+    });
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      ...checkoutScanLines,
+      "Uploaded the scan of acme/storefront to web-app: 1 reference and 0 dynamic references, with 0 left out for a key that cannot be a config key.",
+      "Code snippets were not sent: this project does not store them.",
+      "",
+    ]);
+    expect(uploadRequestsOf(adminApi)).toEqual([
+      {
+        path: projectPath("/repositories/acme%2Fstorefront"),
+        body: {
+          remoteUrl: "",
+          commit: "",
+          filesScanned: 1,
+          references: [newCheckoutReferenceWithoutSnippet],
+          dynamicReferences: [],
+        },
+      },
+    ]);
+  });
+
+  it("sends the snippets when the project comes from a server that has no Code snippets setting yet", async () => {
+    const { exitCode, stdout, stderr, adminApi } = await uploadStorefrontScanTo(webAppFromOlderServer);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      ...checkoutScanLines,
+      "Uploaded the scan of acme/storefront to web-app: 1 reference and 0 dynamic references, with 0 left out for a key that cannot be a config key.",
+      "",
+    ]);
+    expect(uploadRequestsOf(adminApi)).toEqual([
+      {
+        path: projectPath("/repositories/acme%2Fstorefront"),
+        body: {
+          remoteUrl: "",
+          commit: "",
+          filesScanned: 1,
+          references: [newCheckoutReference],
+          dynamicReferences: [],
+        },
+      },
+    ]);
+  });
+
+  it("sends no snippet with --no-snippets, without the line about the project", async () => {
+    const { exitCode, stdout, stderr, adminApi } = await uploadStorefrontScanTo(webApp, ["--no-snippets"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      ...checkoutScanLines,
+      "Uploaded the scan of acme/storefront to web-app: 1 reference and 0 dynamic references, with 0 left out for a key that cannot be a config key.",
+      "",
+    ]);
+    expect(uploadRequestsOf(adminApi)).toEqual([
+      {
+        path: projectPath("/repositories/acme%2Fstorefront"),
+        body: {
+          remoteUrl: "",
+          commit: "",
+          filesScanned: 1,
+          references: [newCheckoutReferenceWithoutSnippet],
+          dynamicReferences: [],
+        },
+      },
+    ]);
+  });
+
+  it("says the project stores none when --no-snippets is given against a project that stores none", async () => {
+    const { exitCode, stdout, stderr, adminApi } = await uploadStorefrontScanTo(
+      { ...webApp, storeCodeSnippets: false },
+      ["--no-snippets"],
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      ...checkoutScanLines,
+      "Uploaded the scan of acme/storefront to web-app: 1 reference and 0 dynamic references, with 0 left out for a key that cannot be a config key.",
+      "Code snippets were not sent: this project does not store them.",
+      "",
+    ]);
+    expect(uploadRequestsOf(adminApi)).toEqual([
+      {
+        path: projectPath("/repositories/acme%2Fstorefront"),
+        body: {
+          remoteUrl: "",
+          commit: "",
+          filesScanned: 1,
+          references: [newCheckoutReferenceWithoutSnippet],
+          dynamicReferences: [],
+        },
       },
     ]);
   });
