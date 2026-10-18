@@ -1,4 +1,4 @@
-import type { ScannedRepository } from "../admin-api/repository-scan-upload.js";
+import type { ScannedRepository } from "../admin-api/scanned-repositories.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { ExitCode } from "../ExitCode.js";
@@ -9,6 +9,7 @@ import { fitsKeyGrammar } from "../scan/literals.js";
 import { scanRootAt, scanRootDirectory, type ScanRoot } from "../scan/scanned-files.js";
 import { readGitCheckout } from "../scanned-repository/git-checkout.js";
 import { repositoryIdentityOf } from "../scanned-repository/repository-identity.js";
+import { shortCommit } from "../scanned-repository/short-commit.js";
 
 const referenceJson = (reference: CodeReference) => {
   switch (reference.kind) {
@@ -128,10 +129,8 @@ const scanText = (scan: CodeReferenceScan, scannedLocation: string): string => {
   return `${[...keySections, ...dynamicSection, counts].join("\n\n")}\n`;
 };
 
-const SHORT_COMMIT_LENGTH = 7;
-
-const shortCommitText = (commit: string): string =>
-  commit === "" ? "" : ` at ${commit.slice(0, SHORT_COMMIT_LENGTH)}`;
+const shortCommitText = (commit: string | null): string =>
+  commit === null ? "" : ` at ${shortCommit(commit)}`;
 
 const uploadLine = (projectSlug: string, repository: ScannedRepository, leftOutCount: number): string =>
   `Uploaded the scan of ${repository.name}${shortCommitText(repository.commit)} to ${projectSlug}: ` +

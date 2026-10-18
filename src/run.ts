@@ -17,6 +17,7 @@ import { evaluate } from "./commands/evaluate.js";
 import { init } from "./commands/init.js";
 import { login } from "./commands/login.js";
 import { listProjects } from "./commands/projects.js";
+import { listScannedRepositories, removeScannedRepository } from "./commands/repositories.js";
 import { scan } from "./commands/scan.js";
 import { getSegment, listSegments } from "./commands/segments.js";
 import { setTargetingRules, showTargetingRulesReference } from "./commands/targeting-rules.js";
@@ -376,6 +377,28 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
       "show the format targeting rules take: the condition kinds, the attributes a condition can test and the operators",
     )
     .action(commandAction(showTargetingRulesReference));
+
+  const repositoriesCommand = program
+    .command("repositories")
+    .description("list a project's scanned repositories and remove one");
+
+  repositoriesCommand
+    .command("list")
+    .description(
+      "list the repositories whose scan was uploaded to the project, with their commit, scan time and reference counts",
+    )
+    .action(commandAction(listScannedRepositories));
+
+  repositoriesCommand
+    .command("remove")
+    .argument("<name>", "the repository's name, as repositories list shows it, such as ConfigDirector/cli")
+    .description("remove a scanned repository and its code references from the project")
+    .addHelpText(
+      "after",
+      "\nThe repository is removed with no confirmation, and the dashboard stops showing its code references. " +
+        "The next scan --upload from it adds it back.",
+    )
+    .action(commandAction(removeScannedRepository));
 
   try {
     await program.parseAsync(invocation.commandLineArguments, { from: "user" });

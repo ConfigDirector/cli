@@ -17,6 +17,7 @@ import { newConfigOf, type NewConfig, type NewConfigOptions } from "../configs/n
 import { ExitCode } from "../ExitCode.js";
 import { connectToLinkedProject } from "../project-selection.js";
 import type { SegmentsById } from "../rule-sentences.js";
+import { utcMinute } from "../utc-minute.js";
 
 export const LIFECYCLE_STATES = ["new", "in-use", "settled", "archive-ready", "stale"] as const;
 
@@ -246,11 +247,6 @@ const sdkDescription = (evaluation: LatestEvaluation): string =>
     evaluation.sdkName ?? "unknown SDK",
     ...(evaluation.sdkVersion === null ? [] : [evaluation.sdkVersion]),
   ].join(" ");
-
-const utcMinute = (time: string): string => {
-  const isoTime = new Date(time).toISOString();
-  return `${isoTime.slice(0, 10)} ${isoTime.slice(11, 16)} UTC`;
-};
 
 const activityLines = (configKey: string, activity: ConfigActivity): string[] =>
   activity.latestEvaluations.length === 0

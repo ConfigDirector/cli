@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, archives configs, and uploads the repository's code references to the project.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, archives configs, uploads the repository's code references to the project, and lists and removes the project's scanned repositories.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
@@ -69,6 +69,31 @@ The repository is named after the path of its git remote `origin`, without the h
 The upload holds the references and dynamic references `scan --json` prints, whatever `ignoreKeys` lists, except a reference to a key that cannot be a config key, such as one shorter than 4 characters, which is left out and counted. The output is the scan's, then a line naming the repository, the commit, the project, how many references were sent and how many were left out. A scan that finds no source file exits with 2 and uploads nothing, so a wrong path or `include` never empties the repository's references; a scan that reads files and finds no reference uploads an empty set. With `--json`, it prints the Admin API's response as received.
 
 A project holds at most 50 scanned repositories, and one upload holds at most 10,000 references, dynamic references included; going over either exits with 2. `scan --upload` needs `projects:read`, `configs:read` and `code-references:update`. Uploads do not appear in the audit log.
+
+## List and remove scanned repositories
+
+```bash
+configdirector repositories list
+```
+
+`repositories list` lists the repositories whose scan was uploaded to the project, one per line, with the commit, when it was scanned in UTC, and how many references and dynamic references it holds, and ends with how many scanned repositories the project has out of the 50 it can hold:
+
+```txt
+ConfigDirector/cli   4d40f50   2026-10-17 10:00 UTC   12 references   1 dynamic reference
+acme/storefront      9f3e2a1   2026-10-16 09:12 UTC   1 reference     0 dynamic references
+
+web-app has 2 of the 50 scanned repositories a project can hold.
+```
+
+A repository uploaded without a commit shows `no commit`. With `--json`, it prints the Admin API's response as received, which also holds each repository's remote URL and how many files its scan read. `repositories list` needs `projects:read` and `code-references:read`.
+
+```bash
+configdirector repositories remove acme/storefront
+```
+
+Nothing removes a scanned repository on its own: a repository that is renamed or retired keeps its last upload, keeps counting toward the 50, and the dashboard keeps using its references to show where each config is read and which configs no repository reads. `repositories remove <name>` removes the repository and all its references from the project, with no confirmation, and prints `Removed acme/storefront and its code references from web-app.` To rename a repository, remove the old name and upload under the new one; a removed repository that uploads again is added back. When no scanned repository in the project has the name, it exits with 2 and lists the names the project has. With `--json`, it prints `{ "removedRepository": "acme/storefront" }`, with the name as given.
+
+`repositories remove` needs `projects:read` and `code-references:update`, and `code-references:read` to list the names when none matches. Removals do not appear in the audit log.
 
 ## Check the keys the code reads
 
@@ -258,7 +283,7 @@ It asks for no confirmation and does not check whether the code still reads the 
 | `--project <slug>` | `CONFIGDIRECTOR_PROJECT`  | Project slug. Without either, every command that reads a project uses the `project` in `configdirector.json`. |
 | `--json`           |                           | Print JSON on stdout. Errors always go to stderr.                                                             |
 
-The command exits with 0 when it succeeds, 1 when `validate` found a problem or `configs create` found a config that already has the key, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or something the command names that does not exist, such as a config key, an environment, a saved context, a segment key or a tag. A CI job can therefore tell a wrong config key from an outage.
+The command exits with 0 when it succeeds, 1 when `validate` found a problem or `configs create` found a config that already has the key, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or something the command names that does not exist, such as a config key, an environment, a saved context, a segment key, a tag or a scanned repository. A CI job can therefore tell a wrong config key from an outage.
 
 ## License
 

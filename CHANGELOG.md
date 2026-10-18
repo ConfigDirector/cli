@@ -4,6 +4,13 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.8.0-beta.1] - 2026-10-18
+
+### Added
+
+- `configdirector repositories list` lists the repositories whose scan was uploaded to the project, one per line, with the commit, when it was scanned in UTC, and how many references and dynamic references it holds, and ends with how many scanned repositories the project has out of the 50 it can hold, as in `web-app has 2 of the 50 scanned repositories a project can hold.` A repository uploaded without a commit shows `no commit`. With `--json`, it prints the Admin API's response as received. It needs `projects:read` and `code-references:read`.
+- `configdirector repositories remove <name>` removes a scanned repository and all its references from the project, so a repository that was renamed or retired stops counting toward the 50, and the dashboard stops using its references to show where each config is read and which configs no repository reads. It asks for no confirmation and prints `Removed acme/storefront and its code references from web-app.`; `--json` prints `{ "removedRepository": "acme/storefront" }` with the name as given. When no scanned repository in the project has the name, it exits with 2 and lists the names the project has. It needs `projects:read` and `code-references:update`, and `code-references:read` to list the names. Removals do not appear in the audit log.
+
 ## [0.7.0-beta.1] - 2026-10-17
 
 ### Added

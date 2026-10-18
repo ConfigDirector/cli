@@ -21,10 +21,12 @@ import {
   type ConfigWithTargetingRules,
 } from "./config-with-targeting-rules.js";
 import {
+  ListedScannedRepositorySchema,
   ScannedRepositorySchema,
+  type ListedScannedRepository,
   type RepositoryScanUpload,
   type ScannedRepository,
-} from "./repository-scan-upload.js";
+} from "./scanned-repositories.js";
 import { SegmentDefinitionSchema, SegmentSchema, type Segment, type SegmentDefinition } from "./segments.js";
 import { TargetingRulesReferenceSchema, type TargetingRulesReference } from "./targeting-rules-reference.js";
 import {
@@ -116,6 +118,8 @@ type ReplaceTargetingRulesRequest = { [field: string]: unknown; environmentId: s
 type TargetingRulesReplacementOutcome = "replaced" | "not-found";
 
 type ConfigArchiveOutcome = "archived" | "not-found";
+
+type ScannedRepositoryRemovalOutcome = "removed" | "not-found";
 
 const MissingResourceBodySchema = v.strictObject({});
 
@@ -302,6 +306,25 @@ export class AdminApiClient {
       ScannedRepositorySchema,
       { method: "PUT", body: upload },
     );
+  }
+
+  public listScannedRepositories(projectId: string): Promise<ParsedResponse<ListedScannedRepository[]>> {
+    return this.get(
+      `/v1/projects/${encodeURIComponent(projectId)}/repositories`,
+      v.array(ListedScannedRepositorySchema),
+    );
+  }
+
+  public async removeScannedRepository(
+    projectId: string,
+    repositoryName: string,
+  ): Promise<ScannedRepositoryRemovalOutcome> {
+    const response = await this.requestIfFound(
+      `/v1/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repositoryName)}`,
+      v.unknown(),
+      { method: "DELETE" },
+    );
+    return response === undefined ? "not-found" : "removed";
   }
 
   public async archiveConfig(projectId: string, configKey: string): Promise<ConfigArchiveOutcome> {
