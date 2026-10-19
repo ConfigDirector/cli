@@ -119,6 +119,18 @@ A test client call, such as `setValue` or `createTestClient`, is checked for unk
 
 The output lists the problems grouped by kind, with the file, the line, the key and what is wrong, such as the type a timespan is served as, then counts the references checked. With `--json`, `validate` prints the scan's JSON with a `findings` array; `schema/scan-output.schema.json` describes it.
 
+## GitHub Action
+
+The [ConfigDirector Code Scan](https://github.com/ConfigDirector/scan-code) action runs `validate` on pull requests, and `validate` then `scan --upload` on pushes to the default branch:
+
+```yaml
+- uses: ConfigDirector/scan-code@v1
+  with:
+    token: ${{ secrets.CONFIGDIRECTOR_TOKEN }}
+```
+
+Its README lists the inputs and the permissions the token needs for each step.
+
 ## See what a context gets for a config
 
 ```bash
