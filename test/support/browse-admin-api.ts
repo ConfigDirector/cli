@@ -1,10 +1,10 @@
 import { productionEnvironment, testEnvironment } from "./evaluate-admin-api.js";
 import { webApp } from "./scan-admin-api.js";
-import { startStubAdminApi, type StubReply } from "./stub-admin-api.js";
+import { startStubAdminApi, type StubReplyForRequest } from "./stub-admin-api.js";
 
 export const projectPath = (path: string) => `/v1/projects/${webApp.id}${path}`;
 
-export const startBrowseAdminApi = (repliesByProjectPath: Record<string, StubReply> = {}) =>
+export const startBrowseAdminApi = (repliesByProjectPath: Record<string, StubReplyForRequest> = {}) =>
   startStubAdminApi(
     { status: 404, body: {} },
     {

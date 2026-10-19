@@ -27,7 +27,14 @@ import {
   type RepositoryScanUpload,
   type ScannedRepository,
 } from "./scanned-repositories.js";
-import { SegmentDefinitionSchema, SegmentSchema, type Segment, type SegmentDefinition } from "./segments.js";
+import {
+  SegmentDefinitionSchema,
+  SegmentInUseBodySchema,
+  SegmentSchema,
+  type Segment,
+  type SegmentDefinition,
+  type SegmentUsage,
+} from "./segments.js";
 import { TargetingRulesReferenceSchema, type TargetingRulesReference } from "./targeting-rules-reference.js";
 import {
   ConfigEvaluationSchema,
@@ -126,9 +133,16 @@ const tagFilterQuery = (tagFilter: ConfigTagFilter): string => {
 
 type ReplaceTargetingRulesRequest = { [field: string]: unknown; environmentId: string };
 
+type CreateSegmentRequest = { [field: string]: unknown };
+
+type UpdateSegmentRequest = { [field: string]: unknown; id: string };
+
 type TargetingRulesReplacementOutcome = "replaced" | "not-found";
 
 type ConfigArchiveOutcome = "archived" | "not-found";
+
+type SegmentDeletionOutcome =
+  { outcome: "deleted" } | { outcome: "not-found" } | { outcome: "in-use"; usages: SegmentUsage[] };
 
 type ScannedRepositoryRemovalOutcome = "removed" | "not-found";
 
@@ -189,6 +203,24 @@ type ParsedResponse<Body> = {
 
 const isMissingResource = (received: ReceivedResponse): boolean =>
   received.response.status === 404 && v.is(MissingResourceBodySchema, received.body);
+
+type SegmentInUseResponse = ReceivedResponse & { body: v.InferOutput<typeof SegmentInUseBodySchema> };
+
+const isSegmentInUse = (received: ReceivedResponse): received is SegmentInUseResponse =>
+  received.response.status === 409 && v.is(SegmentInUseBodySchema, received.body);
+
+const segmentDeletionOutcomeOf = (received: ReceivedResponse): SegmentDeletionOutcome => {
+  if (isMissingResource(received)) {
+    return { outcome: "not-found" };
+  }
+  if (isSegmentInUse(received)) {
+    return { outcome: "in-use", usages: received.body.usages };
+  }
+  if (!received.response.ok) {
+    throw failureFor(received.url, received.response, received.body);
+  }
+  return { outcome: "deleted" };
+};
 
 const parsedResponseOf = <TSchema extends v.GenericSchema>(
   { url, response, body }: ReceivedResponse,
@@ -259,6 +291,38 @@ export class AdminApiClient {
     return this.getIfFound(
       `/v1/projects/${encodeURIComponent(projectId)}/segments/${encodeURIComponent(segmentKey)}`,
       SegmentDefinitionSchema,
+    );
+  }
+
+  public createSegment(
+    projectId: string,
+    request: CreateSegmentRequest,
+  ): Promise<ParsedResponse<SegmentDefinition>> {
+    return this.requestJson(
+      `/v1/projects/${encodeURIComponent(projectId)}/segments`,
+      SegmentDefinitionSchema,
+      { method: "POST", body: request },
+    );
+  }
+
+  public updateSegment(
+    projectId: string,
+    segmentKey: string,
+    request: UpdateSegmentRequest,
+  ): Promise<ParsedResponse<SegmentDefinition> | undefined> {
+    return this.requestIfFound(
+      `/v1/projects/${encodeURIComponent(projectId)}/segments/${encodeURIComponent(segmentKey)}`,
+      SegmentDefinitionSchema,
+      { method: "PUT", body: request },
+    );
+  }
+
+  public async deleteSegment(projectId: string, segmentKey: string): Promise<SegmentDeletionOutcome> {
+    return segmentDeletionOutcomeOf(
+      await this.send(
+        `/v1/projects/${encodeURIComponent(projectId)}/segments/${encodeURIComponent(segmentKey)}`,
+        { method: "DELETE" },
+      ),
     );
   }
 

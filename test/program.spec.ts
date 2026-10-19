@@ -204,7 +204,7 @@ describe("program", () => {
     );
   });
 
-  it("lists the list and get verbs with the before-1.0 notice in the help of segments", async () => {
+  it("lists the list, get, create, update and delete verbs with the before-1.0 notice in the help of segments", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["segments", "--help"] });
 
@@ -213,7 +213,7 @@ describe("program", () => {
     const help = invocation.stdout.text();
     expect(exitCode).toEqual(0);
     expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toEqual(
-      expect.arrayContaining(["list", "get"]),
+      expect.arrayContaining(["list", "get", "create", "update", "delete"]),
     );
     expect(help).toContain("Commands and output may change before 1.0.");
   });

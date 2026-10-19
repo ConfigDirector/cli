@@ -21,7 +21,13 @@ import { logout } from "./commands/logout.js";
 import { listProjects } from "./commands/projects.js";
 import { listScannedRepositories, removeScannedRepository } from "./commands/repositories.js";
 import { DEFAULT_CONTEXT_LINES, MAXIMUM_CONTEXT_LINES, scan } from "./commands/scan.js";
-import { getSegment, listSegments } from "./commands/segments.js";
+import {
+  createSegment,
+  deleteSegment,
+  getSegment,
+  listSegments,
+  updateSegment,
+} from "./commands/segments.js";
 import { setTargetingRules, showTargetingRulesReference } from "./commands/targeting-rules.js";
 import { validate } from "./commands/validate.js";
 import {
@@ -34,6 +40,9 @@ import {
 } from "./configs/new-config.js";
 
 const DEFAULT_BASE_URL = "https://api.configdirector.com";
+
+const SEGMENT_FILE_DESCRIPTION =
+  "a JSON file holding the segment as the Admin API takes it, or - to read it from stdin (required)";
 
 type GlobalOptions = {
   token?: string;
@@ -369,7 +378,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
 
   const segmentsCommand = program
     .command("segments")
-    .description("list a project's segments and show one segment");
+    .description("list, show, create, update and delete a project's segments");
 
   segmentsCommand
     .command("list")
@@ -381,6 +390,48 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .argument("<key>", "the segment's key")
     .description("show a segment's condition groups and its environment overrides")
     .action(commandAction(getSegment));
+
+  segmentsCommand
+    .command("create")
+    .description("create a segment from a JSON file")
+    .requiredOption("--segment <file>", SEGMENT_FILE_DESCRIPTION)
+    .addHelpText(
+      "after",
+      '\nThe file holds {"key": ..., "name": ..., "groups": [...], "overrides": {...}}, like the output of ' +
+        "segments get --json, so you can edit that output and send it. groups lists the condition groups, " +
+        "and a context is in the segment when every condition of any one group matches. overrides is optional: " +
+        "it maps an environment's id, which environments list --json shows, to the condition groups used there " +
+        "instead. A condition without an id gets a new one.",
+    )
+    .action(commandAction(createSegment));
+
+  segmentsCommand
+    .command("update")
+    .argument("<key>", "the segment's key")
+    .description(
+      "replace a segment's key, name and condition groups with a JSON file, and its environment overrides when the file has them",
+    )
+    .requiredOption("--segment <file>", SEGMENT_FILE_DESCRIPTION)
+    .addHelpText(
+      "after",
+      "\nThe file takes the same form as for segments create, and the segment keeps its id whatever id the file " +
+        "holds. Its key, name and condition groups are replaced, so a different key renames it. " +
+        "Without overrides in the file, the environment overrides stay as they are; " +
+        'with "overrides": {} they are all removed, and a map leaves exactly those environments overridden. ' +
+        "A condition without an id gets a new one.",
+    )
+    .action(commandAction(updateSegment));
+
+  segmentsCommand
+    .command("delete")
+    .argument("<key>", "the segment's key")
+    .description("delete a segment and its environment overrides")
+    .addHelpText(
+      "after",
+      "\nThe segment is deleted with no confirmation. While the targeting rules of a config use it, " +
+        "the deletion is refused and the configs are listed with their environments.",
+    )
+    .action(commandAction(deleteSegment));
 
   const targetingRulesCommand = program
     .command("targeting-rules")

@@ -4,6 +4,15 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-19
+
+### Added
+
+- `configdirector segments create --segment <file>` creates a segment from a JSON file, or from stdin with `--segment -`. The file holds the segment's `key`, `name` and condition `groups`, exactly as the Admin API takes them, so you can save a segment with `segments get --json`, edit it and send it. `overrides` is optional and gives an environment condition groups of its own, keyed by the environment's ID, which `environments list --json` prints. A condition without an `id`, in the groups or in an override, gets a new one, and the IDs given are kept. The CLI checks only that the file holds a JSON object: ConfigDirector checks the segment, and when it refuses it, for example because another segment has its key, the command exits with 2 and lists its reasons. It prints `Created segment beta-testers in web-app.`, then the segment as `segments get` shows it, and `--json` prints the segment as the Admin API returned it. It needs `projects:read` and `segments:create`.
+- `configdirector segments update <key> --segment <file>` replaces the key, the name and the condition groups of the segment the key names with those of the file, so a different `key` renames it, and the segment keeps its own ID whatever `id` the file holds. Without `overrides` in the file, the environment overrides stay as they are; `"overrides": {}` removes them all, and a map leaves exactly those environments overridden. It prints `Updated segment beta-testers in web-app.`, then the segment, and exits with 2 when no segment in the project has the key. It needs `projects:read`, `segments:read` and `segments:update`.
+- `configdirector segments delete <key>` deletes a segment and its environment overrides with no confirmation, prints `Deleted segment beta-testers from web-app.`, and `--json` prints `{ "deletedSegmentKey": "beta-testers" }` with the key as given, as the MCP server's `delete_segment` tool does. While the targeting rules of a config use the segment, it is not deleted: the command exits with 2 and lists each config with the environments whose rules use it. It exits with 2 when no segment in the project has the key, and needs `projects:read` and `segments:delete`.
+- With `environments:read`, the three commands name environments by their slug, and without it, by their ID. The changes show in the audit log with the source CLI. `segments create`, `update` and `delete` do what the MCP server's `create_segment`, `update_segment` and `delete_segment` tools do.
+
 ## [0.11.0] - 2026-10-19
 
 ### Changed

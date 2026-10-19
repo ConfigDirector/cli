@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. Commands and output may change before 1.0. This release signs in to one or more organizations, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, archives configs, uploads the repository's code references to the project, and lists and removes the project's scanned repositories.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. Commands and output may change before 1.0. This release signs in to one or more organizations, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, archives configs, creates, updates and deletes segments, uploads the repository's code references to the project, and lists and removes the project's scanned repositories.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
@@ -274,6 +274,59 @@ configdirector targeting-rules set new-checkout --environment production --rules
 
 `targeting-rules set` needs `projects:read`, `environments:read` and `config-targeting-rules:update`. `targeting-rules reference` needs only a valid token and no project.
 
+## Change segments
+
+```bash
+configdirector segments create --segment beta-testers.json
+configdirector segments update beta-testers --segment beta-testers.json
+configdirector segments delete beta-testers
+```
+
+`segments create` creates a segment from the file, or from stdin with `--segment -`, and `segments update <key>` replaces the segment the key names with it:
+
+```json
+{
+  "key": "beta-testers",
+  "name": "Beta testers",
+  "groups": [
+    [
+      {
+        "kind": "attribute",
+        "attribute": "traits",
+        "trait": "/email",
+        "operator": "ends with any of",
+        "targetType": "text",
+        "targetValues": ["@example.com"]
+      }
+    ]
+  ],
+  "overrides": {
+    "7e6d5c4b-3a29-4810-8f7e-6d5c4b3a2918": [
+      [
+        {
+          "kind": "attribute",
+          "attribute": "traits",
+          "trait": "/email",
+          "operator": "ends with any of",
+          "targetType": "text",
+          "targetValues": ["@staff.example.com"]
+        }
+      ]
+    ]
+  }
+}
+```
+
+- The file holds the segment's `key`, `name` and condition `groups`, exactly as the Admin API takes them. `overrides` is optional and gives an environment condition groups of its own, keyed by the environment's ID, which `environments list --json` prints. `segments get --json` prints a segment in this shape, so you can edit it and send it back; fields the Admin API does not take, such as `usages`, are ignored.
+- A condition without an `id`, in the groups or in an override, gets a new one, and the IDs given are kept.
+- `update` replaces the key, the name and the groups, so a different `key` renames the segment, and the segment keeps its own ID whatever `id` the file holds. Without `overrides` in the file, the environment overrides stay as they are; `"overrides": {}` removes them all, and a map leaves exactly those environments overridden.
+- The CLI checks only that the file holds a JSON object. ConfigDirector checks the segment, and when it refuses it, for example because another segment has its key, the command exits with 2 and lists its reasons.
+- It asks for no confirmation. It prints `Created segment beta-testers in web-app.` or `Updated segment beta-testers in web-app.`, then the segment as `segments get` shows it. With `--json`, it prints the segment as the Admin API returned it.
+
+`segments delete <key>` deletes a segment and its environment overrides, with no confirmation, and prints `Deleted segment beta-testers from web-app.`; `--json` prints `{ "deletedSegmentKey": "beta-testers" }` with the key as given. While the targeting rules of a config use the segment, in any environment, it is not deleted: the command exits with 2 and lists each config with the environments whose rules use it, so you can remove those segment conditions with `targeting-rules set` first. A key no segment has exits with 2 for `update` and `delete`.
+
+`segments create` needs `projects:read` and `segments:create`, `segments update` needs `projects:read`, `segments:read` and `segments:update`, and `segments delete` needs `projects:read` and `segments:delete`. Without `environments:read`, they name environments by ID instead of by slug. The change shows in the audit log with the source CLI.
+
 ## Archive a config
 
 ```bash
@@ -300,7 +353,7 @@ It asks for no confirmation and does not check whether the code still reads the 
 | `--project <slug>`            | `CONFIGDIRECTOR_PROJECT`      | Project slug. Without either, every command that reads a project uses the `project` in `configdirector.json`.                                                     |
 | `--json`                      |                               | Print JSON on stdout. Errors always go to stderr.                                                                                                                 |
 
-The command exits with 0 when it succeeds, 1 when `validate` found a problem or `configs create` found a config that already has the key, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or something the command names that does not exist, such as a config key, an environment, a saved context, a segment key, a tag or a scanned repository. A CI job can therefore tell a wrong config key from an outage.
+The command exits with 0 when it succeeds, 1 when `validate` found a problem or `configs create` found a config that already has the key, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or something the command names that does not exist, such as a config key, an environment, a saved context, a segment key, a tag or a scanned repository. `segments delete` also exits with 2 when the targeting rules of a config use the segment. A CI job can therefore tell a wrong config key from an outage.
 
 ## License
 
