@@ -39,6 +39,33 @@ describe("program", () => {
     expect(invocation.stderr.text()).toContain("--no-such-option");
   });
 
+  it("lists the logout and api-token commands with the beta label on stdout for --help", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["--help"] });
+
+    const exitCode = await run(invocation);
+
+    const firstWords = invocation.stdout
+      .text()
+      .split("\n")
+      .map((line) => line.trim().split(" ")[0]);
+    expect(exitCode).toEqual(0);
+    expect(firstWords).toEqual(expect.arrayContaining(["logout", "api-token"]));
+    expect(invocation.stdout.text()).toContain("Beta: commands and output may change before 1.0.");
+  });
+
+  it("lists the get verb with the beta label in the help of api-token", async () => {
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({ commandLineArguments: ["api-token", "--help"] });
+
+    const exitCode = await run(invocation);
+
+    const help = invocation.stdout.text();
+    expect(exitCode).toEqual(0);
+    expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toContain("get");
+    expect(help).toContain("Beta: commands and output may change before 1.0.");
+  });
+
   it("lists the login and init commands on stdout for --help", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["--help"] });
@@ -264,6 +291,8 @@ describe("program", () => {
       .split("\n")
       .map((line) => line.trim().split(" ")[0]);
     expect(exitCode).toEqual(0);
-    expect(firstWords).toEqual(expect.arrayContaining(["--token", "--base-url", "--project", "--json"]));
+    expect(firstWords).toEqual(
+      expect.arrayContaining(["--token", "--base-url", "--project", "--organization", "--json"]),
+    );
   });
 });

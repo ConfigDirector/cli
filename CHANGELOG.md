@@ -4,6 +4,23 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.10.0-beta.1] - 2026-10-19
+
+### Added
+
+- The CLI keeps one sign-in per organization, so you can work for two organizations from one machine. `configdirector login` asks ConfigDirector which organization the pasted token belongs to and saves the token as the sign-in for that organization, with the organization's id and name, in `sign-ins.json` in the same directory `config.json` was in, readable only by your user. Signing in again with a token of the same organization replaces that sign-in; a token of another organization adds one. A token without `projects:read` is refused and nothing is saved. `--json` prints the file and the organization's id and name.
+- `configdirector.json` holds `organization`, the id of the project's organization, which `init` now writes after `project`. A command in that directory uses the sign-in for that organization, and exits with 2 before changing anything when the token it was given, such as a `CONFIGDIRECTOR_TOKEN` set for an MCP server, belongs to another organization that has a project with the same slug. A file without `organization` is not checked, so a file from an earlier version works as before.
+- `--organization <name or id>` and `CONFIGDIRECTOR_ORGANIZATION` pick the sign-in to use, by the organization's saved name, matched whatever its case, or its id, ahead of `organization` in `configdirector.json`. Giving either together with `--token` or `CONFIGDIRECTOR_TOKEN`, or to `login`, exits with 2. Without them and without `organization` in the file, the only sign-in is used, and two or more sign-ins exit with 2 naming them.
+- `init` looks for the project through every sign-in, or through the sign-in `--organization` names, or through `--token` or `CONFIGDIRECTOR_TOKEN` alone. A slug that two organizations have exits with 2 naming them and asking for `--organization`; a slug none has exits with 2 naming the organizations searched. On an existing `configdirector.json` without `organization`, `init` adds it, taking the project from the file and keeping every other field; a `--project` other than the file's exits with 2, and a file that already has `organization` is still refused. `--json` adds `organizationId`.
+- `configdirector logout` removes the sign-in the commands in the current directory would use, chosen as above, and says the token keeps working until it is revoked on the dashboard's API tokens page. It sends no request, so `CONFIGDIRECTOR_TOKEN` does not stop it; `--token` exits with 2. `--json` prints `{ "removedSignIn": { "organization": { "id": "...", "name": "..." } } }`.
+- `configdirector api-token get` shows the token a command in the current directory would use: its organization's name and id, its name, its permissions, when it expires, and whether it came from `--token`, `CONFIGDIRECTOR_TOKEN` or a sign-in. It never shows the token itself. `--json` prints the Admin API's response as received. It needs a valid token with any permissions.
+
+### Changed
+
+- The first command that reads the sign-ins after the upgrade, `login` and `logout` included, moves the token saved by an earlier version in `config.json` into a sign-in, with one request to learn its organization, and deletes `config.json`. A token ConfigDirector no longer accepts is deleted without becoming a sign-in, with a line on stderr saying so; when the Admin API cannot be reached, `config.json` stays for the next run. A command whose token comes from `--token` or `CONFIGDIRECTOR_TOKEN` neither reads the sign-ins nor moves the token.
+- `login --json` prints `signInsFile` in place of `tokenFile`, and `login` reads the token with `GET /api-token` rather than by listing the projects.
+- `init` prints the project's organization, by its saved name or, with `--token` or `CONFIGDIRECTOR_TOKEN`, by its id.
+
 ## [0.9.0-beta.1] - 2026-10-18
 
 ### Added

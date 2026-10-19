@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, archives configs, uploads the repository's code references to the project, and lists and removes the project's scanned repositories.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in to one or more organizations, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, archives configs, uploads the repository's code references to the project, and lists and removes the project's scanned repositories.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
@@ -20,7 +20,7 @@ Create an API token in the ConfigDirector dashboard, then run:
 configdirector login
 ```
 
-The token is saved for later runs, where only you can read it. In CI, set `CONFIGDIRECTOR_TOKEN` instead.
+The token is saved as your sign-in for its organization, where only you can read it. You keep one sign-in per organization: run `login` again with a token of another organization to add one, and `configdirector logout` removes the sign-in the commands in the current directory would use. `configdirector api-token get` shows which token a command there would use, with its organization, name, permissions and expiration. In CI, set `CONFIGDIRECTOR_TOKEN` instead.
 
 ## Link a repository to a project
 
@@ -30,7 +30,7 @@ From the repository root:
 configdirector init --project <project-slug>
 ```
 
-This writes `configdirector.json`. Commit it so every run and every CI job uses the same project.
+This writes `configdirector.json` with the project's slug and the id of its organization. Commit it so every run and every CI job uses the same project. `init` looks for the project through each of your sign-ins, so with two organizations each repository links to its own, and a command in the repository uses that organization's sign-in. A token from another organization, such as a `CONFIGDIRECTOR_TOKEN` set for an MCP server, is refused there.
 
 ## Find where the code reads configs
 
@@ -292,12 +292,13 @@ It asks for no confirmation and does not check whether the code still reads the 
 
 ## Options
 
-| Option             | Environment variable      | Meaning                                                                                                       |
-| ------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `--token <token>`  | `CONFIGDIRECTOR_TOKEN`    | API token. Without either, the token saved by `login` is used.                                                |
-| `--base-url <url>` | `CONFIGDIRECTOR_BASE_URL` | API host. Defaults to `https://api.configdirector.com`.                                                       |
-| `--project <slug>` | `CONFIGDIRECTOR_PROJECT`  | Project slug. Without either, every command that reads a project uses the `project` in `configdirector.json`. |
-| `--json`           |                           | Print JSON on stdout. Errors always go to stderr.                                                             |
+| Option                        | Environment variable          | Meaning                                                                                                                                                           |
+| ----------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--token <token>`             | `CONFIGDIRECTOR_TOKEN`        | API token. Without either, the sign-in saved by `login` for the organization named below is used, or the only sign-in.                                            |
+| `--organization <name or id>` | `CONFIGDIRECTOR_ORGANIZATION` | The organization whose sign-in to use, by its saved name or its id. Without either, the `organization` in `configdirector.json`. Cannot be combined with a token. |
+| `--base-url <url>`            | `CONFIGDIRECTOR_BASE_URL`     | API host. Defaults to `https://api.configdirector.com`.                                                                                                           |
+| `--project <slug>`            | `CONFIGDIRECTOR_PROJECT`      | Project slug. Without either, every command that reads a project uses the `project` in `configdirector.json`.                                                     |
+| `--json`                      |                               | Print JSON on stdout. Errors always go to stderr.                                                                                                                 |
 
 The command exits with 0 when it succeeds, 1 when `validate` found a problem or `configs create` found a config that already has the key, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or something the command names that does not exist, such as a config key, an environment, a saved context, a segment key, a tag or a scanned repository. A CI job can therefore tell a wrong config key from an outage.
 

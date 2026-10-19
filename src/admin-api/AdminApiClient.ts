@@ -39,10 +39,20 @@ const ProjectSchema = v.object({
   id: v.string(),
   name: v.string(),
   slug: v.string(),
+  organizationId: v.string(),
   storeCodeSnippets: v.optional(v.boolean(), true),
 });
 
 export type Project = v.InferOutput<typeof ProjectSchema>;
+
+const DescribedApiTokenSchema = v.object({
+  name: v.string(),
+  organization: v.object({ id: v.string(), name: v.string() }),
+  permissions: v.array(v.string()),
+  expiresAt: v.nullable(v.string()),
+});
+
+export type DescribedApiToken = v.InferOutput<typeof DescribedApiTokenSchema>;
 
 const configFields = {
   key: v.string(),
@@ -196,6 +206,10 @@ const parsedResponseOf = <TSchema extends v.GenericSchema>(
 
 export class AdminApiClient {
   constructor(private readonly connection: { baseUrl: string; token: string }) {}
+
+  public describeApiToken(): Promise<ParsedResponse<DescribedApiToken>> {
+    return this.get("/v1/api-token", DescribedApiTokenSchema);
+  }
 
   public listProjects(): Promise<ParsedResponse<Project[]>> {
     return this.get("/v1/projects", v.array(ProjectSchema));

@@ -4,6 +4,7 @@ import { CliError } from "./CliError.js";
 import type { CommandContext, CommandOutput } from "./CommandContext.js";
 import { ExitCode } from "./ExitCode.js";
 import { nonEmptyVariable, type Invocation } from "./Invocation.js";
+import { getApiToken } from "./commands/api-token.js";
 import {
   archiveConfig,
   createConfig,
@@ -16,6 +17,7 @@ import { listEnvironments } from "./commands/environments.js";
 import { evaluate } from "./commands/evaluate.js";
 import { init } from "./commands/init.js";
 import { login } from "./commands/login.js";
+import { logout } from "./commands/logout.js";
 import { listProjects } from "./commands/projects.js";
 import { listScannedRepositories, removeScannedRepository } from "./commands/repositories.js";
 import { DEFAULT_CONTEXT_LINES, MAXIMUM_CONTEXT_LINES, scan } from "./commands/scan.js";
@@ -37,6 +39,7 @@ type GlobalOptions = {
   token?: string;
   baseUrl?: string;
   project?: string;
+  organization?: string;
   json?: boolean;
 };
 
@@ -73,6 +76,7 @@ const runCommand = async <Arguments extends CommandArguments, CommandOptions ext
       ),
       tokenOption: options.token,
       projectSlug: options.project ?? nonEmptyVariable(invocation, "CONFIGDIRECTOR_PROJECT"),
+      organizationOption: options.organization ?? nonEmptyVariable(invocation, "CONFIGDIRECTOR_ORGANIZATION"),
     },
     parsedCommand.processedArgs as unknown as Arguments,
     parsedCommand.opts<CommandOptions>(),
@@ -108,12 +112,20 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .addHelpText("afterAll", "\nBeta: commands and output may change before 1.0.")
     .configureHelp({ showGlobalOptions: true })
     .version(version)
-    .option("--token <token>", "API token, used instead of CONFIGDIRECTOR_TOKEN and the token saved by login")
+    .option(
+      "--token <token>",
+      "API token, used instead of CONFIGDIRECTOR_TOKEN and the CLI sign-ins saved by login",
+    )
     .option(
       "--base-url <url>",
       `Admin API host, used instead of CONFIGDIRECTOR_BASE_URL (default ${DEFAULT_BASE_URL})`,
     )
     .option("--project <slug>", "project slug, used instead of CONFIGDIRECTOR_PROJECT")
+    .option(
+      "--organization <name or id>",
+      "organization whose CLI sign-in to use, by its saved name or its id, " +
+        "used instead of CONFIGDIRECTOR_ORGANIZATION and `organization` in configdirector.json",
+    )
     .option("--json", "print JSON on stdout")
     .exitOverride()
     .configureOutput({
@@ -123,8 +135,15 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
 
   program
     .command("login")
-    .description("save an API token for later runs, after checking it can list projects")
+    .description(
+      "save an API token as the CLI sign-in for its organization, after checking it can find projects",
+    )
     .action(commandAction(login));
+
+  program
+    .command("logout")
+    .description("remove the CLI sign-in this directory's commands would use; the token itself keeps working")
+    .action(commandAction(logout));
 
   program
     .command("init")
@@ -188,6 +207,15 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
         "Without any of them, the config is evaluated for an empty context, as an SDK given none would.",
     )
     .action(commandAction(evaluate));
+
+  program
+    .command("api-token")
+    .description("describe the API token a command here would use")
+    .command("get")
+    .description(
+      "show the token's organization, name, permissions and expiration, and where it came from; never the token itself",
+    )
+    .action(commandAction(getApiToken));
 
   program
     .command("projects")

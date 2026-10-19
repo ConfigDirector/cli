@@ -1,8 +1,6 @@
 import { AdminApiClient, type Config, type Project } from "./admin-api/AdminApiClient.js";
 import type { CommandContext } from "./CommandContext.js";
-import { configuredApiToken } from "./configured-api-token.js";
-import { findProjectBySlug, requireLinkedProjectSlug } from "./project-selection.js";
-import { readProjectSettings } from "./project-settings.js";
+import { connectToLinkedProject } from "./project-selection.js";
 import { scanCodeReferences, type CodeReferenceScan } from "./scan/code-references.js";
 import type { ScanRoot } from "./scan/scanned-files.js";
 import type { SnippetCut } from "./scan/snippets.js";
@@ -17,10 +15,7 @@ type ScannableProject = {
 
 export const connectToScannableProject = async (context: CommandContext): Promise<ScannableProject> => {
   const { workingDirectory } = context.invocation;
-  const settings = await readProjectSettings(workingDirectory);
-  const projectSlug = requireLinkedProjectSlug(context, settings);
-  const client = new AdminApiClient({ baseUrl: context.baseUrl, token: await configuredApiToken(context) });
-  const project = await findProjectBySlug(client, projectSlug);
+  const { client, project, settings } = await connectToLinkedProject(context);
   const configs = (await client.listConfigs(project.id, { form: "every-config" })).map(
     (listedConfig) => listedConfig.config,
   );

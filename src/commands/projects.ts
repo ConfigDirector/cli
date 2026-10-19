@@ -10,7 +10,10 @@ const projectLines = (projects: Project[]): string[] =>
     : alignedColumns(projects.map((project) => [project.slug, project.name]));
 
 export const listProjects = async (context: CommandContext): Promise<CommandOutput> => {
-  const client = new AdminApiClient({ baseUrl: context.baseUrl, token: await configuredApiToken(context) });
+  const client = new AdminApiClient({
+    baseUrl: context.baseUrl,
+    token: (await configuredApiToken(context)).token,
+  });
   const { parsedBody: projects, responseBody } = await client.listProjects();
 
   return {

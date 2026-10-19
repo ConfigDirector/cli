@@ -9,12 +9,14 @@ export type StubReply = {
   headers?: Record<string, string>;
 };
 
-type ReceivedRequest = {
+export type ReceivedRequest = {
   method: string;
   path: string;
   headers: IncomingHttpHeaders;
   body: unknown;
 };
+
+export type StubReplyForRequest = StubReply | ((request: ReceivedRequest) => StubReply);
 
 const readRequestBody = async (request: IncomingMessage): Promise<unknown> => {
   let text = "";
@@ -24,17 +26,23 @@ const readRequestBody = async (request: IncomingMessage): Promise<unknown> => {
   return text === "" ? undefined : JSON.parse(text);
 };
 
-export const startStubAdminApi = async (reply: StubReply, repliesByPath: Record<string, StubReply> = {}) => {
+export const startStubAdminApi = async (
+  reply: StubReply,
+  repliesByPath: Record<string, StubReplyForRequest> = {},
+) => {
   const receivedRequests: ReceivedRequest[] = [];
   const server = createServer(async (request, response) => {
     const path = request.url ?? "";
-    receivedRequests.push({
+    const receivedRequest = {
       method: request.method ?? "",
       path,
       headers: request.headers,
       body: await readRequestBody(request),
-    });
-    const replyToPath = repliesByPath[path] ?? reply;
+    };
+    receivedRequests.push(receivedRequest);
+    const replyForRequest = repliesByPath[path] ?? reply;
+    const replyToPath =
+      typeof replyForRequest === "function" ? replyForRequest(receivedRequest) : replyForRequest;
     response.writeHead(replyToPath.status, { "content-type": "application/json", ...replyToPath.headers });
     response.end(
       replyToPath.rawBody ?? (replyToPath.body === undefined ? "" : JSON.stringify(replyToPath.body)),

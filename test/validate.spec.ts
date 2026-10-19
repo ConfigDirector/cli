@@ -6,6 +6,7 @@ import { writeRepositoryFile } from "./support/repository-files.js";
 import { createSandbox } from "./support/sandbox.js";
 import { projectConfig } from "./support/scan-admin-api.js";
 import { serverSdkSetup, validateRepositoryJson, validateRepositoryText } from "./support/scan-repository.js";
+import { acme, globex, globexWebApp, startSignInAdminApi } from "./support/sign-in-admin-api.js";
 import { startStubAdminApi } from "./support/stub-admin-api.js";
 
 const adminLinkFile = [
@@ -608,6 +609,37 @@ describe("validate exit codes", () => {
       { file: "src/settings.ts", line: 4, sdk: "js-server", call: "getValue", argument: "settingKey" },
     ]);
     expect(output.findings).toEqual([]);
+  });
+
+  it("exits 2 naming CONFIGDIRECTOR_TOKEN without reading the configs when the token's organization has another project with the slug", async () => {
+    const adminApi = await startSignInAdminApi([
+      { token: "cd_globex_token", organization: globex, projects: [globexWebApp] },
+    ]);
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "configdirector.json",
+      `${JSON.stringify({ project: "web-app", organization: acme.id })}\n`,
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "src/checkout.ts",
+      [...serverSdkSetup, 'client.getValue("new-checkout", false);', ""].join("\n"),
+    );
+    const invocation = sandbox.invocation({
+      commandLineArguments: ["validate"],
+      environmentVariables: {
+        CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl,
+        CONFIGDIRECTOR_TOKEN: "cd_globex_token",
+      },
+    });
+
+    const exitCode = await run(invocation);
+
+    expect(exitCode).toEqual(2);
+    expect(invocation.stdout.text()).toEqual("");
+    expect(invocation.stderr.text()).toContain("CONFIGDIRECTOR_TOKEN");
+    expect(adminApi.receivedRequests.map((request) => request.path)).toEqual(["/v1/projects"]);
   });
 
   it("exits 2 printing no finding when the Admin API refuses the token", async () => {

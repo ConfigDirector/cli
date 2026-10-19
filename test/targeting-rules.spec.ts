@@ -6,6 +6,7 @@ import { projectPath, requestLinesOf, startBrowseAdminApi } from "./support/brow
 import { productionEnvironment, testEnvironment } from "./support/evaluate-admin-api.js";
 import { writeRepositoryFile } from "./support/repository-files.js";
 import { createSandbox, type Sandbox } from "./support/sandbox.js";
+import { acme, globex, globexWebApp, startSignInAdminApi } from "./support/sign-in-admin-api.js";
 import { startStubAdminApi } from "./support/stub-admin-api.js";
 
 const setTargetingRulesIn = async (
@@ -326,6 +327,48 @@ describe("targeting-rules set failures", () => {
     expect(stdout).toEqual("");
     expect(stderr).toContain("config-targeting-rules:update");
     expect(stderr).toContain("INSUFFICIENT_PERMISSIONS");
+  });
+});
+
+describe("targeting-rules set in a repository of another organization", () => {
+  it("exits 2 naming CONFIGDIRECTOR_TOKEN before any further request when the token's organization has a project with the same slug", async () => {
+    const adminApi = await startSignInAdminApi([
+      { token: "cd_globex_token", organization: globex, projects: [globexWebApp] },
+    ]);
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "configdirector.json",
+      `${JSON.stringify({ project: "web-app", organization: acme.id })}\n`,
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "rules.json",
+      JSON.stringify(targetEntryOfConfigsGet),
+    );
+    const invocation = sandbox.invocation({
+      commandLineArguments: [
+        "targeting-rules",
+        "set",
+        "new-checkout",
+        "--environment",
+        "production",
+        "--rules",
+        "rules.json",
+      ],
+      environmentVariables: {
+        CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl,
+        CONFIGDIRECTOR_TOKEN: "cd_globex_token",
+      },
+    });
+
+    const exitCode = await run(invocation);
+
+    expect(exitCode).toEqual(2);
+    expect(invocation.stdout.text()).toEqual("");
+    expect(invocation.stderr.text()).toContain("CONFIGDIRECTOR_TOKEN");
+    expect(invocation.stderr.text()).toContain(acme.id);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects"]);
   });
 });
 

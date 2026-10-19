@@ -43,7 +43,10 @@ export const setTargetingRules = async (
 };
 
 export const showTargetingRulesReference = async (context: CommandContext): Promise<CommandOutput> => {
-  const client = new AdminApiClient({ baseUrl: context.baseUrl, token: await configuredApiToken(context) });
+  const client = new AdminApiClient({
+    baseUrl: context.baseUrl,
+    token: (await configuredApiToken(context)).token,
+  });
   const { parsedBody: reference, responseBody } = await client.getTargetingRulesReference();
 
   return { json: responseBody, text: targetingRulesReferenceText(reference), exitCode: ExitCode.success };

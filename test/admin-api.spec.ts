@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
 import { createSandbox } from "./support/sandbox.js";
+import { acme, startSignInAdminApi } from "./support/sign-in-admin-api.js";
 import { startStubAdminApi } from "./support/stub-admin-api.js";
 
 const webApp = {
@@ -40,7 +41,9 @@ const packageVersion = async () => {
 
 describe("Admin API requests", () => {
   it("send the bearer token, the cli source client and the CLI's user agent on every request", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+    const adminApi = await startSignInAdminApi([
+      { token: "cd_pasted_token", organization: acme, projects: [webApp] },
+    ]);
     const sandbox = await createSandbox();
     const environmentVariables = { CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl };
 

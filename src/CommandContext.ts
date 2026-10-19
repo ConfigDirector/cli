@@ -6,6 +6,7 @@ export type CommandContext = {
   baseUrl: string;
   tokenOption: string | undefined;
   projectSlug: string | undefined;
+  organizationOption: string | undefined;
 };
 
 export type CommandOutput = {

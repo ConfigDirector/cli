@@ -7,8 +7,8 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startBrowseAdminApi } from "../support/browse-admin-api.js";
 import { productionEnvironment, startEvaluateAdminApi } from "../support/evaluate-admin-api.js";
-import { startScanAdminApi, webApp } from "../support/scan-admin-api.js";
-import { startStubAdminApi } from "../support/stub-admin-api.js";
+import { startScanAdminApi } from "../support/scan-admin-api.js";
+import { acme, startSignInAdminApi } from "../support/sign-in-admin-api.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -66,8 +66,8 @@ describe("the packed tarball installed into an empty directory", () => {
     expect(result.stdout).toEqual(`${installedPackage.version}\n`);
   });
 
-  it("logs in against a stub Admin API and saves the token", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [webApp] });
+  it("logs in against a stub Admin API and saves the sign-in", async () => {
+    const adminApi = await startSignInAdminApi([{ token: "cd_pasted_token", organization: acme }]);
     const homeDirectory = join(installDirectory, "home");
     await mkdir(homeDirectory, { recursive: true });
 
@@ -81,12 +81,12 @@ describe("the packed tarball installed into an empty directory", () => {
     });
 
     expect(result.exitCode).toEqual(0);
-    expect(adminApi.receivedRequests.map((request) => request.headers.authorization)).toEqual([
-      "Bearer cd_pasted_token",
-    ]);
+    expect(adminApi.receivedRequests.map((request) => [request.path, request.headers.authorization])).toEqual(
+      [["/v1/api-token", "Bearer cd_pasted_token"]],
+    );
     expect(
-      JSON.parse(await readFile(join(homeDirectory, ".config", "configdirector", "config.json"), "utf8")),
-    ).toEqual({ token: "cd_pasted_token" });
+      JSON.parse(await readFile(join(homeDirectory, ".config", "configdirector", "sign-ins.json"), "utf8")),
+    ).toEqual({ signIns: [{ organization: acme, token: "cd_pasted_token" }] });
   });
 
   it("scans the current directory for SDK calls against a stub Admin API", async () => {
