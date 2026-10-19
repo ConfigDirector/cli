@@ -1,6 +1,6 @@
 {
   "name": "@configdirector/cli",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Command line tool for ConfigDirector, the managed configuration and feature flag service.",
   "license": "MIT",
   "author": "ConfigDirector",
@@ -39,21 +39,19 @@
     "ci:test:packed-tarball": "vitest run --config vitest.packed-tarball.config.ts",
     "release": "yarn typecheck && yarn lint && yarn ci:test && yarn build && yarn pack:tarball && yarn ci:test:packed-tarball && npm publish package.tgz --access public"
   },
-  "dependencies": {
-    "commander": "^14.0.3",
-    "ignore": "^7.0.12",
-    "picomatch": "^4.0.7",
-    "valibot": "^1.4.2"
-  },
   "devDependencies": {
     "@types/node": "^20.19.43",
     "@types/picomatch": "^4.0.3",
     "ajv": "^8.20.0",
+    "commander": "^14.0.3",
     "eslint": "^9.39.1",
+    "ignore": "^7.0.12",
+    "picomatch": "^4.0.7",
     "prettier": "3.9.9",
     "tsdown": "^0.21.10",
     "typescript": "~5.9.3",
     "typescript-eslint": "~8.58.1",
+    "valibot": "^1.4.2",
     "vitest": "4.1.8"
   }
 }

@@ -4,6 +4,12 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-19
+
+### Fixed
+
+- The CLI has no dependencies: the code of the four packages it uses is built into it, with their licenses in `dist/THIRD-PARTY-LICENSES.md`. Installing it fetches only `@configdirector/cli`, so an npm setting that holds back recent releases, such as `min-release-age` or `before`, can no longer fail the install over one of those packages.
+
 ## [0.11.0] - 2026-10-19
 
 ### Changed

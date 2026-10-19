@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import { startBrowseAdminApi } from "../support/browse-admin-api.js";
 import { productionEnvironment, startEvaluateAdminApi } from "../support/evaluate-admin-api.js";
 import { startScanAdminApi } from "../support/scan-admin-api.js";
@@ -13,6 +13,12 @@ import { acme, startSignInAdminApi } from "../support/sign-in-admin-api.js";
 const execFileAsync = promisify(execFile);
 
 const tarball = fileURLToPath(new URL("../../package.tgz", import.meta.url));
+
+const licenseTextInRepository = (packageName: string, licenseFileName: string) =>
+  readFile(
+    fileURLToPath(new URL(`../../node_modules/${packageName}/${licenseFileName}`, import.meta.url)),
+    "utf8",
+  );
 
 let installDirectory: string;
 
@@ -190,5 +196,43 @@ describe("the packed tarball installed into an empty directory", () => {
     );
 
     expect(schema.title).toEqual("configdirector scan and validate --json output");
+  });
+
+  it("ships the license of every package built into it", async () => {
+    const thirdPartyLicenses = await readFile(
+      join(installDirectory, "node_modules", "@configdirector", "cli", "dist", "THIRD-PARTY-LICENSES.md"),
+      "utf8",
+    );
+
+    const packageHeadings = thirdPartyLicenses
+      .split("\n")
+      .filter((line) => line.startsWith("## "))
+      .map((line) => line.slice("## ".length).split(" ")[0]);
+    expect(packageHeadings).toEqual(["commander", "ignore", "picomatch", "valibot"]);
+    expect(thirdPartyLicenses).toContain(await licenseTextInRepository("commander", "LICENSE"));
+    expect(thirdPartyLicenses).toContain(await licenseTextInRepository("ignore", "LICENSE-MIT"));
+    expect(thirdPartyLicenses).toContain(await licenseTextInRepository("picomatch", "LICENSE"));
+    expect(thirdPartyLicenses).toContain(await licenseTextInRepository("valibot", "LICENSE.md"));
+  });
+});
+
+describe("the packed tarball installed under an npm release-age gate", () => {
+  it("installs and runs when npm's before setting holds back every published package", async () => {
+    const gatedDirectory = await mkdtemp(join(tmpdir(), "configdirector-cli-gated-"));
+    onTestFinished(() => rm(gatedDirectory, { recursive: true, force: true }));
+    await writeFile(join(gatedDirectory, "package.json"), JSON.stringify({ private: true }));
+    await writeFile(join(gatedDirectory, ".npmrc"), "before=2000-01-01T00:00:00.000Z\n");
+
+    await execFileAsync("npm", ["install", "--no-audit", "--no-fund", "--no-package-lock", tarball], {
+      cwd: gatedDirectory,
+    });
+
+    const { stdout } = await execFileAsync(join(gatedDirectory, "node_modules", ".bin", "configdirector"), [
+      "--version",
+    ]);
+    const installedPackage = JSON.parse(
+      await readFile(join(gatedDirectory, "node_modules", "@configdirector", "cli", "package.json"), "utf8"),
+    );
+    expect(stdout).toEqual(`${installedPackage.version}\n`);
   });
 });
