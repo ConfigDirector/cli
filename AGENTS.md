@@ -6,7 +6,7 @@ Read `../AGENTS.md` if it exists and has not already been loaded. These reposito
 
 Also follow the Workflow Rules, Code Design, Writing and TypeScript Conventions sections of `../config-director/AGENTS.md`; this repository keeps no copy of them.
 
-`@configdirector/cli`, the `configdirector` command: TypeScript on Node 20 or later, ESM, built with tsdown and published to npm under the `beta` dist-tag. The product definition is `product-documents/cli-definition.md` in the config-director repository; read its sections 3 to 5 before changing a command.
+`@configdirector/cli`, the `configdirector` command: TypeScript on Node 20 or later, ESM, built with tsdown and published to npm under the `latest` dist-tag. The product definition is `product-documents/cli-definition.md` in the config-director repository; read its sections 3 to 5 before changing a command.
 
 ## Commands
 
@@ -43,4 +43,5 @@ Run a single spec with `yarn vitest run test/login.spec.ts`.
 ## Releasing
 
 - Every user-visible change gets an entry in `CHANGELOG.md` under `## [Unreleased]`, in Keep a Changelog sections (Added, Changed, Fixed), written from the user's side.
-- To release, set `version` in `package.json` (0.x during the beta), move the Unreleased entries under that version, and run the `Release` workflow from GitHub Actions. It runs `yarn release`, publishes `package.tgz` to npm with `--tag beta` through trusted publishing, and tags the commit `cli-v<version>`.
+- To release, set `version` in `package.json`, move the Unreleased entries under that version, and run the `Release` workflow from GitHub Actions. It runs `yarn release`, publishes `package.tgz` to npm under `latest` through trusted publishing, and tags the commit `cli-v<version>`.
+- Versions are plain `0.x.y` until 1.0, never a prerelease such as `-beta.1`: when a user's `.npmrc` sets `min-release-age`, npm falls back from a release too new to install to the newest older plain version, but never to an older prerelease, so a prerelease fails every install until it is old enough.

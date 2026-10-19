@@ -39,7 +39,7 @@ describe("program", () => {
     expect(invocation.stderr.text()).toContain("--no-such-option");
   });
 
-  it("lists the logout and api-token commands with the beta label on stdout for --help", async () => {
+  it("lists the logout and api-token commands with the before-1.0 notice on stdout for --help", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["--help"] });
 
@@ -51,10 +51,10 @@ describe("program", () => {
       .map((line) => line.trim().split(" ")[0]);
     expect(exitCode).toEqual(0);
     expect(firstWords).toEqual(expect.arrayContaining(["logout", "api-token"]));
-    expect(invocation.stdout.text()).toContain("Beta: commands and output may change before 1.0.");
+    expect(invocation.stdout.text()).toContain("Commands and output may change before 1.0.");
   });
 
-  it("lists the get verb with the beta label in the help of api-token", async () => {
+  it("lists the get verb with the before-1.0 notice in the help of api-token", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["api-token", "--help"] });
 
@@ -63,7 +63,7 @@ describe("program", () => {
     const help = invocation.stdout.text();
     expect(exitCode).toEqual(0);
     expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toContain("get");
-    expect(help).toContain("Beta: commands and output may change before 1.0.");
+    expect(help).toContain("Commands and output may change before 1.0.");
   });
 
   it("lists the login and init commands on stdout for --help", async () => {
@@ -81,7 +81,7 @@ describe("program", () => {
     expect(firstWords).toContain("init");
   });
 
-  it("lists the evaluate command with the beta label on stdout for --help", async () => {
+  it("lists the evaluate command with the before-1.0 notice on stdout for --help", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["--help"] });
 
@@ -93,10 +93,10 @@ describe("program", () => {
       .map((line) => line.trim().split(" ")[0]);
     expect(exitCode).toEqual(0);
     expect(firstWords).toContain("evaluate");
-    expect(invocation.stdout.text()).toContain("Beta: commands and output may change before 1.0.");
+    expect(invocation.stdout.text()).toContain("Commands and output may change before 1.0.");
   });
 
-  it("lists the projects, environments, configs and segments commands with the beta label on stdout for --help", async () => {
+  it("lists the projects, environments, configs and segments commands with the before-1.0 notice on stdout for --help", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["--help"] });
 
@@ -108,10 +108,10 @@ describe("program", () => {
       .map((line) => line.trim().split(" ")[0]);
     expect(exitCode).toEqual(0);
     expect(firstWords).toEqual(expect.arrayContaining(["projects", "environments", "configs", "segments"]));
-    expect(invocation.stdout.text()).toContain("Beta: commands and output may change before 1.0.");
+    expect(invocation.stdout.text()).toContain("Commands and output may change before 1.0.");
   });
 
-  it("lists the list verb with the beta label in the help of projects", async () => {
+  it("lists the list verb with the before-1.0 notice in the help of projects", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["projects", "--help"] });
 
@@ -120,10 +120,10 @@ describe("program", () => {
     const help = invocation.stdout.text();
     expect(exitCode).toEqual(0);
     expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toContain("list");
-    expect(help).toContain("Beta: commands and output may change before 1.0.");
+    expect(help).toContain("Commands and output may change before 1.0.");
   });
 
-  it("lists the list verb with the beta label in the help of environments", async () => {
+  it("lists the list verb with the before-1.0 notice in the help of environments", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["environments", "--help"] });
 
@@ -132,10 +132,10 @@ describe("program", () => {
     const help = invocation.stdout.text();
     expect(exitCode).toEqual(0);
     expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toContain("list");
-    expect(help).toContain("Beta: commands and output may change before 1.0.");
+    expect(help).toContain("Commands and output may change before 1.0.");
   });
 
-  it("lists the list, get, activity, create and archive verbs with the beta label in the help of configs", async () => {
+  it("lists the list, get, activity, create and archive verbs with the before-1.0 notice in the help of configs", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["configs", "--help"] });
 
@@ -146,10 +146,10 @@ describe("program", () => {
     expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toEqual(
       expect.arrayContaining(["list", "get", "activity", "create", "archive"]),
     );
-    expect(help).toContain("Beta: commands and output may change before 1.0.");
+    expect(help).toContain("Commands and output may change before 1.0.");
   });
 
-  it("lists the --upload, --repository, --context-lines and --no-snippets options with the beta label in the help of scan", async () => {
+  it("lists the --upload, --repository, --context-lines and --no-snippets options with the before-1.0 notice in the help of scan", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["scan", "--help"] });
 
@@ -163,10 +163,10 @@ describe("program", () => {
       "--context-lines",
       "--no-snippets",
     ]);
-    expect(help).toContain("Beta: commands and output may change before 1.0.");
+    expect(help).toContain("Commands and output may change before 1.0.");
   });
 
-  it("groups the options of configs create by the types they apply to, with the beta label, in its help", async () => {
+  it("groups the options of configs create by the types they apply to, with the before-1.0 notice, in its help", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["configs", "create", "--help"] });
 
@@ -189,7 +189,7 @@ describe("program", () => {
     ]);
     expect(optionNamesUnder(help, "Options for --type url:")).toEqual(["--https-only"]);
     expect(optionNamesUnder(help, "Options for --type json:")).toEqual(["--json-schema"]);
-    expect(help).toContain("Beta: commands and output may change before 1.0.");
+    expect(help).toContain("Commands and output may change before 1.0.");
   });
 
   it("calls --default-value the default targeting rule value in the help of configs create", async () => {
@@ -204,7 +204,7 @@ describe("program", () => {
     );
   });
 
-  it("lists the list and get verbs with the beta label in the help of segments", async () => {
+  it("lists the list and get verbs with the before-1.0 notice in the help of segments", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["segments", "--help"] });
 
@@ -215,10 +215,10 @@ describe("program", () => {
     expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toEqual(
       expect.arrayContaining(["list", "get"]),
     );
-    expect(help).toContain("Beta: commands and output may change before 1.0.");
+    expect(help).toContain("Commands and output may change before 1.0.");
   });
 
-  it("lists the set and reference verbs with the beta label in the help of targeting-rules", async () => {
+  it("lists the set and reference verbs with the before-1.0 notice in the help of targeting-rules", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["targeting-rules", "--help"] });
 
@@ -229,10 +229,10 @@ describe("program", () => {
     expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toEqual(
       expect.arrayContaining(["set", "reference"]),
     );
-    expect(help).toContain("Beta: commands and output may change before 1.0.");
+    expect(help).toContain("Commands and output may change before 1.0.");
   });
 
-  it("lists the list and remove verbs with the beta label in the help of repositories", async () => {
+  it("lists the list and remove verbs with the before-1.0 notice in the help of repositories", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["repositories", "--help"] });
 
@@ -243,10 +243,10 @@ describe("program", () => {
     expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toEqual(
       expect.arrayContaining(["list", "remove"]),
     );
-    expect(help).toContain("Beta: commands and output may change before 1.0.");
+    expect(help).toContain("Commands and output may change before 1.0.");
   });
 
-  it("lists evaluate's options without defaults for options that have none, and the beta label, in its help", async () => {
+  it("lists evaluate's options without defaults for options that have none, and the before-1.0 notice, in its help", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["evaluate", "--help"] });
 
@@ -267,7 +267,7 @@ describe("program", () => {
       ]),
     );
     expect(help).not.toContain("(default: [])");
-    expect(help).toContain("Beta: commands and output may change before 1.0.");
+    expect(help).toContain("Commands and output may change before 1.0.");
   });
 
   it("exits 2 with nothing on stdout when no command is given", async () => {

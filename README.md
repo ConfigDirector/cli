@@ -1,16 +1,16 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. It is in beta: commands and output may change before 1.0. This release signs in to one or more organizations, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, archives configs, uploads the repository's code references to the project, and lists and removes the project's scanned repositories.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. Commands and output may change before 1.0. This release signs in to one or more organizations, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, archives configs, uploads the repository's code references to the project, and lists and removes the project's scanned repositories.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
 ## Install
 
 ```bash
-npm install --global @configdirector/cli@beta
+npm install --global @configdirector/cli
 ```
 
-It needs Node.js 20 or later.
+It needs Node.js 20 or later. If you installed `@configdirector/cli@beta` before 0.11.0, run this again: `@beta` stays on the last beta, 0.10.0-beta.1.
 
 ## Sign in
 

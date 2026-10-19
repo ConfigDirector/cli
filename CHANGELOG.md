@@ -4,6 +4,16 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-19
+
+### Changed
+
+- The CLI is published under npm's `latest` tag, with no `-beta` in its version, so `npm install --global @configdirector/cli` and `npx @configdirector/cli` get the newest release. `@beta` stays on 0.10.0-beta.1, the last beta, so remove `@beta` from your install commands, scripts and CI to keep getting updates. Commands and output may still change before 1.0, and `--help` still ends by saying so, without the word beta.
+
+### Fixed
+
+- When your project's `.npmrc` sets `min-release-age`, `npx @configdirector/cli` runs the newest release that is old enough. With `@beta`, npm refused to install anything until the newest beta was that old.
+
 ## [0.10.0-beta.1] - 2026-10-19
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "@configdirector/cli",
-  "version": "0.10.0-beta.1",
+  "version": "0.11.0",
   "description": "Command line tool for ConfigDirector, the managed configuration and feature flag service.",
   "license": "MIT",
   "author": "ConfigDirector",
@@ -37,7 +37,7 @@
     "build": "tsdown",
     "pack:tarball": "yarn pack --out package.tgz",
     "ci:test:packed-tarball": "vitest run --config vitest.packed-tarball.config.ts",
-    "release": "yarn typecheck && yarn lint && yarn ci:test && yarn build && yarn pack:tarball && yarn ci:test:packed-tarball && npm publish package.tgz --access public --tag beta"
+    "release": "yarn typecheck && yarn lint && yarn ci:test && yarn build && yarn pack:tarball && yarn ci:test:packed-tarball && npm publish package.tgz --access public"
   },
   "dependencies": {
     "commander": "^14.0.3",

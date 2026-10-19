@@ -109,7 +109,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
 
   const program = new Command("configdirector")
     .description("Work with ConfigDirector configs from the terminal and CI.")
-    .addHelpText("afterAll", "\nBeta: commands and output may change before 1.0.")
+    .addHelpText("afterAll", "\nCommands and output may change before 1.0.")
     .configureHelp({ showGlobalOptions: true })
     .version(version)
     .option(
