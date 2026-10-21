@@ -4,6 +4,10 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- `brew install ConfigDirector/tap/configdirector` installs the CLI with Homebrew, which takes care of Node.js. The Homebrew formula is updated with every npm release, so `brew upgrade configdirector` gets the newest one.
+
 ## [0.12.0] - 2026-10-19
 
 ### Added

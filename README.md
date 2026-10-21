@@ -12,6 +12,14 @@ npm install --global @configdirector/cli
 
 It needs Node.js 20 or later. If you installed `@configdirector/cli@beta` before 0.11.0, run this again: `@beta` stays on the last beta, 0.10.0-beta.1.
 
+Or install it with Homebrew, which takes care of Node.js:
+
+```bash
+brew install ConfigDirector/tap/configdirector
+```
+
+The Homebrew formula is updated with every npm release, so `brew upgrade configdirector` gets the newest one.
+
 ## Sign in
 
 Create an API token in the ConfigDirector dashboard, then run:

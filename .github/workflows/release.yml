@@ -20,16 +20,28 @@ jobs:
 
       - run: yarn install
 
-      - run: yarn release
+      - id: release
+        run: yarn release
+
+      - id: published
+        name: Read the version and the npm tarball's URL and checksum
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          {
+            echo "version=$version"
+            echo "tarball-url=https://registry.npmjs.org/@configdirector/cli/-/cli-$version.tgz"
+            echo "tarball-sha256=$(sha256sum package.tgz | cut -d ' ' -f 1)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Tag release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.published.outputs.version }}
         run: |
           set -euo pipefail
-          version=$(node -p "require('./package.json').version")
-          tag="cli-v$version"
+          tag="cli-v$VERSION"
 
           if gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
             echo "Tag $tag already exists, nothing to do"
@@ -38,3 +50,43 @@ jobs:
 
           gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" >/dev/null
           echo "Tagged $GITHUB_SHA as $tag"
+
+      - uses: actions/checkout@v5
+        with:
+          repository: ConfigDirector/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update the Homebrew formula
+        working-directory: homebrew-tap
+        env:
+          VERSION: ${{ steps.published.outputs.version }}
+          TARBALL_URL: ${{ steps.published.outputs.tarball-url }}
+          TARBALL_SHA256: ${{ steps.published.outputs.tarball-sha256 }}
+        run: |
+          set -euo pipefail
+          formula=Formula/configdirector.rb
+
+          sed -i -E \
+            -e "s|^  url \".*\"$|  url \"$TARBALL_URL\"|" \
+            -e "s|^  sha256 \".*\"$|  sha256 \"$TARBALL_SHA256\"|" \
+            "$formula"
+
+          if ! grep -qxF "  url \"$TARBALL_URL\"" "$formula" || ! grep -qxF "  sha256 \"$TARBALL_SHA256\"" "$formula"; then
+            echo "::error::$formula has no top-level url or sha256 line to rewrite."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --all --message "configdirector $VERSION"
+          git push origin HEAD
+          echo "Updated ConfigDirector/homebrew-tap to configdirector $VERSION"
+
+      - name: Say the Homebrew formula needs updating by hand
+        if: failure() && steps.release.outcome == 'success'
+        env:
+          VERSION: ${{ steps.published.outputs.version }}
+          TARBALL_URL: ${{ steps.published.outputs.tarball-url }}
+          TARBALL_SHA256: ${{ steps.published.outputs.tarball-sha256 }}
+        run: echo "::error::@configdirector/cli $VERSION is on npm, but the Homebrew formula was not updated. In ConfigDirector/homebrew-tap, set url \"$TARBALL_URL\" and sha256 \"$TARBALL_SHA256\" in Formula/configdirector.rb, and commit it as \"configdirector $VERSION\"."
