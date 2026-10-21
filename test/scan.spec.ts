@@ -2004,7 +2004,7 @@ describe("scan Nuxt app and server", () => {
   const sdkFamiliesOf = (output: { references: Array<{ sdk: string }> }) =>
     output.references.map((reference) => reference.sdk);
 
-  it("reports a Nuxt call in the server directory next to nuxt.config as the Nuxt server SDK", async () => {
+  it("reports a useConfigDirectorClient call in the server directory next to nuxt.config as the Nuxt server SDK", async () => {
     const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
     await writeRepositoryFile(
@@ -2016,6 +2016,31 @@ describe("scan Nuxt app and server", () => {
       sandbox.workingDirectory,
       "apps/web/server/api/checkout.get.ts",
       nuxtServerHandler,
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(sdkFamiliesOf(output)).toEqual(["nuxt-server"]);
+  });
+
+  it("reports a useConfigDirectorServerClient call in the server directory next to nuxt.config as the Nuxt server SDK", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "apps/web/nuxt.config.ts",
+      "export default defineNuxtConfig({});\n",
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "apps/web/server/api/checkout.get.ts",
+      [
+        "export default defineEventHandler(() => {",
+        '  return useConfigDirectorServerClient().getValue("new-checkout", false);',
+        "});",
+        "",
+      ].join("\n"),
     );
 
     const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);

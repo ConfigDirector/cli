@@ -4,9 +4,15 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-21
+
 ### Added
 
 - `brew install ConfigDirector/tap/configdirector` installs the CLI with Homebrew, which takes care of Node.js. The Homebrew formula is updated with every npm release, so `brew upgrade configdirector` gets the newest one.
+
+### Fixed
+
+- `configdirector scan` finds configs read in Nuxt server code through `useConfigDirectorServerClient()`, the name `@configdirector/nuxt-sdk` uses from 1.11.0. Server code that calls `useConfigDirectorClient()`, as it did with 1.10.0 and earlier, is still found.
 
 ## [0.12.0] - 2026-10-19
 

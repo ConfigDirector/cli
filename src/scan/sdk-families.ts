@@ -225,7 +225,7 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
   "nuxt-server": {
     sdkType: "server",
     extensions: javascriptExtensions,
-    importMarkers: ["useConfigDirectorClient"],
+    importMarkers: ["useConfigDirectorServerClient", "useConfigDirectorClient"],
     projectArea: "nuxt-server",
     calls: javascriptClientCalls,
   },
