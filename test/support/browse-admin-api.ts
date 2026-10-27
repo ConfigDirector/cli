@@ -16,7 +16,7 @@ export const startBrowseAdminApi = (repliesByProjectPath: Record<string, StubRep
     },
   );
 
-const tagNamed = (id: string, name: string) => ({
+export const tagNamed = (id: string, name: string) => ({
   id,
   projectId: webApp.id,
   name,
@@ -27,6 +27,12 @@ const tagNamed = (id: string, name: string) => ({
 export const checkoutTag = tagNamed("5a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "checkout");
 
 export const webTeamTag = tagNamed("6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e", "Web team");
+
+export const paymentsTag = tagNamed("7c3d4e5f-6a7b-4c8d-8e9f-1a2b3c4d5e6f", "Payments");
+
+export const billingTag = tagNamed("8d4e5f6a-7b8c-4d9e-9f0a-2b3c4d5e6f7a", "Billing");
+
+export const invoicesTag = tagNamed("9e5f6a7b-8c9d-4e0f-8a1b-3c4d5e6f7a8b", "Invoices");
 
 export const requestLinesOf = (adminApi: Awaited<ReturnType<typeof startBrowseAdminApi>>) =>
   adminApi.receivedRequests.map((request) => `${request.method} ${request.path}`);

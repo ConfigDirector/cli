@@ -113,9 +113,9 @@ const ConfigActivitySchema = v.object({
 
 export type ConfigActivity = v.InferOutput<typeof ConfigActivitySchema>;
 
-const TagSchema = v.object({ id: v.string() });
+const TagSchema = v.object({ id: v.string(), name: v.string() });
 
-type Tag = v.InferOutput<typeof TagSchema>;
+export type Tag = v.InferOutput<typeof TagSchema>;
 
 export type ConfigTagFilter =
   { form: "every-config" } | { form: "tagged"; tagIds: string[] } | { form: "untagged" };
@@ -333,6 +333,15 @@ export class AdminApiClient {
         TagSchema,
       )
     )?.parsedBody;
+  }
+
+  public async createTag(projectId: string, name: string): Promise<Tag> {
+    return (
+      await this.requestJson(`/v1/projects/${encodeURIComponent(projectId)}/tags`, TagSchema, {
+        method: "POST",
+        body: { name },
+      })
+    ).parsedBody;
   }
 
   public createConfig(

@@ -308,6 +308,11 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     )
     .option("--tag <name>", "assign the project's tag with this name; repeatable", repeatedOption)
     .option(
+      "--new-tag <name>",
+      "create a tag with this name in the project's tag catalog and assign it; repeatable",
+      repeatedOption,
+    )
+    .option(
       "--variation <name=value>",
       "a variation of an experiment, its value in the type given by --type; repeatable",
       repeatedOption,

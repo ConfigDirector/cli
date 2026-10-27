@@ -5,6 +5,7 @@ import type {
   ConfigTagFilter,
   ListedConfig,
   Project,
+  Tag,
 } from "../admin-api/AdminApiClient.js";
 import { ApiValidationError, ifPermitted } from "../admin-api/admin-api-errors.js";
 import type { CreateConfigRequest, CreatedConfig } from "../admin-api/config-creation.js";
@@ -15,6 +16,7 @@ import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { availabilityDescription, configText } from "../configs/config-text.js";
 import { newConfigOf, type NewConfig, type NewConfigOptions } from "../configs/new-config.js";
 import { ExitCode } from "../ExitCode.js";
+import { plural } from "../plural.js";
 import { connectToLinkedProject } from "../project-selection.js";
 import type { SegmentsById } from "../rule-sentences.js";
 import { utcMinute } from "../utc-minute.js";
@@ -203,7 +205,107 @@ const creationOutput = (project: Project, newConfig: NewConfig, creation: Creati
   }
 };
 
-type CreateConfigOptions = NewConfigOptions & { tag?: string[] };
+type CreateConfigOptions = NewConfigOptions & { tag?: string[]; newTag?: string[] };
+
+type ConfigTagNames = { existingTagNames: string[]; newTagNames: string[] };
+
+const MAXIMUM_CONFIG_TAGS = 20;
+
+const sameTagName = (name: string, otherName: string): boolean =>
+  name.toLowerCase() === otherName.toLowerCase();
+
+const configTagNamesOf = (options: CreateConfigOptions): ConfigTagNames => {
+  const existingTagNames = options.tag ?? [];
+  const newTagNames = options.newTag ?? [];
+  const repeatedNewTagName = newTagNames.find((name, index) =>
+    newTagNames.slice(0, index).some((earlierName) => sameTagName(earlierName, name)),
+  );
+  if (repeatedNewTagName !== undefined) {
+    throw new CliError(
+      `--new-tag gives the tag name "${repeatedNewTagName}" more than once. Case doesn't matter in tag names.`,
+    );
+  }
+  const nameInBothOptions = newTagNames.find((name) =>
+    existingTagNames.some((existingTagName) => sameTagName(existingTagName, name)),
+  );
+  if (nameInBothOptions !== undefined) {
+    throw new CliError(
+      `--tag and --new-tag both give the tag name "${nameInBothOptions}". Case doesn't matter in tag names. ` +
+        "Use --tag for a tag the project has and --new-tag for a tag to create.",
+    );
+  }
+  const tagCount = existingTagNames.length + newTagNames.length;
+  if (tagCount > MAXIMUM_CONFIG_TAGS) {
+    throw new CliError(
+      `--tag and --new-tag give ${tagCount} tags, but a config can have at most ${MAXIMUM_CONFIG_TAGS}.`,
+    );
+  }
+  return { existingTagNames, newTagNames };
+};
+
+const createNewTag = async (client: AdminApiClient, project: Project, name: string): Promise<Tag> => {
+  try {
+    return await client.createTag(project.id, name);
+  } catch (error) {
+    if (error instanceof ApiValidationError) {
+      throw new CliError(
+        `${error.message}\nTo assign a tag the project already has, use --tag instead of --new-tag.`,
+      );
+    }
+    throw error;
+  }
+};
+
+type CreationEnding = CreationOutcome["outcome"] | "failed";
+
+const CREATED_TAGS_LEFT_UNASSIGNED: { [E in CreationEnding]: boolean } = {
+  created: false,
+  "key-taken": true,
+  failed: true,
+};
+
+type UnassignedTagsNotice = { form: "none" } | { form: "tags-left-unassigned"; tags: [Tag, ...Tag[]] };
+
+const unassignedTagsNoticeOf = (createdTags: Tag[], ending: CreationEnding): UnassignedTagsNotice => {
+  const [firstTag, ...laterTags] = createdTags;
+  return firstTag !== undefined && CREATED_TAGS_LEFT_UNASSIGNED[ending]
+    ? { form: "tags-left-unassigned", tags: [firstTag, ...laterTags] }
+    : { form: "none" };
+};
+
+const quotedTagName = (tag: Tag): string => `"${tag.name}"`;
+
+const quotedTagNames = ([firstTag, ...laterTags]: [Tag, ...Tag[]]): string => {
+  const lastTag = laterTags.at(-1);
+  return lastTag === undefined
+    ? quotedTagName(firstTag)
+    : `${[firstTag, ...laterTags.slice(0, -1)].map(quotedTagName).join(", ")} and ${quotedTagName(lastTag)}`;
+};
+
+const unassignedTagsText = (project: Project, tags: [Tag, ...Tag[]]): string => {
+  const count = tags.length;
+  return (
+    `Created the ${plural(count, "tag", "tags")} ${quotedTagNames(tags)}. ` +
+    `${plural(count, "It stays", "They stay")} in ${project.slug}'s tag catalog, ` +
+    `so pass ${plural(count, "it", "them")} with --tag next time.`
+  );
+};
+
+const writeUnassignedTagsNotice = (
+  context: CommandContext,
+  project: Project,
+  createdTags: Tag[],
+  ending: CreationEnding,
+): void => {
+  const notice = unassignedTagsNoticeOf(createdTags, ending);
+  switch (notice.form) {
+    case "none":
+      return;
+    case "tags-left-unassigned":
+      context.invocation.stderr.write(`${unassignedTagsText(project, notice.tags)}\n`);
+      return;
+  }
+};
 
 export const createConfig = async (
   context: CommandContext,
@@ -211,13 +313,25 @@ export const createConfig = async (
   options: CreateConfigOptions,
 ): Promise<CommandOutput> => {
   const newConfig = await newConfigOf(options, context.invocation.workingDirectory);
+  const tagNames = configTagNamesOf(options);
   const { client, project } = await connectToLinkedProject(context);
-  const creation = await requestCreation(client, project, {
-    ...newConfig,
-    tagIds: await tagIdsNamed(client, project, options.tag ?? []),
-  });
+  const existingTagIds = await tagIdsNamed(client, project, tagNames.existingTagNames);
+  const createdTags: Tag[] = [];
+  try {
+    for (const name of tagNames.newTagNames) {
+      createdTags.push(await createNewTag(client, project, name));
+    }
+    const creation = await requestCreation(client, project, {
+      ...newConfig,
+      tagIds: [...existingTagIds, ...createdTags.map((tag) => tag.id)],
+    });
+    writeUnassignedTagsNotice(context, project, createdTags, creation.outcome);
 
-  return creationOutput(project, newConfig, creation);
+    return creationOutput(project, newConfig, creation);
+  } catch (error) {
+    writeUnassignedTagsNotice(context, project, createdTags, "failed");
+    throw error;
+  }
 };
 
 export const archiveConfig = async (

@@ -228,7 +228,8 @@ Default targeting rule in every environment: false
 ```
 
 - `--key`, `--type` (`boolean`, `string`, `integer`, `float`, `timespan`, `enum`, `url` or `json`), `--role` (`config`, `flag`, `kill-switch` or `experiment`), `--lifetime` (`temporary` or `permanent`) and `--default-value` are required. `--default-value` is the default targeting rule value every environment starts with, not the in-code default value an application passes to the SDK.
-- `--description <text>`; `--client-only` or `--server-only`, without which client and server SDKs both receive the config; `--tag <name>`, repeatable, naming an existing tag of the project; and `--variation <name=value>`, repeatable, for an experiment's variations.
+- `--description <text>`; `--client-only` or `--server-only`, without which client and server SDKs both receive the config; and `--variation <name=value>`, repeatable, for an experiment's variations.
+- `--tag <name>`, repeatable, names a tag the project already has, and `--new-tag <name>`, repeatable, creates a tag with that name in the project's tag catalog. The config gets the tags of both, at most 20 in all. Every `--tag` name is looked up before any tag is created, so a misspelled `--tag` creates nothing; a name no tag has, a `--new-tag` name a tag already has, a `--new-tag` name given twice and a name given with both options exit with 2. When a later step fails, such as a key that is taken, the tags already created stay in the catalog, and the command names them so you can pass them with `--tag` next time.
 - The values of `--default-value` and `--variation` are read in the config's type: `true` or `false`, a number for an integer, float or timespan, the text as written for a string, enum or URL, and JSON for a JSON config, with `@file` reading it from a file. A value that does not fit the type is a usage error.
 - Constraints, each accepted only by its types: `--min` and `--max` (a value may equal them) for an integer, float or timespan; `--exclusive-min` and `--exclusive-max` for an integer or float; `--unit` (`milliseconds`, `seconds` or `minutes`) and `--allow-fractions` for a timespan, which needs `--unit`, `--min` and `--max`; `--allowed-value`, repeatable, and `--enum-value-type string|number` (default `string`) for an enum; `--https-only` for a URL, without which any HTTP or HTTPS URL is accepted; and `--json-schema <file>` for a JSON config. An option of another type is a usage error naming the types it belongs to. A timespan without `--unit`, `--min` or `--max` is a usage error too.
 
@@ -239,7 +240,7 @@ configdirector configs create --key checkout-timeout --type timespan --role conf
 
 When the project already has a config with the key, as its current key or an old one, nothing is created: the command prints that config's key, type, role, lifetime and lifecycle state, and exits with 1. When ConfigDirector refuses the config for another reason, it exits with 2 and lists the reasons. With `--json`, it prints the created config as received, or the existing config when the key is taken.
 
-`configs create` needs `projects:read`, `configs:create`, and `configs:read` to show the config that already has the key; `--tag` also needs `tags:read` and `config-settings:update`. The config shows in the audit log with the source CLI.
+`configs create` needs `projects:read`, `configs:create`, and `configs:read` to show the config that already has the key; `--tag` also needs `tags:read`, and `--new-tag` needs `tags:create`. The config shows in the audit log with the source CLI.
 
 ## Change targeting rules
 

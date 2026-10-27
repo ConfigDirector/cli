@@ -2,15 +2,20 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
 import {
+  billingTag,
   checkoutTag,
+  invoicesTag,
+  paymentsTag,
   projectPath,
   requestLinesOf,
   startBrowseAdminApi,
+  tagNamed,
   webTeamTag,
 } from "./support/browse-admin-api.js";
 import { writeRepositoryFile } from "./support/repository-files.js";
 import { createSandbox, type Sandbox } from "./support/sandbox.js";
 import { webApp } from "./support/scan-admin-api.js";
+import type { ReceivedRequest, StubReply } from "./support/stub-admin-api.js";
 
 const createConfigIn = async (sandbox: Sandbox, baseUrl: string, commandLineArguments: string[]) => {
   const invocation = sandbox.invocation({
@@ -52,8 +57,25 @@ const createdConfig = (overrides: object = {}) => ({
   ...overrides,
 });
 
-const createRequestBodies = (adminApi: Awaited<ReturnType<typeof startBrowseAdminApi>>) =>
-  adminApi.receivedRequests.filter((request) => request.method === "POST").map((request) => request.body);
+const bodiesPostedTo = (adminApi: Awaited<ReturnType<typeof startBrowseAdminApi>>, path: string) =>
+  adminApi.receivedRequests
+    .filter((request) => request.method === "POST" && request.path === projectPath(path))
+    .map((request) => request.body);
+
+const configCreationBodies = (adminApi: Awaited<ReturnType<typeof startBrowseAdminApi>>) =>
+  bodiesPostedTo(adminApi, "/configs");
+
+const tagCreationBodies = (adminApi: Awaited<ReturnType<typeof startBrowseAdminApi>>) =>
+  bodiesPostedTo(adminApi, "/tags");
+
+const repliesByTagName =
+  (repliesByName: Record<string, StubReply>) =>
+  (request: ReceivedRequest): StubReply =>
+    repliesByName[(request.body as { name: string }).name] ?? { status: 500 };
+
+const tagNameTakenErrors = (name: string) => ({
+  errors: [{ name: "name", message: `A tag named "${name}" already exists.` }],
+});
 
 const keyTakenErrors = {
   errors: [
@@ -122,7 +144,7 @@ describe("configs create", () => {
       "",
     ]);
     expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `POST ${projectPath("/configs")}`]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       {
         key: "new-checkout",
         role: "flag",
@@ -155,7 +177,7 @@ describe("configs create", () => {
       "Default targeting rule in every environment: false",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       expect.objectContaining({ key: "new-checkout", description: "Shows the new checkout flow" }),
     ]);
   });
@@ -186,7 +208,7 @@ describe("configs create", () => {
       "Default targeting rule in every environment: 20",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       expect.objectContaining({ type: "string", defaultValue: "20" }),
     ]);
   });
@@ -234,7 +256,9 @@ describe("configs create", () => {
       "Default targeting rule in every environment: false",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([expect.objectContaining({ client: true, server: false })]);
+    expect(configCreationBodies(adminApi)).toEqual([
+      expect.objectContaining({ client: true, server: false }),
+    ]);
   });
 
   it("creates a config only server SDKs receive with --server-only", async () => {
@@ -254,7 +278,9 @@ describe("configs create", () => {
       "Default targeting rule in every environment: false",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([expect.objectContaining({ client: false, server: true })]);
+    expect(configCreationBodies(adminApi)).toEqual([
+      expect.objectContaining({ client: false, server: true }),
+    ]);
   });
 
   it("exits 2 without a request when --client-only is combined with --server-only", async () => {
@@ -308,7 +334,7 @@ describe("configs create", () => {
       `GET ${projectPath("/tags/by-name?name=Web+team")}`,
       `POST ${projectPath("/configs")}`,
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       expect.objectContaining({ tagIds: [checkoutTag.id, webTeamTag.id] }),
     ]);
   });
@@ -335,6 +361,327 @@ describe("configs create", () => {
       `GET ${projectPath("/tags/by-name?name=checkout")}`,
       `GET ${projectPath("/tags/by-name?name=chekout")}`,
     ]);
+  });
+
+  it("makes the tag named by --new-tag without looking it up, sends its id and prints the created config as received with --json", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/tags": { status: 200, body: paymentsTag },
+      "/configs": {
+        status: 200,
+        body: createdConfig({ tags: [{ id: paymentsTag.id, name: paymentsTag.name }] }),
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      "--new-tag",
+      "Payments",
+      "--json",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(JSON.parse(stdout)).toEqual(
+      createdConfig({ tags: [{ id: paymentsTag.id, name: paymentsTag.name }] }),
+    );
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `POST ${projectPath("/tags")}`,
+      `POST ${projectPath("/configs")}`,
+    ]);
+    expect(tagCreationBodies(adminApi)).toEqual([{ name: "Payments" }]);
+    expect(configCreationBodies(adminApi)).toEqual([expect.objectContaining({ tagIds: [paymentsTag.id] })]);
+  });
+
+  it("looks up every --tag name, then makes every --new-tag in order, and sends the ids of both", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/tags/by-name?name=checkout": { status: 200, body: checkoutTag },
+      "/tags": repliesByTagName({
+        Payments: { status: 200, body: paymentsTag },
+        Billing: { status: 200, body: billingTag },
+      }),
+      "/configs": {
+        status: 200,
+        body: createdConfig({
+          tags: [
+            { id: checkoutTag.id, name: checkoutTag.name },
+            { id: paymentsTag.id, name: paymentsTag.name },
+            { id: billingTag.id, name: billingTag.name },
+          ],
+        }),
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      "--new-tag",
+      "Payments",
+      "--tag",
+      "checkout",
+      "--new-tag",
+      "Billing",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "Created new-checkout in web-app: boolean, flag, temporary, client and server SDKs.",
+      "Default targeting rule in every environment: false",
+      "",
+    ]);
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath("/tags/by-name?name=checkout")}`,
+      `POST ${projectPath("/tags")}`,
+      `POST ${projectPath("/tags")}`,
+      `POST ${projectPath("/configs")}`,
+    ]);
+    expect(tagCreationBodies(adminApi)).toEqual([{ name: "Payments" }, { name: "Billing" }]);
+    expect(configCreationBodies(adminApi)).toEqual([
+      expect.objectContaining({ tagIds: [checkoutTag.id, paymentsTag.id, billingTag.id] }),
+    ]);
+  });
+
+  it("exits 2 without a request when --new-tag gives a name twice, ignoring case", async () => {
+    const adminApi = await startBrowseAdminApi();
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      "--new-tag",
+      "Payments",
+      "--new-tag",
+      "payments",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual(
+      `Error: --new-tag gives the tag name "payments" more than once. Case doesn't matter in tag names.\n`,
+    );
+    expect(adminApi.receivedRequests).toEqual([]);
+  });
+
+  it("exits 2 without a request when --tag and --new-tag give the same name, ignoring case", async () => {
+    const adminApi = await startBrowseAdminApi();
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      "--tag",
+      "checkout",
+      "--new-tag",
+      "Checkout",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual(
+      'Error: --tag and --new-tag both give the tag name "Checkout". Case doesn\'t matter in tag names. ' +
+        "Use --tag for a tag the project has and --new-tag for a tag to create.\n",
+    );
+    expect(adminApi.receivedRequests).toEqual([]);
+  });
+
+  it("exits 2 without a request when --tag and --new-tag give more than 20 tags in all", async () => {
+    const adminApi = await startBrowseAdminApi();
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      ...Array.from({ length: 11 }, (_, index) => ["--tag", `team-${index + 1}`]).flat(),
+      ...Array.from({ length: 10 }, (_, index) => ["--new-tag", `area-${index + 1}`]).flat(),
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual("Error: --tag and --new-tag give 21 tags, but a config can have at most 20.\n");
+    expect(adminApi.receivedRequests).toEqual([]);
+  });
+
+  it("creates a config with 20 tags, the most a config can have", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/tags": (request) => {
+        const { name } = request.body as { name: string };
+        return { status: 200, body: tagNamed(`tag-${name}`, name) };
+      },
+      "/configs": { status: 200, body: createdConfig() },
+    });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      ...Array.from({ length: 20 }, (_, index) => ["--new-tag", `area-${index + 1}`]).flat(),
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "Created new-checkout in web-app: boolean, flag, temporary, client and server SDKs.",
+      "Default targeting rule in every environment: false",
+      "",
+    ]);
+    expect(configCreationBodies(adminApi)).toHaveLength(1);
+  });
+
+  it("exits 2 naming the tag without making any --new-tag when no tag has a --tag name", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/tags/by-name?name=chekout": { status: 404, body: {} },
+      "/tags": { status: 200, body: paymentsTag },
+    });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      "--new-tag",
+      "Payments",
+      "--tag",
+      "chekout",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual('Error: No tag in web-app has the name "chekout".\n');
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath("/tags/by-name?name=chekout")}`,
+    ]);
+  });
+
+  it("exits 2 with the API's reason and a hint to use --tag, without creating the config, when a tag already has a --new-tag name", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/tags": { status: 400, body: tagNameTakenErrors("checkout") },
+    });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      "--new-tag",
+      "Checkout",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual(
+      "Error: The Admin API rejected the request:\n" +
+        '  name: A tag named "checkout" already exists.\n' +
+        "To assign a tag the project already has, use --tag instead of --new-tag.\n",
+    );
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `POST ${projectPath("/tags")}`]);
+  });
+
+  it("exits 2 naming the missing permission, without creating the config, when the token cannot make tags", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/tags": {
+        status: 403,
+        body: {
+          error: "The API token is missing the `tags:create` permission.",
+          code: "INSUFFICIENT_PERMISSIONS",
+        },
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      "--new-tag",
+      "Payments",
+      "--new-tag",
+      "Billing",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual(
+      "Error: The Admin API refused the request: The API token is missing the `tags:create` permission. (INSUFFICIENT_PERMISSIONS)\n",
+    );
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `POST ${projectPath("/tags")}`]);
+  });
+
+  it("names the tags it created, which stay in the tag catalog, when the API then refuses to create the config", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/tags": repliesByTagName({
+        Payments: { status: 200, body: paymentsTag },
+        Billing: { status: 200, body: billingTag },
+        Invoices: { status: 200, body: invoicesTag },
+      }),
+      "/configs": {
+        status: 403,
+        body: {
+          error: "The API token is missing the `configs:create` permission.",
+          code: "INSUFFICIENT_PERMISSIONS",
+        },
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      "--new-tag",
+      "Payments",
+      "--new-tag",
+      "Billing",
+      "--new-tag",
+      "Invoices",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr.split("\n")).toEqual([
+      'Created the tags "Payments", "Billing" and "Invoices". ' +
+        "They stay in web-app's tag catalog, so pass them with --tag next time.",
+      "Error: The Admin API refused the request: The API token is missing the `configs:create` permission. (INSUFFICIENT_PERMISSIONS)",
+      "",
+    ]);
+  });
+
+  it("names the tag it created, which stays in the tag catalog, when the API then rejects a later --new-tag", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/tags": repliesByTagName({
+        Payments: { status: 200, body: paymentsTag },
+        checkout: { status: 400, body: tagNameTakenErrors("checkout") },
+      }),
+    });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      "--new-tag",
+      "Payments",
+      "--new-tag",
+      "checkout",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr.split("\n")).toEqual([
+      'Created the tag "Payments". ' + "It stays in web-app's tag catalog, so pass it with --tag next time.",
+      "Error: The Admin API rejected the request:",
+      '  name: A tag named "checkout" already exists.',
+      "To assign a tag the project already has, use --tag instead of --new-tag.",
+      "",
+    ]);
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `POST ${projectPath("/tags")}`,
+      `POST ${projectPath("/tags")}`,
+    ]);
+  });
+
+  it("names the tag it created, which stays in the tag catalog, when the key then turns out to be taken", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/tags": { status: 200, body: paymentsTag },
+      "/configs": { status: 400, body: keyTakenErrors },
+      "/configs/new-checkout": { status: 200, body: existingNewCheckout },
+    });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      "--new-tag",
+      "Payments",
+    ]);
+
+    expect(exitCode).toEqual(1);
+    expect(stdout.split("\n")).toEqual([
+      "web-app already has a config with the key new-checkout, so no config was created:",
+      "new-checkout   boolean   flag   temporary   in-use",
+      "",
+    ]);
+    expect(stderr).toEqual(
+      'Created the tag "Payments". ' +
+        "It stays in web-app's tag catalog, so pass it with --tag next time.\n",
+    );
   });
 
   it("exits 1 with the summary of the config that has the key, read with a second request, when the key is taken", async () => {
@@ -522,7 +869,7 @@ describe("configs create type constraints", () => {
       "Default targeting rule in every environment: 20",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       {
         key: "max-cart-items",
         role: "config",
@@ -577,7 +924,7 @@ describe("configs create type constraints", () => {
       "Default targeting rule in every environment: 0.85",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       expect.objectContaining({
         type: "float",
         typeOptions: {
@@ -675,7 +1022,7 @@ describe("configs create type constraints", () => {
       "Default targeting rule in every environment: 30",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       expect.objectContaining({
         type: "timespan",
         typeOptions: { unit: "seconds", min: 0, max: 3600, allowFractions: true },
@@ -778,7 +1125,7 @@ describe("configs create type constraints", () => {
       "Default targeting rule in every environment: dark",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       expect.objectContaining({
         type: "enum",
         typeOptions: { values: ["light", "dark", "system"], valueType: "string" },
@@ -822,7 +1169,7 @@ describe("configs create type constraints", () => {
       "Default targeting rule in every environment: 25",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       expect.objectContaining({
         type: "enum",
         typeOptions: { values: ["10", "25", "50"], valueType: "number" },
@@ -859,7 +1206,7 @@ describe("configs create type constraints", () => {
       "Default targeting rule in every environment: https://example.com/support",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       expect.objectContaining({
         type: "url",
         typeOptions: { secureOnly: true },
@@ -895,7 +1242,7 @@ describe("configs create type constraints", () => {
       "Default targeting rule in every environment: http://localhost:3000/support",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       expect.objectContaining({
         type: "url",
         typeOptions: { secureOnly: false },
@@ -939,7 +1286,7 @@ describe("configs create type constraints", () => {
       'Default targeting rule in every environment: { "theme": "dark" }',
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       expect.objectContaining({
         type: "json",
         typeOptions: { useSchema: true, schema: { type: "object", required: ["theme"] } },
@@ -982,7 +1329,7 @@ describe("configs create type constraints", () => {
       "}",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       {
         key: "checkout-settings",
         role: "config",
@@ -1100,7 +1447,7 @@ describe("configs create variations", () => {
       "Default targeting rule in every environment: 10",
       "",
     ]);
-    expect(createRequestBodies(adminApi)).toEqual([
+    expect(configCreationBodies(adminApi)).toEqual([
       expect.objectContaining({
         role: "experiment",
         variations: [
