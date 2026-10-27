@@ -4,14 +4,11 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-27
+
 ### Added
 
 - `configdirector configs create --new-tag <name>`, repeatable, creates a tag with that name in the project's tag catalog and assigns it to the new config, so a token with `configs:create` and `tags:create` can create a config with tags the project does not have yet. `--tag <name>` still only finds tags the project already has, so a misspelled `--tag` never creates a tag, and the two can be given together. Every `--tag` name is looked up before any tag is created. A `--new-tag` name given twice, a name given with both options, or more than 20 tags in all exits with 2 before anything is sent. A `--new-tag` name a tag already has exits with 2, creates no config, and says to use `--tag` for it. When a later step fails, for example because the key is taken, the command names the tags it created, which stay in the project's tag catalog, so you can pass them with `--tag` next time.
-
-## [0.13.0] - 2026-10-21
-
-### Added
-
 - `brew install ConfigDirector/tap/configdirector` installs the CLI with Homebrew, which takes care of Node.js. The Homebrew formula is updated with every npm release, so `brew upgrade configdirector` gets the newest one.
 
 ### Fixed
