@@ -52,7 +52,7 @@ const scanFixture = async (fixtureName: string) => {
 const falseDefault = { type: "boolean", value: false };
 
 describe("scan SDK families", () => {
-  it("finds the JavaScript client SDK's reads and watches through the docs' local setup module, and its test client calls", async () => {
+  it("finds the JavaScript client SDK's reads, watches and evaluations through the docs' local setup module, and its test client calls", async () => {
     const reference = directReferenceFor("js-client");
 
     const { exitCode, output, schemaErrors } = await scanFixture("js-client");
@@ -60,6 +60,13 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "my-config-key",
+        file: "src/evaluation.ts",
+        line: 3,
+        call: "evaluate",
+        default: falseDefault,
+      }),
       reference({
         key: "my-config-key",
         file: "src/main.ts",
@@ -107,7 +114,7 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the JavaScript server SDK's reads and watches through the docs' local setup module, and its test client calls", async () => {
+  it("finds the JavaScript server SDK's reads, watches and evaluations through the docs' local setup module, and its test client calls", async () => {
     const reference = directReferenceFor("js-server");
 
     const { exitCode, output, schemaErrors } = await scanFixture("js-server");
@@ -115,6 +122,13 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "my-config-key",
+        file: "src/evaluation.ts",
+        line: 3,
+        call: "evaluate",
+        default: falseDefault,
+      }),
       reference({
         key: "my-config-key",
         file: "src/main.ts",
@@ -155,7 +169,7 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the React SDK's useConfigValue and test client calls", async () => {
+  it("finds the React SDK's useConfigValue, the client's evaluate and test client calls", async () => {
     const reference = directReferenceFor("react");
 
     const { exitCode, output, schemaErrors } = await scanFixture("react");
@@ -163,6 +177,13 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "new-checkout",
+        file: "src/CheckoutButton.tsx",
+        line: 7,
+        call: "evaluate",
+        default: falseDefault,
+      }),
       reference({
         key: "dark-mode",
         file: "src/YourComponent.test.tsx",
@@ -188,7 +209,7 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the React Native SDK's useConfigValue and test client calls", async () => {
+  it("finds the React Native SDK's useConfigValue, the client's evaluate and test client calls", async () => {
     const reference = directReferenceFor("react-native");
 
     const { exitCode, output, schemaErrors } = await scanFixture("react-native");
@@ -196,6 +217,13 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "new-checkout",
+        file: "src/CheckoutButton.tsx",
+        line: 8,
+        call: "evaluate",
+        default: falseDefault,
+      }),
       reference({
         key: "dark-mode",
         file: "src/YourComponent.test.tsx",
@@ -221,7 +249,7 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the Vue SDK's useConfigValue in a single-file component and its test client calls", async () => {
+  it("finds the Vue SDK's useConfigValue and the client's evaluate in single-file components, and its test client calls", async () => {
     const reference = directReferenceFor("vue");
 
     const { exitCode, output, schemaErrors } = await scanFixture("vue");
@@ -229,6 +257,13 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "new-checkout",
+        file: "src/CheckoutButton.vue",
+        line: 7,
+        call: "evaluate",
+        default: falseDefault,
+      }),
       reference({
         key: "dark-mode",
         file: "src/YourComponent.spec.ts",
@@ -294,7 +329,7 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the Nuxt server SDK's auto-imported client calls in the server directory", async () => {
+  it("finds the Nuxt server SDK's auto-imported client reads and evaluations in the server directory", async () => {
     const reference = directReferenceFor("nuxt-server");
 
     const { exitCode, output, schemaErrors } = await scanFixture("nuxt-server");
@@ -302,6 +337,13 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "new-checkout",
+        file: "server/api/checkout.get.ts",
+        line: 2,
+        call: "evaluate",
+        default: falseDefault,
+      }),
       reference({
         key: "my-config-key",
         file: "server/api/server-resource.get.ts",
@@ -353,7 +395,7 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the Next.js server SDK's getValue and test client calls", async () => {
+  it("finds the Next.js server SDK's getValue, evaluate and test client calls", async () => {
     const reference = directReferenceFor("nextjs-server");
 
     const { exitCode, output, schemaErrors } = await scanFixture("nextjs-server");
@@ -361,6 +403,13 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "new-checkout",
+        file: "app/checkout/route.ts",
+        line: 4,
+        call: "evaluate",
+        default: falseDefault,
+      }),
       reference({
         key: "dark-mode",
         file: "app/route.test.ts",

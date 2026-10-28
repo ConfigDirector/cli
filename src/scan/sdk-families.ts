@@ -133,7 +133,7 @@ const testAnnotation = (name: string): CallShape => ({
   test: true,
 });
 
-const javascriptClientCalls = [read("getValue"), read("watch"), keyOnly("unwatch")];
+const javascriptClientCalls = [read("getValue"), read("evaluate"), read("watch"), keyOnly("unwatch")];
 
 const javascriptTestClientCalls = [
   testMap("createTestClient", "function", { position: 0 }, "values"),

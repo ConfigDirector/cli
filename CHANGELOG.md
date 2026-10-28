@@ -4,6 +4,12 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-27
+
+### Added
+
+- `configdirector scan` and `validate` find configs read through `evaluate`, which the JavaScript SDKs added in `@configdirector/client-sdk`, `react-web-sdk`, `vue-sdk` and `react-native-sdk` 1.10.0, `server-sdk` 1.12.0, and `nextjs-sdk` and `nuxt-sdk` 1.13.0. A call such as `client.evaluate("new-checkout", false)` is reported and checked as `client.getValue("new-checkout", false)` is, with its in-code default value, so `validate` fails on a wrong key or type there too.
+
 ## [0.13.0] - 2026-10-27
 
 ### Added
