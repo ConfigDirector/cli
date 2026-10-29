@@ -178,7 +178,12 @@ describe("the packed tarball installed into an empty directory", () => {
     );
 
     expect(result.exitCode).toEqual(0);
-    expect(result.stdout.split("\n")).toEqual(["test         Test", "production   Production   live", ""]);
+    expect(result.stdout.split("\n")).toEqual([
+      "SLUG         NAME         LIVE",
+      "test         Test",
+      "production   Production   live",
+      "",
+    ]);
   });
 
   it("ships the JSON Schema of the scan output", async () => {

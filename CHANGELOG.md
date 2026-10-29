@@ -4,6 +4,16 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-28
+
+### Added
+
+- `--no-headers` on `configdirector projects list`, `environments list`, `configs list`, `configs activity`, `segments list` and `repositories list` leaves out the header row and prints the lines alone, as earlier versions did. A script that reads these lines can add `--no-headers`, or read `--json`, which has not changed.
+
+### Changed
+
+- `configdirector projects list`, `environments list`, `configs list`, `configs activity`, `segments list` and `repositories list` print a header row that names their columns, such as `KEY   TYPE   ROLE   LIFETIME   STATE` above the configs. The columns line up under it, so a header longer than every value in its column widens that column. An empty list still prints only its sentence, such as `No configs found in web-app.`
+
 ## [0.14.0] - 2026-10-27
 
 ### Added

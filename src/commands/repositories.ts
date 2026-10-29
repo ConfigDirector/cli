@@ -1,7 +1,7 @@
 import { ifPermitted } from "../admin-api/admin-api-errors.js";
 import type { AdminApiClient, Project } from "../admin-api/AdminApiClient.js";
 import type { ListedScannedRepository } from "../admin-api/scanned-repositories.js";
-import { alignedColumns } from "../aligned-columns.js";
+import { alignedListing, type ListingOptions } from "../aligned-columns.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { ExitCode } from "../ExitCode.js";
@@ -15,6 +15,8 @@ const MAX_SCANNED_REPOSITORIES_PER_PROJECT = 50;
 const commitDescription = (commit: string | null): string =>
   commit === null ? "no commit" : shortCommit(commit);
 
+const SCANNED_REPOSITORY_HEADER_ROW = ["REPOSITORY", "COMMIT", "SCANNED", "REFERENCES", "DYNAMIC REFERENCES"];
+
 const scannedRepositoryColumnsOf = (repository: ListedScannedRepository): string[] => [
   repository.name,
   commitDescription(repository.commit),
@@ -23,26 +25,38 @@ const scannedRepositoryColumnsOf = (repository: ListedScannedRepository): string
   `${repository.dynamicReferenceCount} ${plural(repository.dynamicReferenceCount, "dynamic reference", "dynamic references")}`,
 ];
 
-const scannedRepositoryLines = (projectSlug: string, repositories: ListedScannedRepository[]): string[] =>
+const scannedRepositoryLines = (
+  projectSlug: string,
+  repositories: ListedScannedRepository[],
+  options: ListingOptions,
+): string[] =>
   repositories.length === 0
     ? [
         `No scanned repositories found in ${projectSlug}. ` +
           "Run configdirector scan --upload in a repository to upload its code references.",
       ]
     : [
-        ...alignedColumns(repositories.map(scannedRepositoryColumnsOf)),
+        ...alignedListing(
+          SCANNED_REPOSITORY_HEADER_ROW,
+          repositories.map(scannedRepositoryColumnsOf),
+          options,
+        ),
         "",
         `${projectSlug} has ${repositories.length} of the ${MAX_SCANNED_REPOSITORIES_PER_PROJECT} ` +
           "scanned repositories a project can hold.",
       ];
 
-export const listScannedRepositories = async (context: CommandContext): Promise<CommandOutput> => {
+export const listScannedRepositories = async (
+  context: CommandContext,
+  _commandArguments: readonly [],
+  options: ListingOptions,
+): Promise<CommandOutput> => {
   const { client, project } = await connectToLinkedProject(context);
   const { parsedBody: repositories, responseBody } = await client.listScannedRepositories(project.id);
 
   return {
     json: responseBody,
-    text: [...scannedRepositoryLines(project.slug, repositories), ""].join("\n"),
+    text: [...scannedRepositoryLines(project.slug, repositories, options), ""].join("\n"),
     exitCode: ExitCode.success,
   };
 };

@@ -46,12 +46,35 @@ const storefrontRepository = scannedRepository({
 });
 
 describe("repositories list", () => {
-  it("prints one line per scanned repository with its short commit, scan time in UTC and reference counts, then the count out of 50", async () => {
+  it("prints a header row, then one line per scanned repository with its short commit, scan time in UTC and reference counts, then the count out of 50", async () => {
     const adminApi = await startBrowseAdminApi({
       "/repositories": { status: 200, body: [cliRepository, storefrontRepository] },
     });
 
     const { exitCode, stdout, stderr } = await runRepositoriesCommand(adminApi.baseUrl, ["list"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "REPOSITORY           COMMIT    SCANNED                REFERENCES      DYNAMIC REFERENCES",
+      "ConfigDirector/cli   4d40f50   2026-10-17 10:00 UTC   12 references   1 dynamic reference",
+      "acme/storefront      9f3e2a1   2026-10-16 09:12 UTC   1 reference     0 dynamic references",
+      "",
+      "web-app has 2 of the 50 scanned repositories a project can hold.",
+      "",
+    ]);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `GET ${projectPath("/repositories")}`]);
+  });
+
+  it("prints the scanned repository lines without the header row with --no-headers, then the count out of 50", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/repositories": { status: 200, body: [cliRepository, storefrontRepository] },
+    });
+
+    const { exitCode, stdout, stderr } = await runRepositoriesCommand(adminApi.baseUrl, [
+      "list",
+      "--no-headers",
+    ]);
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
@@ -62,7 +85,6 @@ describe("repositories list", () => {
       "web-app has 2 of the 50 scanned repositories a project can hold.",
       "",
     ]);
-    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `GET ${projectPath("/repositories")}`]);
   });
 
   it("says no commit for a repository uploaded without one", async () => {
@@ -78,6 +100,7 @@ describe("repositories list", () => {
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
     expect(stdout.split("\n")).toEqual([
+      "REPOSITORY        COMMIT      SCANNED                REFERENCES      DYNAMIC REFERENCES",
       "acme/storefront   no commit   2026-10-17 10:00 UTC   12 references   1 dynamic reference",
       "",
       "web-app has 1 of the 50 scanned repositories a project can hold.",
@@ -99,6 +122,21 @@ describe("repositories list", () => {
     expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `GET ${projectPath("/repositories")}`]);
   });
 
+  it("says the project has no scanned repositories with --no-headers when it has none", async () => {
+    const adminApi = await startBrowseAdminApi({ "/repositories": { status: 200, body: [] } });
+
+    const { exitCode, stdout, stderr } = await runRepositoriesCommand(adminApi.baseUrl, [
+      "list",
+      "--no-headers",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout).toEqual(
+      "No scanned repositories found in web-app. Run configdirector scan --upload in a repository to upload its code references.\n",
+    );
+  });
+
   it("prints the API's response as received and nothing else with --json", async () => {
     const adminApi = await startBrowseAdminApi({
       "/repositories": {
@@ -116,6 +154,28 @@ describe("repositories list", () => {
       storefrontRepository,
     ]);
     expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `GET ${projectPath("/repositories")}`]);
+  });
+
+  it("prints the API's response as received and nothing else with --json and --no-headers", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/repositories": {
+        status: 200,
+        body: [{ ...cliRepository, addedByALaterApi: { reason: "kept" } }, storefrontRepository],
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await runRepositoriesCommand(adminApi.baseUrl, [
+      "list",
+      "--json",
+      "--no-headers",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(JSON.parse(stdout)).toEqual([
+      { ...cliRepository, addedByALaterApi: { reason: "kept" } },
+      storefrontRepository,
+    ]);
   });
 
   it("exits 2 naming the missing permission when the token cannot read code references", async () => {

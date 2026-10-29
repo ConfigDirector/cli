@@ -88,16 +88,17 @@ A project holds at most 50 scanned repositories, and one upload holds at most 10
 configdirector repositories list
 ```
 
-`repositories list` lists the repositories whose scan was uploaded to the project, one per line, with the commit, when it was scanned in UTC, and how many references and dynamic references it holds, and ends with how many scanned repositories the project has out of the 50 it can hold:
+`repositories list` lists the repositories whose scan was uploaded to the project, one per line under a header row, with the commit, when it was scanned in UTC, and how many references and dynamic references it holds, and ends with how many scanned repositories the project has out of the 50 it can hold:
 
 ```txt
+REPOSITORY           COMMIT    SCANNED                REFERENCES      DYNAMIC REFERENCES
 ConfigDirector/cli   4d40f50   2026-10-17 10:00 UTC   12 references   1 dynamic reference
 acme/storefront      9f3e2a1   2026-10-16 09:12 UTC   1 reference     0 dynamic references
 
 web-app has 2 of the 50 scanned repositories a project can hold.
 ```
 
-A repository uploaded without a commit shows `no commit`. With `--json`, it prints the Admin API's response as received, which also holds each repository's remote URL and how many files its scan read. `repositories list` needs `projects:read` and `code-references:read`.
+A repository uploaded without a commit shows `no commit`, and `--no-headers` leaves out the header row. With `--json`, it prints the Admin API's response as received, which also holds each repository's remote URL and how many files its scan read. `repositories list` needs `projects:read` and `code-references:read`.
 
 ```bash
 configdirector repositories remove acme/storefront
@@ -209,6 +210,8 @@ production (live)
   3. in segment Beta testers: true
   Default targeting rule: false
 ```
+
+`projects list`, `environments list`, `configs list`, `configs activity` and `segments list` print a header row that names their columns above their lines, such as `KEY   TYPE   ROLE   LIFETIME   STATE` for `configs list`, and `--no-headers` leaves it out. An empty list prints only a sentence, such as `No configs found in web-app.`
 
 With `--json`, each prints the Admin API's response as received, except `configs list --state`, which prints only the configs in that state. A key no config or segment has exits with 2.
 

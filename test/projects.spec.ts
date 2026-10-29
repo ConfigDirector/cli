@@ -33,15 +33,25 @@ const listProjects = async (baseUrl: string, commandLineArguments: string[] = []
   listProjectsIn(await createSandbox(), baseUrl, commandLineArguments);
 
 describe("projects list", () => {
-  it("prints one line per project with its slug and name", async () => {
+  it("prints a header row, then one line per project with its slug and name", async () => {
     const adminApi = await startStubAdminApi({ status: 200, body: [webApp, mobileApp] });
 
     const { exitCode, stdout, stderr } = await listProjects(adminApi.baseUrl);
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
-    expect(stdout.split("\n")).toEqual(["web-app   Web App", "mobile    Mobile App", ""]);
+    expect(stdout.split("\n")).toEqual(["SLUG      NAME", "web-app   Web App", "mobile    Mobile App", ""]);
     expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects"]);
+  });
+
+  it("prints the project lines without the header row with --no-headers", async () => {
+    const adminApi = await startStubAdminApi({ status: 200, body: [webApp, mobileApp] });
+
+    const { exitCode, stdout, stderr } = await listProjects(adminApi.baseUrl, ["--no-headers"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual(["web-app   Web App", "mobile    Mobile App", ""]);
   });
 
   it("prints the API's response as received and nothing else with --json", async () => {
@@ -51,6 +61,19 @@ describe("projects list", () => {
     });
 
     const { exitCode, stdout, stderr } = await listProjects(adminApi.baseUrl, ["--json"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(JSON.parse(stdout)).toEqual([{ ...webApp, addedByALaterApi: { reason: "kept" } }]);
+  });
+
+  it("prints the API's response as received and nothing else with --json and --no-headers", async () => {
+    const adminApi = await startStubAdminApi({
+      status: 200,
+      body: [{ ...webApp, addedByALaterApi: { reason: "kept" } }],
+    });
+
+    const { exitCode, stdout, stderr } = await listProjects(adminApi.baseUrl, ["--json", "--no-headers"]);
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
@@ -71,7 +94,7 @@ describe("projects list", () => {
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
-    expect(stdout.split("\n")).toEqual(["web-app   Web App", "mobile    Mobile App", ""]);
+    expect(stdout.split("\n")).toEqual(["SLUG      NAME", "web-app   Web App", "mobile    Mobile App", ""]);
     expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects"]);
   });
 
@@ -79,6 +102,16 @@ describe("projects list", () => {
     const adminApi = await startStubAdminApi({ status: 200, body: [] });
 
     const { exitCode, stdout, stderr } = await listProjects(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout).toEqual("No projects found.\n");
+  });
+
+  it("says no projects were found with --no-headers when the organization has none", async () => {
+    const adminApi = await startStubAdminApi({ status: 200, body: [] });
+
+    const { exitCode, stdout, stderr } = await listProjects(adminApi.baseUrl, ["--no-headers"]);
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");

@@ -41,6 +41,8 @@ import {
 
 const DEFAULT_BASE_URL = "https://api.configdirector.com";
 
+const NO_HEADERS_DESCRIPTION = "leave out the header row";
+
 const SEGMENT_FILE_DESCRIPTION =
   "a JSON file holding the segment as the Admin API takes it, or - to read it from stdin (required)";
 
@@ -231,6 +233,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .description("list the projects of the API token's organization")
     .command("list")
     .description("list the organization's projects, whatever project is selected")
+    .option("--no-headers", NO_HEADERS_DESCRIPTION)
     .action(commandAction(listProjects));
 
   program
@@ -238,6 +241,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .description("list the project's environments")
     .command("list")
     .description("list the project's environments with their slugs, marking the live ones")
+    .option("--no-headers", NO_HEADERS_DESCRIPTION)
     .action(commandAction(listEnvironments));
 
   const configsCommand = program
@@ -258,6 +262,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
         LIFECYCLE_STATES,
       ),
     )
+    .option("--no-headers", NO_HEADERS_DESCRIPTION)
     .action(commandAction(listConfigs));
 
   configsCommand
@@ -272,6 +277,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .description(
       "show when SDKs last evaluated a config, per environment, SDK key kind, SDK name and SDK version",
     )
+    .option("--no-headers", NO_HEADERS_DESCRIPTION)
     .action(commandAction(showConfigActivity));
 
   configsCommand
@@ -388,6 +394,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
   segmentsCommand
     .command("list")
     .description("list the project's segments with how many configs use each")
+    .option("--no-headers", NO_HEADERS_DESCRIPTION)
     .action(commandAction(listSegments));
 
   segmentsCommand
@@ -479,6 +486,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .description(
       "list the repositories whose scan was uploaded to the project, with their commit, scan time and reference counts",
     )
+    .option("--no-headers", NO_HEADERS_DESCRIPTION)
     .action(commandAction(listScannedRepositories));
 
   repositoriesCommand

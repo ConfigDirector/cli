@@ -9,3 +9,11 @@ export const alignedColumns = (rows: ReadonlyArray<readonly string[]>): string[]
       .map((cell, column) => (column === row.length - 1 ? cell : cell.padEnd(widestCellOf(rows, column))))
       .join(COLUMN_GAP),
   );
+
+export type ListingOptions = { headers: boolean };
+
+export const alignedListing = (
+  headerRow: readonly string[],
+  rows: ReadonlyArray<readonly string[]>,
+  options: ListingOptions,
+): string[] => alignedColumns(options.headers ? [headerRow, ...rows] : rows);

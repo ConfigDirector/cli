@@ -42,7 +42,7 @@ const maxCartItems = projectConfig("max-cart-items", [], {
 const legacyBanner = projectConfig("legacy-banner", [], { state: "archive-ready" });
 
 describe("configs list", () => {
-  it("prints one line per config with its key, type, role, lifetime and lifecycle state", async () => {
+  it("prints a header row, then one line per config with its key, type, role, lifetime and lifecycle state", async () => {
     const adminApi = await startBrowseAdminApi({
       "/configs": { status: 200, body: [newCheckout, maxCartItems, legacyBanner] },
     });
@@ -52,12 +52,30 @@ describe("configs list", () => {
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
     expect(stdout.split("\n")).toEqual([
+      "KEY              TYPE      ROLE     LIFETIME    STATE",
       "new-checkout     boolean   flag     temporary   in-use",
       "max-cart-items   integer   config   permanent   settled",
       "legacy-banner    boolean   flag     temporary   archive-ready",
       "",
     ]);
     expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `GET ${projectPath("/configs")}`]);
+  });
+
+  it("prints the config lines without the header row with --no-headers", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/configs": { status: 200, body: [newCheckout, maxCartItems, legacyBanner] },
+    });
+
+    const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, ["list", "--no-headers"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "new-checkout     boolean   flag     temporary   in-use",
+      "max-cart-items   integer   config   permanent   settled",
+      "legacy-banner    boolean   flag     temporary   archive-ready",
+      "",
+    ]);
   });
 
   it("resolves each --tag name to its tag and lists the configs that have any of those tags", async () => {
@@ -77,7 +95,11 @@ describe("configs list", () => {
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
-    expect(stdout).toEqual("new-checkout   boolean   flag   temporary   in-use\n");
+    expect(stdout.split("\n")).toEqual([
+      "KEY            TYPE      ROLE   LIFETIME    STATE",
+      "new-checkout   boolean   flag   temporary   in-use",
+      "",
+    ]);
     expect(requestLinesOf(adminApi)).toEqual([
       "GET /v1/projects",
       `GET ${projectPath("/tags/by-name?name=checkout")}`,
@@ -119,7 +141,11 @@ describe("configs list", () => {
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
-    expect(stdout).toEqual("max-cart-items   integer   config   permanent   settled\n");
+    expect(stdout.split("\n")).toEqual([
+      "KEY              TYPE      ROLE     LIFETIME    STATE",
+      "max-cart-items   integer   config   permanent   settled",
+      "",
+    ]);
     expect(requestLinesOf(adminApi)).toEqual([
       "GET /v1/projects",
       `GET ${projectPath("/configs?untagged=true")}`,
@@ -155,7 +181,11 @@ describe("configs list", () => {
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
-    expect(stdout).toEqual("legacy-banner   boolean   flag   temporary   archive-ready\n");
+    expect(stdout.split("\n")).toEqual([
+      "KEY             TYPE      ROLE   LIFETIME    STATE",
+      "legacy-banner   boolean   flag   temporary   archive-ready",
+      "",
+    ]);
     expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `GET ${projectPath("/configs")}`]);
   });
 
@@ -212,10 +242,46 @@ describe("configs list", () => {
     ]);
   });
 
+  it("prints the API's response as received and nothing else with --json and --no-headers", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/configs": {
+        status: 200,
+        body: [newCheckout, { ...maxCartItems, addedByALaterApi: { reason: "kept" } }],
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, [
+      "list",
+      "--json",
+      "--no-headers",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(JSON.parse(stdout)).toEqual([
+      newCheckout,
+      { ...maxCartItems, addedByALaterApi: { reason: "kept" } },
+    ]);
+  });
+
   it("says no configs were found when the listing is empty", async () => {
     const adminApi = await startBrowseAdminApi({ "/configs?untagged=true": { status: 200, body: [] } });
 
     const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, ["list", "--untagged"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout).toEqual("No configs found in web-app.\n");
+  });
+
+  it("says no configs were found with --no-headers when the listing is empty", async () => {
+    const adminApi = await startBrowseAdminApi({ "/configs?untagged=true": { status: 200, body: [] } });
+
+    const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, [
+      "list",
+      "--untagged",
+      "--no-headers",
+    ]);
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
@@ -625,7 +691,7 @@ const latestEvaluationIn = (
 ) => ({ environmentId: environment.id, environment: targetEnvironmentOf(environment), ...evaluation });
 
 describe("configs activity", () => {
-  it("prints one line per latest evaluation with the environment slug, SDK key kind, SDK and time in UTC", async () => {
+  it("prints a header row, then one line per latest evaluation with the environment slug, SDK key kind, SDK and time in UTC", async () => {
     const adminApi = await startBrowseAdminApi({
       "/configs/new-checkout/activity": {
         status: 200,
@@ -656,13 +722,52 @@ describe("configs activity", () => {
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
     expect(stdout.split("\n")).toEqual([
-      "production   server   js-server 1.4.0   2026-10-17 14:03 UTC",
-      "test         client   react 2.1.0       2026-10-16 09:12 UTC",
+      "ENVIRONMENT   SDK KEY   SDK               LAST EVALUATED",
+      "production    server    js-server 1.4.0   2026-10-17 14:03 UTC",
+      "test          client    react 2.1.0       2026-10-16 09:12 UTC",
       "",
     ]);
     expect(requestLinesOf(adminApi)).toEqual([
       "GET /v1/projects",
       `GET ${projectPath("/configs/new-checkout/activity")}`,
+    ]);
+  });
+
+  it("prints the latest evaluation lines without the header row with --no-headers", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/configs/new-checkout/activity": {
+        status: 200,
+        body: {
+          latestEvaluations: [
+            latestEvaluationIn(productionEnvironment, {
+              source: "server",
+              sdkName: "js-server",
+              sdkVersion: "1.4.0",
+              time: "2026-10-17T14:03:27.512Z",
+            }),
+            latestEvaluationIn(testEnvironment, {
+              source: "client",
+              sdkName: "react",
+              sdkVersion: "2.1.0",
+              time: "2026-10-16T09:12:05.000Z",
+            }),
+          ],
+        },
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, [
+      "activity",
+      "new-checkout",
+      "--no-headers",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "production   server   js-server 1.4.0   2026-10-17 14:03 UTC",
+      "test         client   react 2.1.0       2026-10-16 09:12 UTC",
+      "",
     ]);
   });
 
@@ -674,6 +779,22 @@ describe("configs activity", () => {
     const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, [
       "activity",
       "new-checkout",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout).toEqual("No SDK evaluations of new-checkout found.\n");
+  });
+
+  it("says no evaluations were found with --no-headers when no SDK has evaluated the config", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/configs/new-checkout/activity": { status: 200, body: { latestEvaluations: [] } },
+    });
+
+    const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, [
+      "activity",
+      "new-checkout",
+      "--no-headers",
     ]);
 
     expect(exitCode).toEqual(0);
@@ -705,7 +826,11 @@ describe("configs activity", () => {
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
-    expect(stdout).toEqual("production   server   unknown SDK   2026-10-15 23:59 UTC\n");
+    expect(stdout.split("\n")).toEqual([
+      "ENVIRONMENT   SDK KEY   SDK           LAST EVALUATED",
+      "production    server    unknown SDK   2026-10-15 23:59 UTC",
+      "",
+    ]);
   });
 
   it("exits 2 saying no config in the project has the key when the API answers 404", async () => {
@@ -749,6 +874,36 @@ describe("configs activity", () => {
       "activity",
       "new-checkout",
       "--json",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(JSON.parse(stdout)).toEqual(activity);
+  });
+
+  it("prints the API's response as received and nothing else with --json and --no-headers", async () => {
+    const activity = {
+      latestEvaluations: [
+        {
+          ...latestEvaluationIn(testEnvironment, {
+            source: "client",
+            sdkName: "react",
+            sdkVersion: "2.1.0",
+            time: "2026-10-16T09:12:05.000Z",
+          }),
+          addedByALaterApi: { reason: "kept" },
+        },
+      ],
+    };
+    const adminApi = await startBrowseAdminApi({
+      "/configs/new-checkout/activity": { status: 200, body: activity },
+    });
+
+    const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, [
+      "activity",
+      "new-checkout",
+      "--json",
+      "--no-headers",
     ]);
 
     expect(exitCode).toEqual(0);

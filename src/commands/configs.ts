@@ -10,7 +10,7 @@ import type {
 import { ApiValidationError, ifPermitted } from "../admin-api/admin-api-errors.js";
 import type { CreateConfigRequest, CreatedConfig } from "../admin-api/config-creation.js";
 import type { ConfigWithTargetingRules } from "../admin-api/config-with-targeting-rules.js";
-import { alignedColumns } from "../aligned-columns.js";
+import { alignedColumns, alignedListing, type ListingOptions } from "../aligned-columns.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { availabilityDescription, configText } from "../configs/config-text.js";
@@ -25,7 +25,7 @@ export const LIFECYCLE_STATES = ["new", "in-use", "settled", "archive-ready", "s
 
 type LifecycleState = (typeof LIFECYCLE_STATES)[number];
 
-type ListConfigsOptions = { tag?: string[]; untagged?: true; state?: LifecycleState };
+type ListConfigsOptions = ListingOptions & { tag?: string[]; untagged?: true; state?: LifecycleState };
 
 const tagIdNamed = async (client: AdminApiClient, project: Project, name: string): Promise<string> => {
   const tag = await client.findTagByName(project.id, name);
@@ -64,6 +64,8 @@ const configsInState = (listedConfigs: ListedConfig[], state: LifecycleState | u
 
 type ConfigSummary = Pick<Config, "key" | "type" | "role" | "lifetime" | "state">;
 
+const CONFIG_SUMMARY_HEADER_ROW = ["KEY", "TYPE", "ROLE", "LIFETIME", "STATE"];
+
 const summaryColumnsOf = (config: ConfigSummary): string[] => [
   config.key,
   config.type,
@@ -72,10 +74,10 @@ const summaryColumnsOf = (config: ConfigSummary): string[] => [
   config.state,
 ];
 
-const configLines = (projectSlug: string, configs: Config[]): string[] =>
+const configLines = (projectSlug: string, configs: Config[], options: ListingOptions): string[] =>
   configs.length === 0
     ? [`No configs found in ${projectSlug}.`]
-    : alignedColumns(configs.map(summaryColumnsOf));
+    : alignedListing(CONFIG_SUMMARY_HEADER_ROW, configs.map(summaryColumnsOf), options);
 
 export const listConfigs = async (
   context: CommandContext,
@@ -94,6 +96,7 @@ export const listConfigs = async (
       ...configLines(
         project.slug,
         listedConfigs.map((listedConfig) => listedConfig.config),
+        options,
       ),
       "",
     ].join("\n"),
@@ -362,21 +365,26 @@ const sdkDescription = (evaluation: LatestEvaluation): string =>
     ...(evaluation.sdkVersion === null ? [] : [evaluation.sdkVersion]),
   ].join(" ");
 
-const activityLines = (configKey: string, activity: ConfigActivity): string[] =>
+const LATEST_EVALUATION_HEADER_ROW = ["ENVIRONMENT", "SDK KEY", "SDK", "LAST EVALUATED"];
+
+const activityLines = (configKey: string, activity: ConfigActivity, options: ListingOptions): string[] =>
   activity.latestEvaluations.length === 0
     ? [`No SDK evaluations of ${configKey} found.`]
-    : alignedColumns(
+    : alignedListing(
+        LATEST_EVALUATION_HEADER_ROW,
         activity.latestEvaluations.map((evaluation) => [
           evaluation.environment.slug,
           evaluation.source,
           sdkDescription(evaluation),
           utcMinute(evaluation.time),
         ]),
+        options,
       );
 
 export const showConfigActivity = async (
   context: CommandContext,
   [configKey]: readonly [string],
+  options: ListingOptions,
 ): Promise<CommandOutput> => {
   const { client, project } = await connectToLinkedProject(context);
   const receivedActivity = await client.getConfigActivity(project.id, configKey);
@@ -386,7 +394,7 @@ export const showConfigActivity = async (
 
   return {
     json: receivedActivity.responseBody,
-    text: [...activityLines(configKey, receivedActivity.parsedBody), ""].join("\n"),
+    text: [...activityLines(configKey, receivedActivity.parsedBody, options), ""].join("\n"),
     exitCode: ExitCode.success,
   };
 };

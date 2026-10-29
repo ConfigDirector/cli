@@ -69,7 +69,7 @@ const unusedSegment = segmentOf({
 });
 
 describe("segments list", () => {
-  it("prints one line per segment with its key, its name and how many configs use it", async () => {
+  it("prints a header row, then one line per segment with its key, its name and how many configs use it", async () => {
     const adminApi = await startBrowseAdminApi({
       "/segments": { status: 200, body: [betaTesters, internalStaff, unusedSegment] },
     });
@@ -79,12 +79,30 @@ describe("segments list", () => {
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
     expect(stdout.split("\n")).toEqual([
+      "KEY            NAME             USED BY",
       "beta-testers   Beta testers     used by 2 configs",
       "internal       Internal staff   used by 1 config",
       "unused         Unused           used by 0 configs",
       "",
     ]);
     expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `GET ${projectPath("/segments")}`]);
+  });
+
+  it("prints the segment lines without the header row with --no-headers", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/segments": { status: 200, body: [betaTesters, internalStaff, unusedSegment] },
+    });
+
+    const { exitCode, stdout, stderr } = await runSegmentsCommand(adminApi.baseUrl, ["list", "--no-headers"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "beta-testers   Beta testers     used by 2 configs",
+      "internal       Internal staff   used by 1 config",
+      "unused         Unused           used by 0 configs",
+      "",
+    ]);
   });
 
   it("says no segments were found when the project has none", async () => {
@@ -97,12 +115,38 @@ describe("segments list", () => {
     expect(stdout).toEqual("No segments found in web-app.\n");
   });
 
+  it("says no segments were found with --no-headers when the project has none", async () => {
+    const adminApi = await startBrowseAdminApi({ "/segments": { status: 200, body: [] } });
+
+    const { exitCode, stdout, stderr } = await runSegmentsCommand(adminApi.baseUrl, ["list", "--no-headers"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout).toEqual("No segments found in web-app.\n");
+  });
+
   it("prints the API's response as received and nothing else with --json", async () => {
     const adminApi = await startBrowseAdminApi({
       "/segments": { status: 200, body: [{ ...betaTesters, addedByALaterApi: { reason: "kept" } }] },
     });
 
     const { exitCode, stdout, stderr } = await runSegmentsCommand(adminApi.baseUrl, ["list", "--json"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(JSON.parse(stdout)).toEqual([{ ...betaTesters, addedByALaterApi: { reason: "kept" } }]);
+  });
+
+  it("prints the API's response as received and nothing else with --json and --no-headers", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/segments": { status: 200, body: [{ ...betaTesters, addedByALaterApi: { reason: "kept" } }] },
+    });
+
+    const { exitCode, stdout, stderr } = await runSegmentsCommand(adminApi.baseUrl, [
+      "list",
+      "--json",
+      "--no-headers",
+    ]);
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");

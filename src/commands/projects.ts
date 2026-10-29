@@ -1,15 +1,25 @@
 import { AdminApiClient, type Project } from "../admin-api/AdminApiClient.js";
-import { alignedColumns } from "../aligned-columns.js";
+import { alignedListing, type ListingOptions } from "../aligned-columns.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { configuredApiToken } from "../configured-api-token.js";
 import { ExitCode } from "../ExitCode.js";
 
-const projectLines = (projects: Project[]): string[] =>
+const PROJECT_HEADER_ROW = ["SLUG", "NAME"];
+
+const projectLines = (projects: Project[], options: ListingOptions): string[] =>
   projects.length === 0
     ? ["No projects found."]
-    : alignedColumns(projects.map((project) => [project.slug, project.name]));
+    : alignedListing(
+        PROJECT_HEADER_ROW,
+        projects.map((project) => [project.slug, project.name]),
+        options,
+      );
 
-export const listProjects = async (context: CommandContext): Promise<CommandOutput> => {
+export const listProjects = async (
+  context: CommandContext,
+  _commandArguments: readonly [],
+  options: ListingOptions,
+): Promise<CommandOutput> => {
   const client = new AdminApiClient({
     baseUrl: context.baseUrl,
     token: (await configuredApiToken(context)).token,
@@ -18,7 +28,7 @@ export const listProjects = async (context: CommandContext): Promise<CommandOutp
 
   return {
     json: responseBody,
-    text: [...projectLines(projects), ""].join("\n"),
+    text: [...projectLines(projects, options), ""].join("\n"),
     exitCode: ExitCode.success,
   };
 };
