@@ -4,6 +4,7 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -45,3 +46,65 @@ jobs:
 
       - name: Packed tarball on Node 20
         run: yarn ci:test:packed-tarball
+
+  integration-tests:
+    name: Integration tests against the Admin API
+    needs: build
+    runs-on: ubuntu-latest
+    concurrency: integration-tests
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CI_FAILURE_LABEL: ci-failure
+      CI_FAILURE_ASSIGNEE: abeiderman
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: ".nvmrc"
+
+      - name: yarn install
+        run: yarn install
+
+      - name: yarn build
+        run: yarn build
+
+      - name: Test against dev API
+        run: yarn ci:test:integration
+        env:
+          CONFIGDIRECTOR_TOKEN: ${{ secrets.CONFIGDIRECTOR_DEV_API_TOKEN }}
+          CONFIGDIRECTOR_BASE_URL: https://api.configdirector-dev.com
+
+      - name: Open or update the CI failure issue
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TRIGGER: ${{ github.event_name }} by ${{ github.triggering_actor }}
+        run: |
+          gh label create "$CI_FAILURE_LABEL" --repo "$GITHUB_REPOSITORY" --force \
+            --color B60205 --description "Opened automatically when the integration tests fail on main"
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label "$CI_FAILURE_LABEL" --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" \
+              --body "The integration tests failed again ($TRIGGER): $RUN_URL"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "The integration tests are failing on main" \
+              --label "$CI_FAILURE_LABEL" \
+              --assignee "$CI_FAILURE_ASSIGNEE" \
+              --body "The integration tests failed ($TRIGGER): $RUN_URL
+
+          This issue is opened automatically by the workflow and closes itself once a run on main passes again. Later failures are added as comments."
+          fi
+
+      - name: Close the CI failure issue
+        if: success() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for number in $(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label "$CI_FAILURE_LABEL" --json number --jq '.[].number'); do
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY" --comment "The integration tests are passing again: $RUN_URL"
+          done

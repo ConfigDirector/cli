@@ -37,6 +37,7 @@
     "build": "tsdown",
     "pack:tarball": "yarn pack --out package.tgz",
     "ci:test:packed-tarball": "vitest run --config vitest.packed-tarball.config.ts",
+    "ci:test:integration": "vitest run --config vitest.integration.config.ts",
     "release": "yarn typecheck && yarn lint && yarn ci:test && yarn build && yarn pack:tarball && yarn ci:test:packed-tarball && npm publish package.tgz --access public"
   },
   "dependencies": {

@@ -19,6 +19,7 @@ yarn ci:test                # vitest run
 yarn build                  # tsdown into dist/configdirector.mjs
 yarn pack:tarball           # pack the publishable tarball into package.tgz
 yarn ci:test:packed-tarball # install package.tgz into an empty directory and run the binary
+yarn ci:test:integration    # run the built binary against a real Admin API; skipped without CONFIGDIRECTOR_BASE_URL and CONFIGDIRECTOR_TOKEN
 ```
 
 Run a single spec with `yarn vitest run test/login.spec.ts`.
@@ -39,6 +40,7 @@ Run a single spec with `yarn vitest run test/login.spec.ts`.
 - Seed state through commands rather than files: run `login` to save a sign-in instead of writing `sign-ins.json`. Write the file directly only for states `login` never produces, such as invalid contents, permissions others can read, or the `config.json` an earlier version saved.
 - `test/support/terminal-input.ts` stands in for a terminal, to test the hidden token prompt.
 - `test/packed-tarball/` installs `package.tgz` with npm into an empty directory and runs the installed binary. Run `yarn build && yarn pack:tarball` first. CI runs it on Node 24 and again on Node 20.
+- `test/integration/` runs the built `dist/configdirector.mjs` against a real Admin API, through the sandbox's temporary directories: `CONFIGDIRECTOR_BASE_URL` names the API, `CONFIGDIRECTOR_TOKEN` signs in, and `CONFIGDIRECTOR_PROJECT` picks the project when the token's organization has more than one. Without both variables the suite prints that it is skipped and exits 0. Each spec creates what it needs under a `cli-integration-test-` key or repository name and removes it when the test finishes, failures included, so the project stays empty between runs. Run `yarn build` first, then `yarn ci:test:integration`; against a local core-api, `CONFIGDIRECTOR_BASE_URL=http://localhost:3001 CONFIGDIRECTOR_TOKEN=<token> yarn ci:test:integration`, and against dev, `CONFIGDIRECTOR_BASE_URL=https://api.configdirector-dev.com` with a dev token. The token needs `projects:read`, `environments:read`, `configs:read`, `configs:create`, `configs:archive`, `config-targeting-rules:update`, `segments:read`, `segments:create`, `segments:update`, `segments:delete`, `code-references:read` and `code-references:update`. In CI, the `integration-tests` job of `ci.yml` runs the suite against dev with the `CONFIGDIRECTOR_DEV_API_TOKEN` secret (production is not tested for now), on every push here and when the config-director `Deploy` workflow triggers it after deploying core-api to dev; a failure on `main` opens or updates the `ci-failure` issue, and the next passing run closes it.
 
 ## Releasing
 

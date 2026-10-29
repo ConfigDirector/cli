@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,7 @@ import { startBrowseAdminApi } from "../support/browse-admin-api.js";
 import { productionEnvironment, startEvaluateAdminApi } from "../support/evaluate-admin-api.js";
 import { startScanAdminApi } from "../support/scan-admin-api.js";
 import { acme, startSignInAdminApi } from "../support/sign-in-admin-api.js";
+import { runSpawnedCommand } from "../support/spawned-command.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -21,20 +22,7 @@ const installedBinary = () => join(installDirectory, "node_modules", ".bin", "co
 const runInstalledBinary = (
   commandLineArguments: string[],
   options: { environmentVariables: Record<string, string>; input: string },
-) =>
-  new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn(installedBinary(), commandLineArguments, {
-      cwd: installDirectory,
-      env: { PATH: process.env.PATH ?? "", ...options.environmentVariables },
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => (stdout += chunk));
-    child.stderr.on("data", (chunk) => (stderr += chunk));
-    child.on("error", reject);
-    child.on("close", (exitCode) => resolve({ exitCode, stdout, stderr }));
-    child.stdin.end(options.input);
-  });
+) => runSpawnedCommand(installedBinary(), commandLineArguments, { cwd: installDirectory, ...options });
 
 beforeAll(async () => {
   await access(tarball).catch(() => {
