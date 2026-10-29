@@ -41,9 +41,10 @@ const requireProjectBySlug = (projects: ProjectUnderTest[], slug: string): Proje
 const requireOnlyProject = (projects: ProjectUnderTest[]): ProjectUnderTest => {
   const [onlyProject] = projects;
   if (onlyProject === undefined || projects.length > 1) {
+    const slugs = projects.map((project) => project.slug).join(", ");
     throw new Error(
       `The API token's organization has ${projects.length} projects. ` +
-        "Name the one to test in with CONFIGDIRECTOR_PROJECT.",
+        `Name the one to test in with CONFIGDIRECTOR_PROJECT, its slug: ${slugs}.`,
     );
   }
   return onlyProject;

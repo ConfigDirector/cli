@@ -75,6 +75,7 @@ jobs:
         env:
           CONFIGDIRECTOR_TOKEN: ${{ secrets.CONFIGDIRECTOR_DEV_API_TOKEN }}
           CONFIGDIRECTOR_BASE_URL: https://api.configdirector-dev.com
+          CONFIGDIRECTOR_PROJECT: ${{ vars.CONFIGDIRECTOR_DEV_PROJECT }}
 
       - name: Open or update the CI failure issue
         if: failure() && github.ref == 'refs/heads/main'
