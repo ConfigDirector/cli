@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
 import {
   checkoutTag,
+  configNotFound,
   projectPath,
   requestLinesOf,
   startBrowseAdminApi,
+  tagNotFound,
   webTeamTag,
 } from "./support/browse-admin-api.js";
 import { productionEnvironment, testEnvironment } from "./support/evaluate-admin-api.js";
@@ -108,7 +110,7 @@ describe("configs list", () => {
     ]);
   });
 
-  it("exits 2 naming the tag without listing configs when no tag has a --tag name", async () => {
+  it("exits 2 naming the tag without listing configs when the API answers 404 with an empty body for a --tag name", async () => {
     const adminApi = await startBrowseAdminApi({
       "/tags/by-name?name=checkout": { status: 200, body: checkoutTag },
       "/tags/by-name?name=chekout": { status: 404, body: {} },
@@ -128,6 +130,26 @@ describe("configs list", () => {
     expect(requestLinesOf(adminApi)).toEqual([
       "GET /v1/projects",
       `GET ${projectPath("/tags/by-name?name=checkout")}`,
+      `GET ${projectPath("/tags/by-name?name=chekout")}`,
+    ]);
+  });
+
+  it("exits 2 naming the tag without listing configs when the API answers 404 with TAG_NOT_FOUND for a --tag name", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/tags/by-name?name=chekout": tagNotFound("chekout"),
+    });
+
+    const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, [
+      "list",
+      "--tag",
+      "chekout",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual('Error: No tag in web-app has the name "chekout".\n');
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
       `GET ${projectPath("/tags/by-name?name=chekout")}`,
     ]);
   });
@@ -499,7 +521,7 @@ describe("configs get", () => {
     ]);
   });
 
-  it("exits 2 saying no config in the project has the key when the API answers 404", async () => {
+  it("exits 2 saying no config in the project has the key when the API answers 404 with an empty body", async () => {
     const adminApi = await startBrowseAdminApi({ "/configs/new-chekout": { status: 404, body: {} } });
 
     const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, ["get", "new-chekout"]);
@@ -513,9 +535,38 @@ describe("configs get", () => {
     ]);
   });
 
-  it("exits 2 showing the status when a 404 comes with a body other than the API's empty one", async () => {
+  it("exits 2 saying no config in the project has the key when the API answers 404 with CONFIG_NOT_FOUND", async () => {
+    const adminApi = await startBrowseAdminApi({ "/configs/new-chekout": configNotFound("new-chekout") });
+
+    const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, ["get", "new-chekout"]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual('Error: No config in web-app has the key "new-chekout".\n');
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath("/configs/new-chekout")}`,
+    ]);
+  });
+
+  it("exits 2 showing the status when a 404 comes with a body that is not JSON", async () => {
     const adminApi = await startBrowseAdminApi({
       "/configs/new-checkout": { status: 404, rawBody: "<html>Not Found</html>" },
+    });
+
+    const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, ["get", "new-checkout"]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toContain("HTTP 404");
+  });
+
+  it("exits 2 showing the status when a 404 carries a code that does not name a missing resource", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/configs/new-checkout": {
+        status: 404,
+        body: { error: "The route is not available on this server.", code: "ROUTE_UNAVAILABLE" },
+      },
     });
 
     const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, ["get", "new-checkout"]);
@@ -833,9 +884,28 @@ describe("configs activity", () => {
     ]);
   });
 
-  it("exits 2 saying no config in the project has the key when the API answers 404", async () => {
+  it("exits 2 saying no config in the project has the key when the API answers 404 with an empty body", async () => {
     const adminApi = await startBrowseAdminApi({
       "/configs/new-chekout/activity": { status: 404, body: {} },
+    });
+
+    const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, [
+      "activity",
+      "new-chekout",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual('Error: No config in web-app has the key "new-chekout".\n');
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath("/configs/new-chekout/activity")}`,
+    ]);
+  });
+
+  it("exits 2 saying no config in the project has the key when the API answers 404 with CONFIG_NOT_FOUND", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/configs/new-chekout/activity": configNotFound("new-chekout"),
     });
 
     const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, [

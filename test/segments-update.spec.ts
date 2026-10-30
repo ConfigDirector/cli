@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
-import { projectPath, requestLinesOf, startBrowseAdminApi } from "./support/browse-admin-api.js";
+import {
+  projectPath,
+  requestLinesOf,
+  segmentNotFound,
+  startBrowseAdminApi,
+} from "./support/browse-admin-api.js";
 import { productionEnvironment } from "./support/evaluate-admin-api.js";
 import { writeRepositoryFile } from "./support/repository-files.js";
 import { createSandbox, type Sandbox } from "./support/sandbox.js";
@@ -219,8 +224,24 @@ describe("segments update", () => {
 });
 
 describe("segments update failures", () => {
-  it("exits 2 saying no segment in the project has the key, with no PUT, when the API answers 404 to the read", async () => {
+  it("exits 2 saying no segment in the project has the key, with no PUT, when the API answers 404 with an empty body to the read", async () => {
     const adminApi = await startBrowseAdminApi({ "/segments/beta-tester": { status: 404, body: {} } });
+
+    const { exitCode, stdout, stderr } = await updateSegmentFromFile(adminApi.baseUrl, betaTesters, [
+      "beta-tester",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual('Error: No segment in web-app has the key "beta-tester".\n');
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath("/segments/beta-tester")}`,
+    ]);
+  });
+
+  it("exits 2 saying no segment in the project has the key, with no PUT, when the API answers 404 with SEGMENT_NOT_FOUND to the read", async () => {
+    const adminApi = await startBrowseAdminApi({ "/segments/beta-tester": segmentNotFound("beta-tester") });
 
     const { exitCode, stdout, stderr } = await updateSegmentFromFile(adminApi.baseUrl, betaTesters, [
       "beta-tester",
@@ -301,10 +322,30 @@ describe("segments update failures", () => {
     ]);
   });
 
-  it("exits 2 saying no segment in the project has the key when the segment is gone by the time of the PUT", async () => {
+  it("exits 2 saying no segment in the project has the key when the segment is gone by the time of the PUT, answered with an empty body", async () => {
     const adminApi = await startBrowseAdminApi({
       "/segments/beta-testers": (request) =>
         request.method === "PUT" ? { status: 404, body: {} } : { status: 200, body: betaTesters },
+    });
+
+    const { exitCode, stdout, stderr } = await updateSegmentFromFile(adminApi.baseUrl, betaTesters, [
+      "beta-testers",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual('Error: No segment in web-app has the key "beta-testers".\n');
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath("/segments/beta-testers")}`,
+      `PUT ${projectPath("/segments/beta-testers")}`,
+    ]);
+  });
+
+  it("exits 2 saying no segment in the project has the key when the segment is gone by the time of the PUT, answered with SEGMENT_NOT_FOUND", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/segments/beta-testers": (request) =>
+        request.method === "PUT" ? segmentNotFound("beta-testers") : { status: 200, body: betaTesters },
     });
 
     const { exitCode, stdout, stderr } = await updateSegmentFromFile(adminApi.baseUrl, betaTesters, [

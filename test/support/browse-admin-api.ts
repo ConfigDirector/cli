@@ -1,6 +1,6 @@
 import { productionEnvironment, testEnvironment } from "./evaluate-admin-api.js";
 import { webApp } from "./scan-admin-api.js";
-import { startStubAdminApi, type StubReplyForRequest } from "./stub-admin-api.js";
+import { startStubAdminApi, type StubReply, type StubReplyForRequest } from "./stub-admin-api.js";
 
 export const projectPath = (path: string) => `/v1/projects/${webApp.id}${path}`;
 
@@ -15,6 +15,29 @@ export const startBrowseAdminApi = (repliesByProjectPath: Record<string, StubRep
       ),
     },
   );
+
+export const configNotFound = (key: string): StubReply => ({
+  status: 404,
+  body: { error: `No config with key '${key}' exists in the project.`, code: "CONFIG_NOT_FOUND" },
+});
+
+export const segmentNotFound = (key: string): StubReply => ({
+  status: 404,
+  body: { error: `No segment with key '${key}' exists in the project.`, code: "SEGMENT_NOT_FOUND" },
+});
+
+export const tagNotFound = (name: string): StubReply => ({
+  status: 404,
+  body: { error: `No tag named '${name}' exists in the project.`, code: "TAG_NOT_FOUND" },
+});
+
+export const scannedRepositoryNotFound = (name: string): StubReply => ({
+  status: 404,
+  body: {
+    error: `No scanned repository named '${name}' exists in the project.`,
+    code: "SCANNED_REPOSITORY_NOT_FOUND",
+  },
+});
 
 export const tagNamed = (id: string, name: string) => ({
   id,

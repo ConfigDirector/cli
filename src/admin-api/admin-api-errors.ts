@@ -11,12 +11,10 @@ export const ServiceSuspendedBodySchema = v.object({ code: v.literal("SERVICE_SU
 
 export const RepositoryLimitReachedBodySchema = v.object({ code: v.literal("REPOSITORY_LIMIT_REACHED") });
 
-export const EvaluationNotFoundBodySchema = v.object({
+export const ResourceNotFoundBodySchema = v.object({
   error: v.string(),
-  code: v.picklist(["CONFIG_NOT_FOUND", "ENVIRONMENT_NOT_FOUND", "CONTEXT_NOT_FOUND"]),
+  code: v.pipe(v.string(), v.endsWith("_NOT_FOUND")),
 });
-
-export type EvaluationNotFoundCode = v.InferOutput<typeof EvaluationNotFoundBodySchema>["code"];
 
 type FieldError = v.InferOutput<typeof ApiValidationErrorBodySchema>["errors"][number];
 
@@ -51,12 +49,12 @@ export class ApiValidationError extends CliError {
   }
 }
 
-export class EvaluationNotFoundError extends CliError {
+export class ResourceNotFoundError extends CliError {
   constructor(
-    public readonly code: EvaluationNotFoundCode,
+    public readonly code: string,
     apiMessage: string,
   ) {
-    super(`The Admin API could not evaluate the config: ${apiMessage} (${code})`);
+    super(`${apiMessage} (${code})`);
   }
 }
 

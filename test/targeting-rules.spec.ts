@@ -2,7 +2,12 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
-import { projectPath, requestLinesOf, startBrowseAdminApi } from "./support/browse-admin-api.js";
+import {
+  configNotFound,
+  projectPath,
+  requestLinesOf,
+  startBrowseAdminApi,
+} from "./support/browse-admin-api.js";
 import { productionEnvironment, testEnvironment } from "./support/evaluate-admin-api.js";
 import { writeRepositoryFile } from "./support/repository-files.js";
 import { createSandbox, type Sandbox } from "./support/sandbox.js";
@@ -243,8 +248,29 @@ describe("targeting-rules set", () => {
 });
 
 describe("targeting-rules set failures", () => {
-  it("exits 2 saying no config in the project has the key when the API answers 404", async () => {
+  it("exits 2 saying no config in the project has the key when the API answers 404 with an empty body", async () => {
     const adminApi = await startBrowseAdminApi({ [targetsPath("new-chekout")]: { status: 404, body: {} } });
+
+    const { exitCode, stdout, stderr } = await setTargetingRulesFromFile(
+      adminApi.baseUrl,
+      targetEntryOfConfigsGet,
+      ["new-chekout", "--environment", "production"],
+    );
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual('Error: No config in web-app has the key "new-chekout".\n');
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath("/environments")}`,
+      `PUT ${projectPath(targetsPath("new-chekout"))}`,
+    ]);
+  });
+
+  it("exits 2 saying no config in the project has the key when the API answers 404 with CONFIG_NOT_FOUND", async () => {
+    const adminApi = await startBrowseAdminApi({
+      [targetsPath("new-chekout")]: configNotFound("new-chekout"),
+    });
 
     const { exitCode, stdout, stderr } = await setTargetingRulesFromFile(
       adminApi.baseUrl,

@@ -1,5 +1,5 @@
 import type { AdminApiClient, Environment, Project } from "../admin-api/AdminApiClient.js";
-import { EvaluationNotFoundError, type EvaluationNotFoundCode } from "../admin-api/admin-api-errors.js";
+import { ResourceNotFoundError } from "../admin-api/admin-api-errors.js";
 import type { EvaluateConfigRequest } from "../admin-api/config-evaluation.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
@@ -29,8 +29,10 @@ type RequestedEvaluation = {
   contextForm: ContextForm;
 };
 
+type EvaluationNotFoundCode = "CONFIG_NOT_FOUND" | "ENVIRONMENT_NOT_FOUND" | "CONTEXT_NOT_FOUND";
+
 const NOT_FOUND_MESSAGES: {
-  [C in EvaluationNotFoundCode]: (requested: RequestedEvaluation, error: EvaluationNotFoundError) => string;
+  [C in EvaluationNotFoundCode]: (requested: RequestedEvaluation, error: ResourceNotFoundError) => string;
 } = {
   CONFIG_NOT_FOUND: ({ project, configKey }) => `No config in ${project.slug} has the key "${configKey}".`,
   ENVIRONMENT_NOT_FOUND: ({ project, environment }) =>
@@ -42,6 +44,9 @@ const NOT_FOUND_MESSAGES: {
       : error.message,
 };
 
+const isEvaluationNotFoundCode = (code: string): code is EvaluationNotFoundCode =>
+  Object.hasOwn(NOT_FOUND_MESSAGES, code);
+
 const requestEvaluation = async (client: AdminApiClient, requested: RequestedEvaluation) => {
   try {
     return await client.evaluateConfig(requested.project.id, requested.configKey, {
@@ -49,7 +54,7 @@ const requestEvaluation = async (client: AdminApiClient, requested: RequestedEva
       ...contextFieldsOf(requested.contextForm),
     });
   } catch (error) {
-    if (error instanceof EvaluationNotFoundError) {
+    if (error instanceof ResourceNotFoundError && isEvaluationNotFoundCode(error.code)) {
       throw new CliError(NOT_FOUND_MESSAGES[error.code](requested, error));
     }
     throw error;

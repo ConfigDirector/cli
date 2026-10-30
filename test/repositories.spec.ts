@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
-import { projectPath, requestLinesOf, startBrowseAdminApi } from "./support/browse-admin-api.js";
+import {
+  projectPath,
+  requestLinesOf,
+  scannedRepositoryNotFound,
+  startBrowseAdminApi,
+} from "./support/browse-admin-api.js";
 import { createSandbox } from "./support/sandbox.js";
 
 const runRepositoriesCommand = async (baseUrl: string, commandLineArguments: string[]) => {
@@ -241,9 +246,33 @@ describe("repositories remove", () => {
 });
 
 describe("repositories remove failures", () => {
-  it("exits 2 listing the project's scanned repository names when the API answers 404", async () => {
+  it("exits 2 listing the project's scanned repository names when the API answers 404 with an empty body", async () => {
     const adminApi = await startBrowseAdminApi({
       "/repositories/ConfigDirector%2Fclli": { status: 404, body: {} },
+      "/repositories": { status: 200, body: [cliRepository, storefrontRepository] },
+    });
+
+    const { exitCode, stdout, stderr } = await runRepositoriesCommand(adminApi.baseUrl, [
+      "remove",
+      "ConfigDirector/clli",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual(
+      'Error: No scanned repository in web-app has the name "ConfigDirector/clli". ' +
+        "Its scanned repositories are ConfigDirector/cli, acme/storefront.\n",
+    );
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `DELETE ${projectPath("/repositories/ConfigDirector%2Fclli")}`,
+      `GET ${projectPath("/repositories")}`,
+    ]);
+  });
+
+  it("exits 2 listing the project's scanned repository names when the API answers 404 with SCANNED_REPOSITORY_NOT_FOUND", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/repositories/ConfigDirector%2Fclli": scannedRepositoryNotFound("ConfigDirector/clli"),
       "/repositories": { status: 200, body: [cliRepository, storefrontRepository] },
     });
 

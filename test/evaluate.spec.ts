@@ -1048,6 +1048,28 @@ describe("evaluate failures", () => {
     );
   });
 
+  it("exits 2 showing the API's sentence when the API answers a not-found code evaluate has no message for", async () => {
+    const adminApi = await startEvaluateAdminApi({
+      evaluateReply: {
+        status: 404,
+        body: {
+          error: `No project with id '${webApp.id}' exists in the organization.`,
+          code: "PROJECT_NOT_FOUND",
+        },
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await evaluate(adminApi.baseUrl, [
+      "new-checkout",
+      "--environment",
+      "production",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toContain(`No project with id '${webApp.id}' exists in the organization.`);
+  });
+
   it("exits 2 showing the status when a 404 comes without a code", async () => {
     const adminApi = await startEvaluateAdminApi({ evaluateReply: { status: 404, body: {} } });
 

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
-import { projectPath, requestLinesOf, startBrowseAdminApi } from "./support/browse-admin-api.js";
+import {
+  configNotFound,
+  projectPath,
+  requestLinesOf,
+  startBrowseAdminApi,
+} from "./support/browse-admin-api.js";
 import { createSandbox } from "./support/sandbox.js";
 
 const archiveConfig = async (baseUrl: string, commandLineArguments: string[]) => {
@@ -72,8 +77,22 @@ describe("configs archive", () => {
 });
 
 describe("configs archive failures", () => {
-  it("exits 2 saying no config in the project has the key, with no further request, when the API answers 404", async () => {
+  it("exits 2 saying no config in the project has the key, with no further request, when the API answers 404 with an empty body", async () => {
     const adminApi = await startBrowseAdminApi({ "/configs/new-chekout": { status: 404, body: {} } });
+
+    const { exitCode, stdout, stderr } = await archiveConfig(adminApi.baseUrl, ["new-chekout"]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual('Error: No config in web-app has the key "new-chekout".\n');
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `DELETE ${projectPath("/configs/new-chekout")}`,
+    ]);
+  });
+
+  it("exits 2 saying no config in the project has the key, with no further request, when the API answers 404 with CONFIG_NOT_FOUND", async () => {
+    const adminApi = await startBrowseAdminApi({ "/configs/new-chekout": configNotFound("new-chekout") });
 
     const { exitCode, stdout, stderr } = await archiveConfig(adminApi.baseUrl, ["new-chekout"]);
 

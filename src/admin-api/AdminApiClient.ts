@@ -7,10 +7,10 @@ import {
   ApiUnreachableError,
   ApiValidationError,
   ApiValidationErrorBodySchema,
-  EvaluationNotFoundBodySchema,
-  EvaluationNotFoundError,
   RepositoryLimitReachedBodySchema,
   RepositoryLimitReachedError,
+  ResourceNotFoundBodySchema,
+  ResourceNotFoundError,
   ServiceSuspendedBodySchema,
   ServiceSuspendedError,
   UnexpectedApiResponseError,
@@ -146,7 +146,7 @@ type SegmentDeletionOutcome =
 
 type ScannedRepositoryRemovalOutcome = "removed" | "not-found";
 
-const MissingResourceBodySchema = v.strictObject({});
+const MissingResourceBodySchema = v.union([v.strictObject({}), ResourceNotFoundBodySchema]);
 
 const readJsonBody = async (response: Response): Promise<unknown> => {
   try {
@@ -176,9 +176,9 @@ const failureFor = (url: string, response: Response, body: unknown): CliError =>
         : new UnexpectedApiResponseError(url, describeStatus(response));
     }
     case 404: {
-      const notFoundError = v.safeParse(EvaluationNotFoundBodySchema, body);
+      const notFoundError = v.safeParse(ResourceNotFoundBodySchema, body);
       return notFoundError.success
-        ? new EvaluationNotFoundError(notFoundError.output.code, notFoundError.output.error)
+        ? new ResourceNotFoundError(notFoundError.output.code, notFoundError.output.error)
         : new UnexpectedApiResponseError(url, describeStatus(response));
     }
     case 429: {

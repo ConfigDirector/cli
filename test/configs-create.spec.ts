@@ -4,12 +4,14 @@ import { run } from "../src/run.js";
 import {
   billingTag,
   checkoutTag,
+  configNotFound,
   invoicesTag,
   paymentsTag,
   projectPath,
   requestLinesOf,
   startBrowseAdminApi,
   tagNamed,
+  tagNotFound,
   webTeamTag,
 } from "./support/browse-admin-api.js";
 import { writeRepositoryFile } from "./support/repository-files.js";
@@ -339,7 +341,7 @@ describe("configs create", () => {
     ]);
   });
 
-  it("exits 2 naming the tag without creating the config when no tag has a --tag name", async () => {
+  it("exits 2 naming the tag without creating the config when the API answers 404 with an empty body for a --tag name", async () => {
     const adminApi = await startBrowseAdminApi({
       "/tags/by-name?name=checkout": { status: 200, body: checkoutTag },
       "/tags/by-name?name=chekout": { status: 404, body: {} },
@@ -518,6 +520,24 @@ describe("configs create", () => {
       "",
     ]);
     expect(configCreationBodies(adminApi)).toHaveLength(1);
+  });
+
+  it("exits 2 naming the tag without creating the config when the API answers 404 with TAG_NOT_FOUND for a --tag name", async () => {
+    const adminApi = await startBrowseAdminApi({ "/tags/by-name?name=chekout": tagNotFound("chekout") });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      ...featureFlagArguments,
+      "--tag",
+      "chekout",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual('Error: No tag in web-app has the name "chekout".\n');
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath("/tags/by-name?name=chekout")}`,
+    ]);
   });
 
   it("exits 2 naming the tag without making any --new-tag when no tag has a --tag name", async () => {
@@ -725,7 +745,7 @@ describe("configs create", () => {
     expect(JSON.parse(stdout)).toEqual({ ...existingNewCheckout, addedByALaterApi: { reason: "kept" } });
   });
 
-  it("exits 2 listing the API's errors when the API rejects the key and no config has it", async () => {
+  it("exits 2 listing the API's errors when the API rejects the key and answers 404 with an empty body to the read", async () => {
     const adminApi = await startBrowseAdminApi({
       "/configs": {
         status: 400,
@@ -739,6 +759,48 @@ describe("configs create", () => {
         },
       },
       "/configs/new%20checkout": { status: 404, body: {} },
+    });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      "--key",
+      "new checkout",
+      "--type",
+      "boolean",
+      "--role",
+      "flag",
+      "--lifetime",
+      "temporary",
+      "--default-value",
+      "false",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual(
+      "Error: The Admin API rejected the request:\n" +
+        "  key: The key can only contain letters, numbers, periods, dashes, and underscores\n",
+    );
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `POST ${projectPath("/configs")}`,
+      `GET ${projectPath("/configs/new%20checkout")}`,
+    ]);
+  });
+
+  it("exits 2 listing the API's errors when the API rejects the key and answers 404 with CONFIG_NOT_FOUND to the read", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/configs": {
+        status: 400,
+        body: {
+          errors: [
+            {
+              name: "key",
+              message: "The key can only contain letters, numbers, periods, dashes, and underscores",
+            },
+          ],
+        },
+      },
+      "/configs/new%20checkout": configNotFound("new checkout"),
     });
 
     const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
