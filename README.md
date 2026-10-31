@@ -220,7 +220,7 @@ With `--json`, each prints the Admin API's response as received, except `configs
 ## Create a config
 
 ```bash
-configdirector configs create --key new-checkout --type boolean --role flag --lifetime temporary --default-value false
+configdirector configs create --key new-checkout --type boolean --role flag --default-value false
 ```
 
 `configs create` creates a config from options that match the Admin API's fields one to one, with no guessing and no prompts:
@@ -230,7 +230,8 @@ Created new-checkout in web-app: boolean, flag, temporary, client and server SDK
 Default targeting rule in every environment: false
 ```
 
-- `--key`, `--type` (`boolean`, `string`, `integer`, `float`, `timespan`, `enum`, `url` or `json`), `--role` (`config`, `flag`, `kill-switch` or `experiment`), `--lifetime` (`temporary` or `permanent`) and `--default-value` are required. `--default-value` is the default targeting rule value every environment starts with, not the in-code default value an application passes to the SDK.
+- `--key`, `--type` (`boolean`, `string`, `integer`, `float`, `timespan`, `enum`, `url` or `json`), `--role` (`config`, `flag`, `kill-switch` or `experiment`) and `--default-value` are required. `--default-value` is the default targeting rule value every environment starts with, not the in-code default value an application passes to the SDK.
+- `--lifetime` (`temporary` or `permanent`) is required for the `config` role. The role decides the lifetime of the others, so you can leave it out: a feature flag and an experiment are always temporary, and a kill switch is always permanent. A lifetime the role does not have is a usage error.
 - `--description <text>`; `--client-only` or `--server-only`, without which client and server SDKs both receive the config; and `--variation <name=value>`, repeatable, for an experiment's variations.
 - `--tag <name>`, repeatable, names a tag the project already has, and `--new-tag <name>`, repeatable, creates a tag with that name in the project's tag catalog. The config gets the tags of both, at most 20 in all. Every `--tag` name is looked up before any tag is created, so a misspelled `--tag` creates nothing; a name no tag has, a `--new-tag` name a tag already has, a `--new-tag` name given twice and a name given with both options exit with 2. When a later step fails, such as a key that is taken, the tags already created stay in the catalog, and the command names them so you can pass them with `--tag` next time.
 - The values of `--default-value` and `--variation` are read in the config's type: `true` or `false`, a number for an integer, float or timespan, the text as written for a string, enum or URL, and JSON for a JSON config, with `@file` reading it from a file. A value that does not fit the type is a usage error.

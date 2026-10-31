@@ -8,9 +8,14 @@ const requireSuccess = (description: string, result: { exitCode: number | null; 
   }
 };
 
-export const createBooleanFlag = async (cli: CliUnderTest): Promise<string> => {
+export const configKeyRemovedWhenTestFinishes = (cli: CliUnderTest): string => {
   const key = uniqueKey();
   removeWhenTestFinishes(cli.adminApi, `/v1/projects/${cli.project.id}/configs/${key}`);
+  return key;
+};
+
+export const createBooleanFlag = async (cli: CliUnderTest): Promise<string> => {
+  const key = configKeyRemovedWhenTestFinishes(cli);
 
   const result = await cli.run([
     "configs",

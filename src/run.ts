@@ -296,9 +296,11 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
         .makeOptionMandatory(),
     )
     .addOption(
-      new Option("--lifetime <lifetime>", "whether the config is expected to be removed (required)")
-        .choices(CONFIG_LIFETIMES)
-        .makeOptionMandatory(),
+      new Option(
+        "--lifetime <lifetime>",
+        "whether the config is expected to be removed; required with --role config, " +
+          "while a feature flag and an experiment are always temporary and a kill switch always permanent",
+      ).choices(CONFIG_LIFETIMES),
     )
     .requiredOption(
       "--default-value <value>",

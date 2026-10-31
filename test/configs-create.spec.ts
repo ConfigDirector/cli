@@ -215,6 +215,83 @@ describe("configs create", () => {
     ]);
   });
 
+  it("sends no lifetime for a feature flag created without --lifetime and prints the lifetime ConfigDirector stored", async () => {
+    const adminApi = await startBrowseAdminApi({ "/configs": { status: 200, body: createdConfig() } });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      "--key",
+      "new-checkout",
+      "--type",
+      "boolean",
+      "--role",
+      "flag",
+      "--default-value",
+      "false",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "Created new-checkout in web-app: boolean, flag, temporary, client and server SDKs.",
+      "Default targeting rule in every environment: false",
+      "",
+    ]);
+    expect(configCreationBodies(adminApi)).toEqual([
+      {
+        key: "new-checkout",
+        role: "flag",
+        type: "boolean",
+        client: true,
+        server: true,
+        variations: [],
+        tagIds: [],
+        defaultValue: false,
+      },
+    ]);
+  });
+
+  it("exits 2 without a request when --role config is given without --lifetime", async () => {
+    const adminApi = await startBrowseAdminApi();
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      "--key",
+      "free-shipping-minimum",
+      "--type",
+      "string",
+      "--role",
+      "config",
+      "--default-value",
+      "20",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual("Error: --role config needs --lifetime.\n");
+    expect(adminApi.receivedRequests).toEqual([]);
+  });
+
+  it("exits 2 without a request when --lifetime contradicts the lifetime of the role", async () => {
+    const adminApi = await startBrowseAdminApi();
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      "--key",
+      "checkout-enabled",
+      "--type",
+      "boolean",
+      "--role",
+      "kill-switch",
+      "--lifetime",
+      "temporary",
+      "--default-value",
+      "true",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual("Error: A kill switch is always permanent.\n");
+    expect(adminApi.receivedRequests).toEqual([]);
+  });
+
   it("exits 2 without a request when --default-value is missing", async () => {
     const adminApi = await startBrowseAdminApi();
 
@@ -1518,6 +1595,63 @@ describe("configs create variations", () => {
         ],
         defaultValue: 10,
       }),
+    ]);
+  });
+
+  it("sends no lifetime for an experiment created without --lifetime", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/configs": {
+        status: 200,
+        body: createdConfig({
+          key: "checkout-button-size",
+          type: "integer",
+          role: "experiment",
+          typeOptions: { isInteger: true },
+          variations: [
+            { name: "small", value: "10" },
+            { name: "large", value: "20" },
+          ],
+        }),
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await createConfig(adminApi.baseUrl, [
+      "--key",
+      "checkout-button-size",
+      "--type",
+      "integer",
+      "--role",
+      "experiment",
+      "--default-value",
+      "10",
+      "--variation",
+      "small=10",
+      "--variation",
+      "large=20",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "Created checkout-button-size in web-app: integer, experiment, temporary, client and server SDKs.",
+      "Default targeting rule in every environment: 10",
+      "",
+    ]);
+    expect(configCreationBodies(adminApi)).toEqual([
+      {
+        key: "checkout-button-size",
+        role: "experiment",
+        type: "integer",
+        typeOptions: { isInteger: true },
+        client: true,
+        server: true,
+        variations: [
+          { name: "small", value: 10 },
+          { name: "large", value: 20 },
+        ],
+        tagIds: [],
+        defaultValue: 10,
+      },
     ]);
   });
 

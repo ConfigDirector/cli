@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { adminApiUnderTest, environmentsOf } from "./support/admin-api-under-test.js";
 import { jsonOf, startCliUnderTest, uniqueKey } from "./support/built-cli.js";
-import { createBooleanFlag } from "./support/fixtures.js";
+import { configKeyRemovedWhenTestFinishes, createBooleanFlag } from "./support/fixtures.js";
 
 type ListedConfig = { key: string; type: string; state: string };
 
@@ -25,6 +25,29 @@ describe.skipIf(adminApiUnderTest() === undefined)("configs against the Admin AP
 
     expect(listed.find((config) => config.key === key)).toEqual(
       expect.objectContaining({ key, type: "boolean", state: "new" }),
+    );
+  });
+
+  it("creates a kill switch without --lifetime that ConfigDirector stores as permanent", async () => {
+    const cli = await startCliUnderTest();
+    const key = configKeyRemovedWhenTestFinishes(cli);
+
+    const result = await cli.run([
+      "configs",
+      "create",
+      "--key",
+      key,
+      "--type",
+      "boolean",
+      "--role",
+      "kill-switch",
+      "--default-value",
+      "true",
+    ]);
+
+    expect(result.exitCode).toEqual(0);
+    expect(jsonOf(await cli.run(["configs", "get", key, "--json"]))).toEqual(
+      expect.objectContaining({ key, role: "kill-switch", lifetime: "permanent" }),
     );
   });
 

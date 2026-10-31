@@ -4,6 +4,12 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-30
+
+### Changed
+
+- `configdirector configs create` no longer needs `--lifetime` for a feature flag, kill switch or experiment, since the role decides their lifetime: a feature flag and an experiment are always temporary, and a kill switch is always permanent. Without `--lifetime`, ConfigDirector stores the role's lifetime and the command prints it, as in `Created new-checkout in web-app: boolean, flag, temporary, client and server SDKs.` `--role config` still needs `--lifetime`, and exits with 2 before anything is sent without it. A `--lifetime` the role does not have, such as `--role kill-switch --lifetime temporary`, exits with 2 before anything is sent and says `A kill switch is always permanent.` Commands that give the role's own lifetime keep working.
+
 ### Fixed
 
 - When no config, segment, tag or scanned repository has the key or name you gave, `configdirector configs get`, `configs activity`, `configs archive`, `targeting-rules set`, `segments get`, `segments update`, `segments delete`, `repositories remove` and `--tag` say so in their own words again, such as `No config in web-app has the key "new-chekout".` Now that ConfigDirector explains in its answer what is missing, earlier versions printed `The Admin API could not evaluate the config:` followed by that explanation, or `HTTP 404`. Every other command, `evaluate` included, prints ConfigDirector's explanation when something it needs is missing, where it printed `HTTP 404`.

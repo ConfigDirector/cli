@@ -17,7 +17,21 @@ type ConfigType = (typeof CONFIG_TYPES)[number];
 
 export const CONFIG_ROLES = ["config", "flag", "kill-switch", "experiment"] as const;
 
+type ConfigRole = (typeof CONFIG_ROLES)[number];
+
 export const CONFIG_LIFETIMES = ["permanent", "temporary"] as const;
+
+type ConfigLifetime = (typeof CONFIG_LIFETIMES)[number];
+
+type RoleLifetimeRule =
+  { chosenBy: "member" } | { chosenBy: "role"; lifetime: ConfigLifetime; roleNameWithArticle: string };
+
+const ROLE_LIFETIME_RULES: { [R in ConfigRole]: RoleLifetimeRule } = {
+  config: { chosenBy: "member" },
+  flag: { chosenBy: "role", lifetime: "temporary", roleNameWithArticle: "A feature flag" },
+  "kill-switch": { chosenBy: "role", lifetime: "permanent", roleNameWithArticle: "A kill switch" },
+  experiment: { chosenBy: "role", lifetime: "temporary", roleNameWithArticle: "An experiment" },
+};
 
 export const TIMESPAN_UNITS = ["milliseconds", "seconds", "minutes"] as const;
 
@@ -59,8 +73,8 @@ export type NewConfigOptions = TypeConstraintOptions & {
   key: string;
   description?: string;
   type: ConfigType;
-  role: (typeof CONFIG_ROLES)[number];
-  lifetime: (typeof CONFIG_LIFETIMES)[number];
+  role: ConfigRole;
+  lifetime?: ConfigLifetime;
   defaultValue: string;
   clientOnly?: true;
   serverOnly?: true;
@@ -258,6 +272,22 @@ const typedValueOf = async (type: ConfigType, argument: ValueArgument): Promise<
   return value;
 };
 
+const requestedLifetimeOf = ({ role, lifetime }: NewConfigOptions): ConfigLifetime | undefined => {
+  const rule = ROLE_LIFETIME_RULES[role];
+  switch (rule.chosenBy) {
+    case "member":
+      if (lifetime === undefined) {
+        throw new CliError(`--role ${role} needs --lifetime.`);
+      }
+      return lifetime;
+    case "role":
+      if (lifetime !== undefined && lifetime !== rule.lifetime) {
+        throw new CliError(`${rule.roleNameWithArticle} is always ${rule.lifetime}.`);
+      }
+      return lifetime;
+  }
+};
+
 type Variation = NewConfig["variations"][number];
 
 const VARIATION_SEPARATOR = "=";
@@ -296,7 +326,7 @@ export const newConfigOf = async (
     key: options.key,
     description: options.description,
     role: options.role,
-    lifetime: options.lifetime,
+    lifetime: requestedLifetimeOf(options),
     type: options.type,
     typeOptions: await CONFIG_TYPE_RULES[options.type].typeOptionsOf(options, workingDirectory),
     ...availabilityOf(options),

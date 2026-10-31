@@ -6,7 +6,7 @@ export type CreateConfigRequest = {
   key: string;
   description?: string;
   role: string;
-  lifetime: string;
+  lifetime?: string;
   type: string;
   typeOptions?: object;
   client: boolean;
