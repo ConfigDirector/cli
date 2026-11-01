@@ -4,6 +4,12 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-01
+
+### Added
+
+- `configdirector configs copy <key> --key <new key>` copies a config under a new key, in its project or, with `--to <project slug>`, in another project of the organization. The copy gets the config's settings and tags, and every environment's targeting rules and default targeting rule value, and starts as a new config with no old keys. In another project, environments are matched by slug, tags by name and segments by key, and `--environment <destination slug>=<source slug>`, repeatable, names the environment to copy from for an environment there with no environment of its slug in the config's project. The command prints the plan: each environment with the environment its rules come from, how many rules were copied and each rule dropped because the other project has no segment with its key, the environments it skipped, and the tags matched, created and skipped. `--dry-run` prints the plan without creating anything, and `--json` prints the Admin API's response as received. A dropped rule is not a failure: the command exits with 0, and with 2 when ConfigDirector refuses the copy, for example because the key is already in use or an environment has nothing to copy from.
+
 ## [0.16.0] - 2026-10-30
 
 ### Changed

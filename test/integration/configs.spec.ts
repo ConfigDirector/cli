@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { adminApiUnderTest, environmentsOf } from "./support/admin-api-under-test.js";
+import { adminApiUnderTest, environmentsOf, firstEnvironmentOf } from "./support/admin-api-under-test.js";
 import { jsonOf, startCliUnderTest, uniqueKey } from "./support/built-cli.js";
-import { configKeyRemovedWhenTestFinishes, createBooleanFlag } from "./support/fixtures.js";
+import { configKeyRemovedWhenTestFinishes, createBooleanFlag, setProPlanRule } from "./support/fixtures.js";
 
 type ListedConfig = { key: string; type: string; state: string };
 
@@ -75,6 +75,48 @@ describe.skipIf(adminApiUnderTest() === undefined)("configs against the Admin AP
     expect(JSON.parse(result.stdout)).toEqual(
       expect.objectContaining({ key, type: "boolean", role: "flag" }),
     );
+  });
+
+  it("copies a config within the project with its targeting rules", async () => {
+    const cli = await startCliUnderTest();
+    const environment = await firstEnvironmentOf(cli.adminApi, cli.project);
+    const key = await createBooleanFlag(cli);
+    await setProPlanRule(cli, key, environment.slug);
+    const copyKey = configKeyRemovedWhenTestFinishes(cli);
+
+    const result = await cli.run(["configs", "copy", key, "--key", copyKey]);
+
+    expect(result.exitCode).toEqual(0);
+    expect(result.stdout.split("\n")[0]).toEqual(
+      `Copied ${key} in ${cli.project.slug} to ${copyKey} in ${cli.project.slug}.`,
+    );
+    const copy = jsonOf(await cli.run(["configs", "get", copyKey, "--json"])) as ConfigWithTargets;
+    expect(copy).toEqual(expect.objectContaining({ key: copyKey, type: "boolean", role: "flag" }));
+    expect(copy.targets.find((target) => target.environment.slug === environment.slug)?.rules).toEqual([
+      expect.objectContaining({ type: "conditional", value: true }),
+    ]);
+  });
+
+  it("prints the plan of a copy without creating the config with --dry-run", async () => {
+    const cli = await startCliUnderTest();
+    const environments = await environmentsOf(cli.adminApi, cli.project);
+    const key = await createBooleanFlag(cli);
+    const copyKey = configKeyRemovedWhenTestFinishes(cli);
+
+    const result = await cli.run(["configs", "copy", key, "--key", copyKey, "--dry-run", "--json"]);
+
+    expect(result.exitCode).toEqual(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      plan: expect.objectContaining({
+        environments: expect.arrayContaining(
+          environments.map((environment) =>
+            expect.objectContaining({ slug: environment.slug, sourceSlug: environment.slug, rulesCopied: 0 }),
+          ),
+        ),
+        skippedSourceEnvironments: [],
+      }),
+    });
+    expect((await cli.run(["configs", "get", copyKey])).exitCode).toEqual(2);
   });
 
   it("lists only the configs in the requested lifecycle state", async () => {

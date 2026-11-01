@@ -1,14 +1,17 @@
 import { productionEnvironment, testEnvironment } from "./evaluate-admin-api.js";
-import { webApp } from "./scan-admin-api.js";
+import { webApp, type ListedProject } from "./scan-admin-api.js";
 import { startStubAdminApi, type StubReply, type StubReplyForRequest } from "./stub-admin-api.js";
 
 export const projectPath = (path: string) => `/v1/projects/${webApp.id}${path}`;
 
-export const startBrowseAdminApi = (repliesByProjectPath: Record<string, StubReplyForRequest> = {}) =>
+export const startBrowseAdminApi = (
+  repliesByProjectPath: Record<string, StubReplyForRequest> = {},
+  projects: ListedProject[] = [webApp],
+) =>
   startStubAdminApi(
     { status: 404, body: {} },
     {
-      "/v1/projects": { status: 200, body: [webApp] },
+      "/v1/projects": { status: 200, body: projects },
       [projectPath("/environments")]: { status: 200, body: [testEnvironment, productionEnvironment] },
       ...Object.fromEntries(
         Object.entries(repliesByProjectPath).map(([path, reply]) => [projectPath(path), reply]),

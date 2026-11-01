@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. Commands and output may change before 1.0. This release signs in to one or more organizations, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates configs, replaces a config's targeting rules in an environment, archives configs, creates, updates and deletes segments, uploads the repository's code references to the project, and lists and removes the project's scanned repositories.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. Commands and output may change before 1.0. This release signs in to one or more organizations, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates and copies configs, replaces a config's targeting rules in an environment, archives configs, creates, updates and deletes segments, uploads the repository's code references to the project, and lists and removes the project's scanned repositories.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
@@ -245,6 +245,35 @@ configdirector configs create --key checkout-timeout --type timespan --role conf
 When the project already has a config with the key, as its current key or an old one, nothing is created: the command prints that config's key, type, role, lifetime and lifecycle state, and exits with 1. When ConfigDirector refuses the config for another reason, it exits with 2 and lists the reasons. With `--json`, it prints the created config as received, or the existing config when the key is taken.
 
 `configs create` needs `projects:read`, `configs:create`, and `configs:read` to show the config that already has the key; `--tag` also needs `tags:read`, and `--new-tag` needs `tags:create`. The config shows in the audit log with the source CLI.
+
+## Copy a config
+
+```bash
+configdirector configs copy search-ranking --key search-ranking --to mobile-app --environment qa=staging
+```
+
+`configs copy` copies a config under the key `--key` gives, in its project or, with `--to <project slug>`, in another project of the organization, and prints the plan:
+
+```txt
+Copied search-ranking in web-app to search-ranking in mobile-app.
+Environments:
+  production (live)   from production   2 rules copied   rule 3 dropped: mobile-app has no segment beta-testers
+  qa                  from staging      1 rule copied
+Skipped source environments:
+  test   mobile-app has no environment with this slug; create it there to copy its rules
+Tags:
+  search   matched
+  growth   created
+```
+
+- The copy gets the config's role, lifetime, type, constraints, variations, SDK availability, description and tags, and every environment's targeting rules and default targeting rule value. It starts as a new config, with no old keys, evaluations or code references, and shares nothing with the config it came from. An archived config cannot be copied.
+- In another project, environments are matched by slug, tags by name and segments by key. An environment there with no environment of the same slug in the config's project needs `--environment <destination slug>=<source slug>`, repeatable, to name the environment it copies from; `--environment` can also replace a slug match. A source environment with no environment of its slug there is skipped.
+- A targeting rule that uses a segment the other project doesn't have is dropped, and the plan names it by its position and the segment's key. A tag the other project doesn't have is created when the token has `tags:create`, and skipped otherwise.
+- `--dry-run` prints the plan without creating anything, saying what would be copied, dropped, skipped and created.
+
+The command exits with 0 when it copied the config or printed the plan, dropped rules included, and with 2 when ConfigDirector refuses the copy, for example because the key is in use or an environment has nothing to copy from, listing the reasons it gave. With `--json`, it prints the Admin API's response as received: the plan, and the created config with its targeting rules unless `--dry-run` was given.
+
+`configs copy` needs `projects:read` and `configs:create`, and `tags:create` to create the tags another project doesn't have. The copy shows in the audit log with the source CLI.
 
 ## Change targeting rules
 

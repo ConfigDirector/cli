@@ -14,10 +14,12 @@ import { alignedColumns, alignedListing, type ListingOptions } from "../aligned-
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { availabilityDescription, configText } from "../configs/config-text.js";
+import { copyPlanText, type ConfigCopying, type CopyMode } from "../configs/copy-plan-text.js";
+import { environmentMappingOf } from "../configs/environment-mapping.js";
 import { newConfigOf, type NewConfig, type NewConfigOptions } from "../configs/new-config.js";
 import { ExitCode } from "../ExitCode.js";
 import { plural } from "../plural.js";
-import { connectToLinkedProject } from "../project-selection.js";
+import { connectToLinkedProject, projectWithSlug } from "../project-selection.js";
 import type { SegmentsById } from "../rule-sentences.js";
 import { utcMinute } from "../utc-minute.js";
 
@@ -335,6 +337,40 @@ export const createConfig = async (
     writeUnassignedTagsNotice(context, project, createdTags, "failed");
     throw error;
   }
+};
+
+type CopyConfigOptions = { key: string; to?: string; environment?: string[]; dryRun?: true };
+
+export const copyConfig = async (
+  context: CommandContext,
+  [configKey]: readonly [string],
+  options: CopyConfigOptions,
+): Promise<CommandOutput> => {
+  const environmentMapping = environmentMappingOf(options.environment);
+  const mode: CopyMode = options.dryRun ? "dry-run" : "copy";
+  const { client, project, organizationProjects } = await connectToLinkedProject(context);
+  const copying: ConfigCopying = {
+    sourceKey: configKey,
+    sourceProject: project,
+    copyKey: options.key,
+    destinationProject:
+      options.to === undefined ? project : projectWithSlug(organizationProjects, options.to),
+  };
+  const receivedPlan = await client.copyConfig(project.id, configKey, {
+    projectId: copying.destinationProject.id,
+    key: copying.copyKey,
+    environments: environmentMapping,
+    dryRun: mode === "dry-run",
+  });
+  if (receivedPlan === undefined) {
+    throw new CliError(`No config in ${project.slug} has the key "${configKey}".`);
+  }
+
+  return {
+    json: receivedPlan.responseBody,
+    text: copyPlanText(copying, receivedPlan.parsedBody.plan, mode),
+    exitCode: ExitCode.success,
+  };
 };
 
 export const archiveConfig = async (

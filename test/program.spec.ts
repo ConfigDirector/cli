@@ -135,7 +135,7 @@ describe("program", () => {
     expect(help).toContain("Commands and output may change before 1.0.");
   });
 
-  it("lists the list, get, activity, create and archive verbs with the before-1.0 notice in the help of configs", async () => {
+  it("lists the list, get, activity, create, copy and archive verbs with the before-1.0 notice in the help of configs", async () => {
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({ commandLineArguments: ["configs", "--help"] });
 
@@ -144,7 +144,7 @@ describe("program", () => {
     const help = invocation.stdout.text();
     expect(exitCode).toEqual(0);
     expect(help.split("\n").map((line) => line.trim().split(" ")[0])).toEqual(
-      expect.arrayContaining(["list", "get", "activity", "create", "archive"]),
+      expect.arrayContaining(["list", "get", "activity", "create", "copy", "archive"]),
     );
     expect(help).toContain("Commands and output may change before 1.0.");
   });

@@ -66,16 +66,14 @@ const settingLines = (config: ConfigWithTargetingRules): string[] => [
   ...(config.tags.length === 0 ? [] : [`Tags: ${config.tags.map((tag) => tag.name).join(", ")}`]),
 ];
 
-const environmentHeading = (targetingRules: TargetingRulesInEnvironment): string =>
-  targetingRules.environment.live
-    ? `${targetingRules.environment.slug} (live)`
-    : targetingRules.environment.slug;
+export const environmentLabel = (environment: { slug: string; live: boolean }): string =>
+  environment.live ? `${environment.slug} (live)` : environment.slug;
 
 const targetingRuleLines = (
   targetingRules: TargetingRulesInEnvironment,
   segments: SegmentsById,
 ): string[] => [
-  environmentHeading(targetingRules),
+  environmentLabel(targetingRules.environment),
   ...targetingRules.rules.map((rule, index) => `  ${index + 1}. ${describeRule(rule, segments)}`),
   `  Default targeting rule: ${targetingRules.defaultValue}`,
 ];

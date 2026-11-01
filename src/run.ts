@@ -7,6 +7,7 @@ import { nonEmptyVariable, type Invocation } from "./Invocation.js";
 import { getApiToken } from "./commands/api-token.js";
 import {
   archiveConfig,
+  copyConfig,
   createConfig,
   getConfig,
   LIFECYCLE_STATES,
@@ -246,7 +247,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
 
   const configsCommand = program
     .command("configs")
-    .description("list, show, create and archive a project's configs");
+    .description("list, show, create, copy and archive a project's configs");
 
   configsCommand
     .command("list")
@@ -377,6 +378,39 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
       ),
     )
     .action(commandAction(createConfig));
+
+  configsCommand
+    .command("copy")
+    .argument("<key>", "the key of the config to copy, or an old key of it")
+    .description(
+      "copy a config under a new key, in its project or in another project of the organization, and print the plan",
+    )
+    .requiredOption("--key <key>", "the copy's key (required)")
+    .option(
+      "--to <project slug>",
+      "slug of the project to copy the config into, another project of the organization (default: the config's project)",
+    )
+    .option(
+      "--environment <destination slug>=<source slug>",
+      "the source environment whose targeting rules an environment of the destination project starts with, " +
+        "needed for each destination environment with no source environment of its slug; repeatable",
+      repeatedOption,
+    )
+    .option("--dry-run", "print the plan without creating anything")
+    .addHelpText(
+      "after",
+      "\nThe copy gets the config's role, lifetime, type, constraints, variations, SDK availability, description " +
+        "and tags, and every environment's targeting rules and default targeting rule value. It starts as a new " +
+        "config, with no old keys, evaluations or code references, and shares nothing with the config it came from. " +
+        "An archived config cannot be copied; restore it first. " +
+        "In another project, environments are matched by slug, tags by name and segments by key: a source " +
+        "environment with no environment of its slug there is skipped, and an environment there with no source " +
+        "environment of its slug needs --environment. A targeting rule that uses a segment the other project " +
+        "doesn't have is dropped. A tag it doesn't have is created when the API token can create tags, and " +
+        "skipped otherwise. The plan names every skipped environment, dropped rule and tag; --dry-run shows it " +
+        "without creating anything.",
+    )
+    .action(commandAction(copyConfig));
 
   configsCommand
     .command("archive")

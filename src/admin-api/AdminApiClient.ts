@@ -15,6 +15,7 @@ import {
   ServiceSuspendedError,
   UnexpectedApiResponseError,
 } from "./admin-api-errors.js";
+import { CopyPlanResponseSchema, type CopyConfigRequest, type CopyPlanResponse } from "./config-copy.js";
 import { CreatedConfigSchema, type CreateConfigRequest, type CreatedConfig } from "./config-creation.js";
 import {
   ConfigWithTargetingRulesSchema,
@@ -352,6 +353,18 @@ export class AdminApiClient {
       method: "POST",
       body: request,
     });
+  }
+
+  public copyConfig(
+    projectId: string,
+    configKey: string,
+    request: CopyConfigRequest,
+  ): Promise<ParsedResponse<CopyPlanResponse> | undefined> {
+    return this.requestIfFound(
+      `/v1/projects/${encodeURIComponent(projectId)}/configs/${encodeURIComponent(configKey)}/copy`,
+      CopyPlanResponseSchema,
+      { method: "POST", body: request },
+    );
   }
 
   public async evaluateConfig(
