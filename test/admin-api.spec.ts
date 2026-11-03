@@ -26,13 +26,15 @@ const runInit = async (baseUrl: string) => {
   return { exitCode, stdout: invocation.stdout.text(), stderr: invocation.stderr.text() };
 };
 
-const closedPortBaseUrl = async () => {
+const closedPort = async () => {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  return `http://127.0.0.1:${typeof address === "object" && address !== null ? address.port : 0}`;
+  return typeof address === "object" && address !== null ? address.port : 0;
 };
+
+const closedPortBaseUrl = async () => `http://127.0.0.1:${await closedPort()}`;
 
 const packageVersion = async () => {
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
@@ -291,6 +293,16 @@ describe("Admin API failures", () => {
 
     expect(exitCode).toEqual(2);
     expect(stderr).toContain(baseUrl);
+    expect(stdout).toEqual("");
+  });
+
+  it("exit 2 naming why each address of the Admin API's host could not be reached", async () => {
+    const port = await closedPort();
+
+    const { exitCode, stdout, stderr } = await runInit(`http://localhost:${port}`);
+
+    expect(exitCode).toEqual(2);
+    expect(stderr).toContain(`connect ECONNREFUSED 127.0.0.1:${port}`);
     expect(stdout).toEqual("");
   });
 

@@ -78,10 +78,18 @@ export class ServiceSuspendedError extends CliError {
   }
 }
 
+const messageOf = (failure: unknown): string =>
+  failure instanceof Error ? failure.message : String(failure);
+
+const connectionFailureReasonOf = (failure: Error): string =>
+  failure instanceof AggregateError ? failure.errors.map(messageOf).join("; ") : failure.message;
+
 export class ApiUnreachableError extends CliError {
   constructor(baseUrl: string, cause: unknown) {
     const reason =
-      cause instanceof Error && cause.cause instanceof Error ? cause.cause.message : String(cause);
+      cause instanceof Error && cause.cause instanceof Error
+        ? connectionFailureReasonOf(cause.cause)
+        : String(cause);
     super(
       `Could not reach the Admin API at ${baseUrl} (${reason}). ` +
         "Check the network connection, --base-url or CONFIGDIRECTOR_BASE_URL.",

@@ -1,6 +1,11 @@
 #!/usr/bin/env node
+import { setDefaultAutoSelectFamilyAttemptTimeout } from "node:net";
 import { homedir } from "node:os";
 import { run } from "./run.js";
+
+const millisecondsEachAddressGetsToConnect = 2_000;
+
+setDefaultAutoSelectFamilyAttemptTimeout(millisecondsEachAddressGetsToConnect);
 
 process.exitCode = await run({
   commandLineArguments: process.argv.slice(2),
