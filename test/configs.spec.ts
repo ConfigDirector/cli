@@ -498,6 +498,87 @@ describe("configs get", () => {
     expect(stdout.split("\n")).toContain(`  3. in segment ${betaTestersSegmentId}: true`);
   });
 
+  it("names the variation of each value an experiment's targeting rules serve, before the value", async () => {
+    const experiment = configWithTargetingRules({
+      role: "experiment",
+      type: "string",
+      variations: [
+        { id: "variation-control", name: "control", value: "Start free trial" },
+        { id: "variation-treatment-a", name: "treatment-a", value: "Try it free for 14 days" },
+        { id: "variation-treatment-b", name: "treatment-b", value: "Get started" },
+      ],
+      targets: [
+        {
+          ...targetingRulesIn(
+            productionEnvironment,
+            [
+              { ...planIsProOrTeam, value: "Get started", variationId: "variation-treatment-b" },
+              {
+                ...rolloutToThirtyPercent,
+                percentages: [
+                  {
+                    id: "share-control",
+                    percentage: 40,
+                    value: "Start free trial",
+                    variationId: "variation-control",
+                  },
+                  {
+                    id: "share-treatment-a",
+                    percentage: 60,
+                    value: "Try it free for 14 days",
+                    variationId: "variation-treatment-a",
+                  },
+                ],
+              },
+            ],
+            "Start free trial",
+          ),
+          defaultVariationId: "variation-control",
+        },
+      ],
+    });
+    const adminApi = await startBrowseAdminApi({
+      "/configs/new-checkout": { status: 200, body: experiment },
+    });
+
+    const { exitCode, stdout, stderr } = await runConfigsCommand(adminApi.baseUrl, ["get", "new-checkout"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n").slice(-5)).toEqual([
+      "production (live)",
+      "  1. plan is one of pro, team: treatment-b (Get started)",
+      "  2. 40% get control (Start free trial), 60% get treatment-a (Try it free for 14 days)",
+      "  Default targeting rule: control (Start free trial)",
+      "",
+    ]);
+  });
+
+  it("shows the value alone for a variation without a name", async () => {
+    const experiment = configWithTargetingRules({
+      role: "experiment",
+      type: "string",
+      variations: [
+        { id: "variation-control", name: "control", value: "Start free trial" },
+        { id: "variation-unnamed", value: "Get started" },
+      ],
+      targets: [
+        {
+          ...targetingRulesIn(productionEnvironment, [], "Get started"),
+          defaultVariationId: "variation-unnamed",
+        },
+      ],
+    });
+    const adminApi = await startBrowseAdminApi({
+      "/configs/new-checkout": { status: 200, body: experiment },
+    });
+
+    const { exitCode, stdout } = await runConfigsCommand(adminApi.baseUrl, ["get", "new-checkout"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stdout.split("\n")).toContain("  Default targeting rule: Get started");
+  });
+
   it("says the key given is an old key of the config's current key before the config", async () => {
     const adminApi = await startBrowseAdminApi({
       "/configs/checkout-v2": {

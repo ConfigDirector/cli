@@ -20,7 +20,7 @@ import { newConfigOf, type NewConfig, type NewConfigOptions } from "../configs/n
 import { ExitCode } from "../ExitCode.js";
 import { plural } from "../plural.js";
 import { connectToLinkedProject, projectWithSlug } from "../project-selection.js";
-import type { SegmentsById } from "../rule-sentences.js";
+import { valueWithVariationName, type SegmentsById } from "../rule-sentences.js";
 import { utcMinute } from "../utc-minute.js";
 
 export const LIFECYCLE_STATES = ["new", "in-use", "settled", "archive-ready", "stale"] as const;
@@ -144,6 +144,13 @@ export const getConfig = async (
   };
 };
 
+const defaultValueDescription = (newConfig: NewConfig): string => {
+  const defaultVariation = newConfig.variations.find(
+    (variation) => variation.value === newConfig.defaultValue,
+  );
+  return valueWithVariationName(newConfig.defaultValue, defaultVariation?.name);
+};
+
 const createdConfigLines = (projectSlug: string, createdConfig: CreatedConfig, newConfig: NewConfig) => {
   const settings = [
     createdConfig.type,
@@ -153,7 +160,7 @@ const createdConfigLines = (projectSlug: string, createdConfig: CreatedConfig, n
   ];
   return [
     `Created ${createdConfig.key} in ${projectSlug}: ${settings.join(", ")}.`,
-    `Default targeting rule in every environment: ${String(newConfig.defaultValue)}`,
+    `Default targeting rule in every environment: ${defaultValueDescription(newConfig)}`,
   ];
 };
 

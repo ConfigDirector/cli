@@ -36,6 +36,30 @@ export const createBooleanFlag = async (cli: CliUnderTest): Promise<string> => {
   return key;
 };
 
+export const createExperiment = async (cli: CliUnderTest): Promise<string> => {
+  const key = configKeyRemovedWhenTestFinishes(cli);
+
+  const result = await cli.run([
+    "configs",
+    "create",
+    "--key",
+    key,
+    "--type",
+    "string",
+    "--role",
+    "experiment",
+    "--variation",
+    "control=Start free trial",
+    "--variation",
+    "treatment-a=Try it free for 14 days",
+    "--default-value",
+    "Start free trial",
+  ]);
+  requireSuccess(`configs create --key ${key}`, result);
+
+  return key;
+};
+
 export const emailCondition = {
   kind: "attribute",
   attribute: "traits",

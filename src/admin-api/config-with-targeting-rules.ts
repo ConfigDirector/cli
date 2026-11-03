@@ -1,10 +1,12 @@
 import * as v from "valibot";
 import { RuleSchema } from "./targeting-rules.js";
+import { VariationSchema } from "./variations.js";
 
 const TargetingRulesInEnvironmentSchema = v.object({
   environment: v.object({ slug: v.string(), live: v.boolean() }),
   rules: v.array(RuleSchema),
   defaultValue: v.string(),
+  defaultVariationId: v.optional(v.string()),
 });
 
 export type TargetingRulesInEnvironment = v.InferOutput<typeof TargetingRulesInEnvironmentSchema>;
@@ -72,6 +74,7 @@ export const ConfigWithTargetingRulesSchema = v.intersect([
     client: v.boolean(),
     server: v.boolean(),
     tags: v.array(v.object({ name: v.string() })),
+    variations: v.array(VariationSchema),
     targets: v.array(TargetingRulesInEnvironmentSchema),
   }),
   ConfigTypeSchema,

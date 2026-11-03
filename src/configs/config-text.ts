@@ -7,7 +7,8 @@ import {
   type TimespanRange,
 } from "../admin-api/config-with-targeting-rules.js";
 import { oldKeyLines } from "../old-key-lines.js";
-import { describeRule, type SegmentsById } from "../rule-sentences.js";
+import type { Variation } from "../admin-api/variations.js";
+import { describeRule, describeValue, type SegmentsById } from "../rule-sentences.js";
 
 const boundsDescriptions = (bounds: NumericBounds | null | undefined): string[] => {
   const limits = [bounds?.min, bounds?.max].flatMap((bound) =>
@@ -72,10 +73,11 @@ export const environmentLabel = (environment: { slug: string; live: boolean }): 
 const targetingRuleLines = (
   targetingRules: TargetingRulesInEnvironment,
   segments: SegmentsById,
+  variations: Variation[],
 ): string[] => [
   environmentLabel(targetingRules.environment),
-  ...targetingRules.rules.map((rule, index) => `  ${index + 1}. ${describeRule(rule, segments)}`),
-  `  Default targeting rule: ${targetingRules.defaultValue}`,
+  ...targetingRules.rules.map((rule, index) => `  ${index + 1}. ${describeRule(rule, segments, variations)}`),
+  `  Default targeting rule: ${describeValue(targetingRules.defaultValue, targetingRules.defaultVariationId, variations)}`,
 ];
 
 export const configText = (
@@ -87,6 +89,9 @@ export const configText = (
     ...oldKeyLines(requestedKey, config.key),
     config.key,
     ...settingLines(config).map((line) => `  ${line}`),
-    ...config.targets.flatMap((targetingRules) => ["", ...targetingRuleLines(targetingRules, segments)]),
+    ...config.targets.flatMap((targetingRules) => [
+      "",
+      ...targetingRuleLines(targetingRules, segments, config.variations),
+    ]),
     "",
   ].join("\n");

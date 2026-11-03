@@ -8,7 +8,13 @@ import type {
 import type { Condition, Rule } from "../admin-api/targeting-rules.js";
 import { alignedColumns } from "../aligned-columns.js";
 import { oldKeyLines } from "../old-key-lines.js";
-import { describeCondition, describeRule, formatPercentage, type SegmentsById } from "../rule-sentences.js";
+import {
+  describeCondition,
+  describeRule,
+  describeValue,
+  formatPercentage,
+  type SegmentsById,
+} from "../rule-sentences.js";
 import type { ContextForm } from "./context-form.js";
 
 type CheckedConditionExplanation = AttributeConditionExplanation | SegmentConditionExplanation;
@@ -34,6 +40,11 @@ const contextDescription = (evaluation: ConfigEvaluation, contextForm: ContextFo
   const identity = `${evaluatedContext.kind} ${evaluatedContext.identifier}`;
   return contextForm.form === "saved" ? `saved context ${identity}` : identity;
 };
+
+const servedValueDescription = (evaluation: ConfigEvaluation): string =>
+  evaluation.value === undefined
+    ? "no value"
+    : describeValue(evaluation.value, evaluation.variationId, evaluation.variations);
 
 const servedByDescription = (evaluation: ConfigEvaluation): string => {
   const { servedBy } = evaluation;
@@ -132,7 +143,7 @@ const ruleLines = (evaluation: ConfigEvaluation): string[] => {
     evaluation.rules.map((explanation, index) => {
       const rule = rulesById.get(explanation.ruleId);
       return [
-        `${index + 1}. ${rule === undefined ? explanation.ruleId : describeRule(rule, evaluation.segments)}`,
+        `${index + 1}. ${rule === undefined ? explanation.ruleId : describeRule(rule, evaluation.segments, evaluation.variations)}`,
         RULE_OUTCOME_DESCRIPTIONS[explanation.outcome](explanation, conditionsOf(rule), evaluation.segments),
       ];
     }),
@@ -147,9 +158,13 @@ export const evaluationText = (
     ...oldKeyLines(requested.configKey, evaluation.key),
     `${evaluation.key} in ${evaluation.environment.name} for ${contextDescription(evaluation, requested.contextForm)}`,
     "",
-    `${evaluation.value ?? "no value"}, ${servedByDescription(evaluation)}`,
+    `${servedValueDescription(evaluation)}, ${servedByDescription(evaluation)}`,
     "",
     ...ruleLines(evaluation),
-    `Default targeting rule: ${evaluation.targetingRules.defaultValue}`,
+    `Default targeting rule: ${describeValue(
+      evaluation.targetingRules.defaultValue,
+      evaluation.targetingRules.defaultVariationId,
+      evaluation.variations,
+    )}`,
     "",
   ].join("\n");

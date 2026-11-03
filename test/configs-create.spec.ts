@@ -1583,7 +1583,7 @@ describe("configs create variations", () => {
     expect(stderr).toEqual("");
     expect(stdout.split("\n")).toEqual([
       "Created checkout-button-size in web-app: integer, experiment, temporary, client and server SDKs.",
-      "Default targeting rule in every environment: 10",
+      "Default targeting rule in every environment: small (10)",
       "",
     ]);
     expect(configCreationBodies(adminApi)).toEqual([
@@ -1596,6 +1596,42 @@ describe("configs create variations", () => {
         defaultValue: 10,
       }),
     ]);
+  });
+
+  it("names the variation the default targeting rule value is, before the value", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/configs": {
+        status: 200,
+        body: createdConfig({
+          key: "checkout-button-size",
+          type: "integer",
+          role: "experiment",
+          typeOptions: { isInteger: true },
+          variations: [
+            { name: "small", value: "10" },
+            { name: "large", value: "20" },
+          ],
+        }),
+      },
+    });
+
+    const { exitCode, stdout } = await createConfig(adminApi.baseUrl, [
+      "--key",
+      "checkout-button-size",
+      "--type",
+      "integer",
+      "--role",
+      "experiment",
+      "--default-value",
+      "20",
+      "--variation",
+      "small=10",
+      "--variation",
+      "large=20",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stdout.split("\n")).toContain("Default targeting rule in every environment: large (20)");
   });
 
   it("sends no lifetime for an experiment created without --lifetime", async () => {
@@ -1634,7 +1670,7 @@ describe("configs create variations", () => {
     expect(stderr).toEqual("");
     expect(stdout.split("\n")).toEqual([
       "Created checkout-button-size in web-app: integer, experiment, temporary, client and server SDKs.",
-      "Default targeting rule in every environment: 10",
+      "Default targeting rule in every environment: small (10)",
       "",
     ]);
     expect(configCreationBodies(adminApi)).toEqual([

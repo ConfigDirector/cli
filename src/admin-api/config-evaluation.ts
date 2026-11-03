@@ -1,5 +1,6 @@
 import * as v from "valibot";
 import { RuleSchema } from "./targeting-rules.js";
+import { VariationSchema } from "./variations.js";
 
 export type SavedContextReference = { kind: string; identifier: string };
 
@@ -61,13 +62,19 @@ export const ConfigEvaluationSchema = v.object({
   environment: v.object({ name: v.string() }),
   context: v.nullable(v.object({ kind: v.string(), identifier: v.nullable(v.string()) })),
   value: v.optional(v.string()),
+  variationId: v.optional(v.string()),
   servedBy: v.variant("kind", [
     v.object({ kind: v.literal("rule"), ruleId: v.string() }),
     v.object({ kind: v.literal("default") }),
   ]),
   rules: v.array(RuleExplanationSchema),
-  targetingRules: v.object({ rules: v.array(RuleSchema), defaultValue: v.string() }),
+  targetingRules: v.object({
+    rules: v.array(RuleSchema),
+    defaultValue: v.string(),
+    defaultVariationId: v.optional(v.string()),
+  }),
   segments: v.record(v.string(), v.object({ name: v.string() })),
+  variations: v.optional(v.array(VariationSchema), []),
 });
 
 export type ConfigEvaluation = v.InferOutput<typeof ConfigEvaluationSchema>;

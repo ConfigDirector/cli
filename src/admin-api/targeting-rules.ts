@@ -2,6 +2,8 @@ import * as v from "valibot";
 
 const RuleValueSchema = v.union([v.string(), v.number(), v.boolean()]);
 
+export type RuleValue = v.InferOutput<typeof RuleValueSchema>;
+
 const attributeConditionEntries = {
   attribute: v.string(),
   trait: v.nullish(v.string()),
@@ -31,7 +33,11 @@ const ConditionSchema = v.variant("kind", [
 
 export type Condition = v.InferOutput<typeof ConditionSchema>;
 
-const PercentageSchema = v.object({ percentage: v.number(), value: RuleValueSchema });
+const PercentageSchema = v.object({
+  percentage: v.number(),
+  value: RuleValueSchema,
+  variationId: v.optional(v.string()),
+});
 
 export type Percentage = v.InferOutput<typeof PercentageSchema>;
 
@@ -43,6 +49,7 @@ export const RuleSchema = v.variant("type", [
       conditions: v.array(ConditionSchema),
       target: v.literal("value"),
       value: RuleValueSchema,
+      variationId: v.optional(v.string()),
     }),
     v.object({
       id: v.string(),

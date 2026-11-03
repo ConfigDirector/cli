@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { adminApiUnderTest, environmentsOf, firstEnvironmentOf } from "./support/admin-api-under-test.js";
 import { jsonOf, startCliUnderTest, uniqueKey } from "./support/built-cli.js";
-import { configKeyRemovedWhenTestFinishes, createBooleanFlag, setProPlanRule } from "./support/fixtures.js";
+import {
+  configKeyRemovedWhenTestFinishes,
+  createBooleanFlag,
+  createExperiment,
+  setProPlanRule,
+} from "./support/fixtures.js";
 
 type ListedConfig = { key: string; type: string; state: string };
 
@@ -152,6 +157,16 @@ describe.skipIf(adminApiUnderTest() === undefined)("configs against the Admin AP
         ),
       ),
     );
+  });
+
+  it("names the variation an experiment's default targeting rule value is", async () => {
+    const cli = await startCliUnderTest();
+    const key = await createExperiment(cli);
+
+    const shown = await cli.run(["configs", "get", key]);
+
+    expect(shown.exitCode).toEqual(0);
+    expect(shown.stdout.split("\n")).toContain("  Default targeting rule: control (Start free trial)");
   });
 
   it("exits 2 saying no config has the key when configs get names a missing config", async () => {

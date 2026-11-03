@@ -441,6 +441,86 @@ describe("evaluate output", () => {
     ]);
   });
 
+  it("names the variation it served and the variation of each value in the rules, before the value", async () => {
+    const adminApi = await startEvaluateAdminApi({
+      evaluateReply: {
+        status: 200,
+        body: evaluationOf({
+          value: "Try it free for 14 days",
+          variationId: "variation-treatment-a",
+          servedBy: { kind: "rule", ruleId: "rule-rollout" },
+          rules: [
+            {
+              ruleId: "rule-rollout",
+              outcome: "matched",
+              conditions: [],
+              bucket: {
+                identifier: "123",
+                defaultedToPredefinedBucket: false,
+                assignedPercentage: 62.5,
+                shares: [
+                  { percentageId: "share-control", from: 0, to: 40, value: "Start free trial" },
+                  { percentageId: "share-treatment-a", from: 40, to: 100, value: "Try it free for 14 days" },
+                ],
+                selectedPercentageId: "share-treatment-a",
+              },
+            },
+          ],
+          targetingRules: {
+            ...targetingRulesOf([
+              {
+                id: "rule-rollout",
+                type: "percentage",
+                target: "percentage",
+                order: 0,
+                percentages: [
+                  {
+                    id: "share-control",
+                    percentage: 40,
+                    value: "Start free trial",
+                    variationId: "variation-control",
+                  },
+                  {
+                    id: "share-treatment-a",
+                    percentage: 60,
+                    value: "Try it free for 14 days",
+                    variationId: "variation-treatment-a",
+                  },
+                ],
+              },
+            ]),
+            defaultValue: "Start free trial",
+            defaultVariationId: "variation-control",
+          },
+          variations: [
+            { id: "variation-control", name: "control", value: "Start free trial" },
+            { id: "variation-treatment-a", name: "treatment-a", value: "Try it free for 14 days" },
+          ],
+        }),
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await evaluate(adminApi.baseUrl, [
+      "new-checkout",
+      "--environment",
+      "production",
+      "--context-id",
+      "123",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "new-checkout in Production for user 123",
+      "",
+      "treatment-a (Try it free for 14 days), served by rule 1",
+      "",
+      "1. 40% get control (Start free trial), 60% get treatment-a (Try it free for 14 days)   matched: bucket 62.5 is in 40 to 100",
+      "Default targeting rule: control (Start free trial)",
+      "",
+    ]);
+  });
+
   it("exits 0 saying the value was served by the default targeting rule when no rule matched, with an absent trait", async () => {
     const adminApi = await startEvaluateAdminApi({
       evaluateReply: {
