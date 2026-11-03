@@ -4,6 +4,8 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-03
+
 ### Fixed
 
 - Commands no longer fail with `Could not reach the Admin API` when opening a connection takes longer than a quarter of a second, as it sometimes does on GitHub-hosted runners, which find the Admin API's IPv6 addresses but cannot reach them. Each of the Admin API's addresses now gets two seconds to connect before the CLI tries the next.
