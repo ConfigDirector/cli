@@ -17,7 +17,12 @@ import {
 import { writeRepositoryFile } from "./support/repository-files.js";
 import { createSandbox, type Sandbox } from "./support/sandbox.js";
 import { webApp } from "./support/scan-admin-api.js";
-import type { ReceivedRequest, StubReply } from "./support/stub-admin-api.js";
+import {
+  connectionReset,
+  startStubAdminApi,
+  type ReceivedRequest,
+  type StubReply,
+} from "./support/stub-admin-api.js";
 
 const createConfigIn = async (sandbox: Sandbox, baseUrl: string, commandLineArguments: string[]) => {
   const invocation = sandbox.invocation({
@@ -969,6 +974,49 @@ describe("configs create", () => {
     expect(stderr).toEqual(
       "Error: The Admin API refused the request: The API token is missing the `configs:create` permission. (INSUFFICIENT_PERMISSIONS)\n",
     );
+  });
+
+  it("exits 2 without sending the config again when the network resets the connection after the request went out", async () => {
+    const adminApi = await startBrowseAdminApi({ "/configs": connectionReset });
+
+    const { exitCode, stdout } = await createConfig(adminApi.baseUrl, featureFlagArguments);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `POST ${projectPath("/configs")}`]);
+  });
+
+  it("creates the config when the Admin API refuses the connection for the request at first", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/projects": { status: 200, body: [webApp], thenRefuseConnectionsForMilliseconds: 100 },
+        [projectPath("/configs")]: { status: 200, body: createdConfig() },
+      },
+    );
+
+    const { exitCode } = await createConfig(adminApi.baseUrl, featureFlagArguments);
+
+    expect(exitCode).toEqual(0);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `POST ${projectPath("/configs")}`]);
+  });
+
+  it("creates the config when none of the addresses of the Admin API's host accepts the connection for the request at first", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/projects": { status: 200, body: [webApp], thenRefuseConnectionsForMilliseconds: 100 },
+        [projectPath("/configs")]: { status: 200, body: createdConfig() },
+      },
+    );
+
+    const { exitCode } = await createConfig(
+      adminApi.baseUrl.replace("127.0.0.1", "localhost"),
+      featureFlagArguments,
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `POST ${projectPath("/configs")}`]);
   });
 });
 

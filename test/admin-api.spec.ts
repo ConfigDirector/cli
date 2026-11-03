@@ -1,11 +1,16 @@
 import { readFile } from "node:fs/promises";
-import { createServer } from "node:net";
+import { createServer, type Socket } from "node:net";
 import { Readable } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { run } from "../src/run.js";
 import { createSandbox } from "./support/sandbox.js";
 import { acme, startSignInAdminApi } from "./support/sign-in-admin-api.js";
-import { startStubAdminApi } from "./support/stub-admin-api.js";
+import {
+  connectionClosed,
+  connectionReset,
+  firstReplyThen,
+  startStubAdminApi,
+} from "./support/stub-admin-api.js";
 
 const webApp = {
   id: "4f0c1d2e-8a51-4c3b-9b6e-2d7f8a9b0c1d",
@@ -35,6 +40,27 @@ const closedPort = async () => {
 };
 
 const closedPortBaseUrl = async () => `http://127.0.0.1:${await closedPort()}`;
+
+const startPlainHttpHost = async () => {
+  const acceptedSockets: Socket[] = [];
+  const server = createServer((socket) => {
+    acceptedSockets.push(socket);
+    socket.end("HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  onTestFinished(
+    () =>
+      new Promise<void>((resolve) => {
+        acceptedSockets.forEach((socket) => socket.destroy());
+        server.close(() => resolve());
+      }),
+  );
+  const address = server.address();
+  return {
+    port: typeof address === "object" && address !== null ? address.port : 0,
+    connectionsAccepted: () => acceptedSockets.length,
+  };
+};
 
 const packageVersion = async () => {
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
@@ -328,5 +354,61 @@ describe("Admin API failures", () => {
     expect(exitCode).toEqual(2);
     expect(stderr).toContain(`${adminApi.baseUrl}/v1/projects`);
     expect(stdout).toEqual("");
+  });
+});
+
+describe("Admin API connection failures", () => {
+  it("repeat a GET whose connection the network reset, and use the answer to the second one", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      { "/v1/projects": firstReplyThen(connectionReset, { status: 200, body: [webApp] }) },
+    );
+
+    const { exitCode } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(adminApi.receivedRequests.map((request) => request.path)).toEqual([
+      "/v1/projects",
+      "/v1/projects",
+    ]);
+  });
+
+  it("repeat a GET whose connection closed before the answer, and use the answer to the second one", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      { "/v1/projects": firstReplyThen(connectionClosed, { status: 200, body: [webApp] }) },
+    );
+
+    const { exitCode } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(adminApi.receivedRequests.map((request) => request.path)).toEqual([
+      "/v1/projects",
+      "/v1/projects",
+    ]);
+  });
+
+  it("exit 2 naming the host after three attempts when the network resets every connection", async () => {
+    const adminApi = await startStubAdminApi(connectionReset);
+
+    const { exitCode, stdout, stderr } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(2);
+    expect(stderr).toContain(adminApi.baseUrl);
+    expect(stdout).toEqual("");
+    expect(adminApi.receivedRequests.map((request) => request.path)).toEqual([
+      "/v1/projects",
+      "/v1/projects",
+      "/v1/projects",
+    ]);
+  });
+
+  it("exit 2 after one attempt when the base URL asks for HTTPS from a host that answers in plain HTTP", async () => {
+    const plainHttpHost = await startPlainHttpHost();
+
+    const { exitCode } = await runInit(`https://127.0.0.1:${plainHttpHost.port}`);
+
+    expect(exitCode).toEqual(2);
+    expect(plainHttpHost.connectionsAccepted()).toEqual(1);
   });
 });

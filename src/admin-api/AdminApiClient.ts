@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import * as v from "valibot";
 import { version } from "../../package.json";
 import type { CliError } from "../CliError.js";
@@ -17,6 +18,7 @@ import {
 } from "./admin-api-errors.js";
 import { CopyPlanResponseSchema, type CopyConfigRequest, type CopyPlanResponse } from "./config-copy.js";
 import { CreatedConfigSchema, type CreateConfigRequest, type CreatedConfig } from "./config-creation.js";
+import { retryDecisionAfter } from "./connection-failure-retry.js";
 import {
   ConfigWithTargetingRulesSchema,
   type ConfigWithTargetingRules,
@@ -481,19 +483,26 @@ export class AdminApiClient {
       "User-Agent": `configdirector-cli/${version}`,
       "X-SourceClient": "cli",
     };
-    try {
-      return await fetch(
-        url,
-        "body" in request
-          ? {
-              method: request.method,
-              headers: { ...headers, "Content-Type": "application/json" },
-              body: JSON.stringify(request.body),
-            }
-          : { method: request.method, headers },
-      );
-    } catch (error) {
-      throw new ApiUnreachableError(this.connection.baseUrl, error);
+    const requestInit =
+      "body" in request
+        ? {
+            method: request.method,
+            headers: { ...headers, "Content-Type": "application/json" },
+            body: JSON.stringify(request.body),
+          }
+        : { method: request.method, headers };
+    for (let attemptsMade = 1; ; attemptsMade += 1) {
+      try {
+        return await fetch(url, requestInit);
+      } catch (failure) {
+        const retry = retryDecisionAfter(request.method, failure, attemptsMade);
+        switch (retry.decision) {
+          case "give-up":
+            throw new ApiUnreachableError(this.connection.baseUrl, failure);
+          case "retry":
+            await delay(retry.waitMilliseconds);
+        }
+      }
     }
   }
 }

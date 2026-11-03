@@ -8,6 +8,7 @@ import {
 } from "./support/browse-admin-api.js";
 import { productionEnvironment, testEnvironment } from "./support/evaluate-admin-api.js";
 import { createSandbox } from "./support/sandbox.js";
+import { connectionReset, firstReplyThen } from "./support/stub-admin-api.js";
 
 const deleteSegment = async (baseUrl: string, commandLineArguments: string[]) => {
   const sandbox = await createSandbox();
@@ -71,6 +72,21 @@ describe("segments delete", () => {
       authorization: "Bearer cd_flag_token",
       sourceClient: "cli",
     });
+  });
+
+  it("deletes the segment when the network resets the delete request's first connection", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/segments/beta-testers": firstReplyThen(connectionReset, { status: 204 }),
+    });
+
+    const { exitCode } = await deleteSegment(adminApi.baseUrl, ["beta-testers"]);
+
+    expect(exitCode).toEqual(0);
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `DELETE ${projectPath("/segments/beta-testers")}`,
+      `DELETE ${projectPath("/segments/beta-testers")}`,
+    ]);
   });
 });
 

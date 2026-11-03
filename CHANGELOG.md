@@ -8,6 +8,7 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 - Commands no longer fail with `Could not reach the Admin API` when opening a connection takes longer than a quarter of a second, as it sometimes does on GitHub-hosted runners, which find the Admin API's IPv6 addresses but cannot reach them. Each of the Admin API's addresses now gets two seconds to connect before the CLI tries the next.
 - When none of the Admin API's addresses can be reached, `Could not reach the Admin API` says why each one failed, where it showed empty brackets.
+- Commands no longer fail the first time the network drops a connection to the Admin API. When a connection cannot be opened, the CLI tries again up to twice, half a second and then a second later. When the network breaks a connection after a request went out, it tries again only for requests that read, replace or delete; the others, such as `configs create`, still exit with 2, because ConfigDirector may already have received them.
 
 ## [0.18.0] - 2026-11-03
 

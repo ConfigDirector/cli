@@ -10,7 +10,7 @@ import { productionEnvironment } from "./support/evaluate-admin-api.js";
 import { writeRepositoryFile } from "./support/repository-files.js";
 import { createSandbox, type Sandbox } from "./support/sandbox.js";
 import { webApp } from "./support/scan-admin-api.js";
-import type { StubReplyForRequest } from "./support/stub-admin-api.js";
+import { connectionReset, firstReplyThen, type StubReplyForRequest } from "./support/stub-admin-api.js";
 
 const updateSegmentIn = async (sandbox: Sandbox, baseUrl: string, commandLineArguments: string[]) => {
   const invocation = sandbox.invocation({
@@ -220,6 +220,24 @@ describe("segments update", () => {
       authorization: "Bearer cd_flag_token",
       sourceClient: "cli",
     });
+  });
+
+  it("updates the segment when the network resets the update request's first connection", async () => {
+    const resetFirstUpdate = firstReplyThen(connectionReset, { status: 200, body: betaTesters });
+    const adminApi = await startBrowseAdminApi({
+      "/segments/beta-testers": (request) =>
+        request.method === "PUT" ? resetFirstUpdate() : { status: 200, body: betaTesters },
+    });
+
+    const { exitCode } = await updateSegmentFromFile(adminApi.baseUrl, betaTesters, ["beta-testers"]);
+
+    expect(exitCode).toEqual(0);
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath("/segments/beta-testers")}`,
+      `PUT ${projectPath("/segments/beta-testers")}`,
+      `PUT ${projectPath("/segments/beta-testers")}`,
+    ]);
   });
 });
 
