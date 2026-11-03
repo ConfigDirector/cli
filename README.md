@@ -211,6 +211,8 @@ production (live)
   Default targeting rule: false
 ```
 
+On an experiment, each value comes after the name of its variation, as in `40% get control (Start free trial), 60% get treatment-a (Try it free for 14 days)`. `evaluate` names the variation it served the same way, as in `treatment-a (Try it free for 14 days), served by rule 2`, and `configs create` names the variation of the default targeting rule value it starts with.
+
 `projects list`, `environments list`, `configs list`, `configs activity` and `segments list` print a header row that names their columns above their lines, such as `KEY   TYPE   ROLE   LIFETIME   STATE` for `configs list`, and `--no-headers` leaves it out. An empty list prints only a sentence, such as `No configs found in web-app.`
 
 With `--json`, each prints the Admin API's response as received, except `configs list --state`, which prints only the configs in that state. A key no config or segment has exits with 2.

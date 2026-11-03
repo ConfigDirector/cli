@@ -4,6 +4,8 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-03
+
 ### Changed
 
 - `configdirector configs get`, `evaluate` and `configs create` name an experiment's variations wherever they show one of its values, with the value after the name, as in `40% get control (Start free trial), 60% get treatment-a (Try it free for 14 days)` and `Default targeting rule: control (Start free trial)`. `evaluate` names the variation it served too, as in `treatment-a (Try it free for 14 days), served by rule 2`. A variation without a name, and a config without variations, show the value alone, as before. `--json` prints the Admin API's response as received, which now carries the id of each value's variation.
