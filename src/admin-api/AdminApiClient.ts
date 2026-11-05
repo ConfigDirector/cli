@@ -17,6 +17,7 @@ import {
   UnexpectedApiResponseError,
 } from "./admin-api-errors.js";
 import { CopyPlanResponseSchema, type CopyConfigRequest, type CopyPlanResponse } from "./config-copy.js";
+import { ExperimentRunsSchema, type ExperimentRun } from "./experiment-runs.js";
 import { CreatedConfigSchema, type CreateConfigRequest, type CreatedConfig } from "./config-creation.js";
 import { retryDecisionAfter } from "./connection-failure-retry.js";
 import {
@@ -366,6 +367,42 @@ export class AdminApiClient {
       `/v1/projects/${encodeURIComponent(projectId)}/configs/${encodeURIComponent(configKey)}/copy`,
       CopyPlanResponseSchema,
       { method: "POST", body: request },
+    );
+  }
+
+  public listRuns(
+    projectId: string,
+    configKey: string,
+    environmentId: string,
+  ): Promise<ParsedResponse<ExperimentRun[]> | undefined> {
+    return this.getIfFound(
+      `/v1/projects/${encodeURIComponent(projectId)}/configs/${encodeURIComponent(configKey)}/environments/${encodeURIComponent(environmentId)}/runs`,
+      ExperimentRunsSchema,
+    );
+  }
+
+  public shipVariation(
+    projectId: string,
+    configKey: string,
+    environmentId: string,
+    variationId: string,
+  ): Promise<ParsedResponse<ConfigWithTargetingRules> | undefined> {
+    return this.requestIfFound(
+      `/v1/projects/${encodeURIComponent(projectId)}/configs/${encodeURIComponent(configKey)}/environments/${encodeURIComponent(environmentId)}/ship`,
+      ConfigWithTargetingRulesSchema,
+      { method: "POST", body: { variationId } },
+    );
+  }
+
+  public stopRun(
+    projectId: string,
+    configKey: string,
+    environmentId: string,
+  ): Promise<ParsedResponse<ConfigWithTargetingRules> | undefined> {
+    return this.requestIfFound(
+      `/v1/projects/${encodeURIComponent(projectId)}/configs/${encodeURIComponent(configKey)}/environments/${encodeURIComponent(environmentId)}/stop`,
+      ConfigWithTargetingRulesSchema,
+      { method: "POST", body: {} },
     );
   }
 

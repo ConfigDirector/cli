@@ -70,7 +70,7 @@ const settingLines = (config: ConfigWithTargetingRules): string[] => [
 export const environmentLabel = (environment: { slug: string; live: boolean }): string =>
   environment.live ? `${environment.slug} (live)` : environment.slug;
 
-const targetingRuleLines = (
+export const targetingRuleLines = (
   targetingRules: TargetingRulesInEnvironment,
   segments: SegmentsById,
   variations: Variation[],

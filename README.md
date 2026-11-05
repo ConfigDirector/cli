@@ -318,6 +318,35 @@ configdirector targeting-rules set new-checkout --environment production --rules
 
 `targeting-rules set` needs `projects:read`, `environments:read` and `config-targeting-rules:update`. `targeting-rules reference` needs only a valid token and no project.
 
+## Experiment runs
+
+```bash
+configdirector configs runs checkout-cta-copy --environment production
+configdirector configs ship checkout-cta-copy --environment production --variation treatment-a
+configdirector configs stop checkout-cta-copy --environment production
+```
+
+A run is a period during which an experiment's targeting rules in one environment split traffic between its variations. `configs runs` lists the experiment's runs in an environment, newest first, with how many distinct contexts each variation reached, called exposures, against the share configured when the run started:
+
+```txt
+Runs of checkout-cta-copy in production (live), newest first:
+
+Running since 2026-11-03 12:00 UTC
+  Rollout: everyone not caught by a rule above
+    control (Start free trial)              412 exposures   configured 50%
+    treatment-a (Try it free for 14 days)   398 exposures   configured 50%
+    810 contexts exposed, 3201 evaluations. The split matches the configured shares.
+```
+
+- `configs ship` serves one variation to everyone in the environment and ends the run. `--variation` takes its name or its ID. The default targeting rule value becomes the variation's value, every percentage rollout is removed, including one a conditional rule serves, and a conditional rule serving a single value stays.
+- `configs stop` ends the run without choosing a variation: every percentage rollout is removed, including one a conditional rule serves, and the default targeting rule value and any conditional rule serving a single value stay.
+
+Both print the rules they saved, ask for no confirmation and treat a live environment like any other, so check the environment before you run them.
+
+`configs ship` exits with 2 when `--variation` matches none of the experiment's variations, or several with the same name, and lists them with their IDs, and when the config has no variations, since only an experiment has them. `configs stop` exits with 2 when the config is not an experiment or the environment holds no percentage rollout. All three exit with 2 when no config has the key or no environment has the slug. With `--json`, they print the Admin API's response as received.
+
+`configs runs` needs `projects:read`, `environments:read` and `configs:read`. `configs ship` also needs `config-targeting-rules:update`, and `configs stop` needs `projects:read`, `environments:read` and `config-targeting-rules:update`. Shipped and stopped runs show in the audit log with the source CLI.
+
 ## Change segments
 
 ```bash

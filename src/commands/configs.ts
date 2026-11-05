@@ -17,6 +17,9 @@ import { availabilityDescription, configText } from "../configs/config-text.js";
 import { copyPlanText, type ConfigCopying, type CopyMode } from "../configs/copy-plan-text.js";
 import { environmentMappingOf } from "../configs/environment-mapping.js";
 import { newConfigOf, type NewConfig, type NewConfigOptions } from "../configs/new-config.js";
+import { runsText, shippedVariationText, stoppedRunText } from "../configs/run-text.js";
+import { findVariationToShip } from "../configs/variation-selection.js";
+import { findEnvironmentBySlug } from "../environment-selection.js";
 import { ExitCode } from "../ExitCode.js";
 import { plural } from "../plural.js";
 import { connectToLinkedProject, projectWithSlug } from "../project-selection.js";
@@ -376,6 +379,78 @@ export const copyConfig = async (
   return {
     json: receivedPlan.responseBody,
     text: copyPlanText(copying, receivedPlan.parsedBody.plan, mode),
+    exitCode: ExitCode.success,
+  };
+};
+
+type ConfigInEnvironmentOptions = { environment: string };
+
+export const showConfigRuns = async (
+  context: CommandContext,
+  [configKey]: readonly [string],
+  options: ConfigInEnvironmentOptions,
+): Promise<CommandOutput> => {
+  const { client, project } = await connectToLinkedProject(context);
+  const environment = await findEnvironmentBySlug(client, project, options.environment);
+  const receivedConfig = await client.getConfig(project.id, configKey);
+  const receivedRuns = receivedConfig && (await client.listRuns(project.id, configKey, environment.id));
+  if (receivedConfig === undefined || receivedRuns === undefined) {
+    throw new CliError(`No config in ${project.slug} has the key "${configKey}".`);
+  }
+
+  return {
+    json: receivedRuns.responseBody,
+    text: runsText(receivedConfig.parsedBody, configKey, environment, receivedRuns.parsedBody),
+    exitCode: ExitCode.success,
+  };
+};
+
+type ShipVariationOptions = ConfigInEnvironmentOptions & { variation: string };
+
+export const shipVariation = async (
+  context: CommandContext,
+  [configKey]: readonly [string],
+  options: ShipVariationOptions,
+): Promise<CommandOutput> => {
+  const { client, project } = await connectToLinkedProject(context);
+  const environment = await findEnvironmentBySlug(client, project, options.environment);
+  const receivedConfig = await client.getConfig(project.id, configKey);
+  if (receivedConfig === undefined) {
+    throw new CliError(`No config in ${project.slug} has the key "${configKey}".`);
+  }
+  const variation = findVariationToShip(receivedConfig.parsedBody, options.variation);
+  const savedConfig = await client.shipVariation(project.id, configKey, environment.id, variation.id);
+  if (savedConfig === undefined) {
+    throw new CliError(`No config in ${project.slug} has the key "${configKey}".`);
+  }
+  const segments = await segmentNamesFor(client, project, savedConfig.parsedBody);
+
+  return {
+    json: savedConfig.responseBody,
+    text: shippedVariationText(
+      { config: savedConfig.parsedBody, requestedKey: configKey, environment, segments },
+      variation,
+    ),
+    exitCode: ExitCode.success,
+  };
+};
+
+export const stopRun = async (
+  context: CommandContext,
+  [configKey]: readonly [string],
+  options: ConfigInEnvironmentOptions,
+): Promise<CommandOutput> => {
+  const { client, project } = await connectToLinkedProject(context);
+  const environment = await findEnvironmentBySlug(client, project, options.environment);
+  const savedConfig = await client.stopRun(project.id, configKey, environment.id);
+  if (savedConfig === undefined) {
+    throw new CliError(`No config in ${project.slug} has the key "${configKey}".`);
+  }
+  const segments = await segmentNamesFor(client, project, savedConfig.parsedBody);
+
+  return {
+    json: savedConfig.responseBody,
+    text: stoppedRunText({ config: savedConfig.parsedBody, requestedKey: configKey, environment, segments }),
     exitCode: ExitCode.success,
   };
 };

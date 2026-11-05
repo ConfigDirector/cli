@@ -1,6 +1,6 @@
 import * as v from "valibot";
 
-const RuleValueSchema = v.union([v.string(), v.number(), v.boolean()]);
+export const RuleValueSchema = v.union([v.string(), v.number(), v.boolean()]);
 
 export type RuleValue = v.InferOutput<typeof RuleValueSchema>;
 

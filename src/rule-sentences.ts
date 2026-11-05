@@ -52,6 +52,9 @@ export const describeCondition = (condition: Condition, segments: SegmentsById):
 export const valueWithVariationName = (value: RuleValue, variationName: string | null | undefined): string =>
   variationName ? `${variationName} (${String(value)})` : String(value);
 
+export const describeVariation = (variation: Variation): string =>
+  valueWithVariationName(variation.value, variation.name);
+
 export const describeValue = (
   value: RuleValue,
   variationId: string | undefined,

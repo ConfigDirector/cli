@@ -4,6 +4,11 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- `configdirector configs runs <key> --environment <slug>` lists an experiment's runs in an environment, newest first: when each started and ended, how it ended, and, per rollout, how many distinct contexts each variation reached against the share configured when the run started, and whether the split matches those shares. `--json` prints the Admin API's response as received.
+- `configdirector configs ship <key> --environment <slug> --variation <name or id>` serves one variation to everyone in the environment and ends its run: in one save of the targeting rules, the default targeting rule value becomes the variation's value, every percentage rollout is removed, including one a conditional rule serves, and a conditional rule serving a single value stays. `configdirector configs stop <key> --environment <slug>` ends the run without choosing a variation, keeping the default targeting rule value. Both print the rules they saved, ask for no confirmation and treat a live environment like any other. They exit with 2 when ConfigDirector refuses the change, such as a stop on a config that is not an experiment or with no percentage rollout saved in the environment, and `configs ship` exits with 2 listing the variations when `--variation` matches none, or several with the same name, and saying so when the config has no variations.
+
 ## [0.18.1] - 2026-11-03
 
 ### Fixed

@@ -113,8 +113,13 @@ export const proPlanRulesFile = {
   ],
 };
 
-export const setProPlanRule = async (cli: CliUnderTest, configKey: string, environmentSlug: string) => {
-  await writeRepositoryFile(cli.sandbox.workingDirectory, "rules.json", JSON.stringify(proPlanRulesFile));
+const setTargetingRules = async (
+  cli: CliUnderTest,
+  configKey: string,
+  environmentSlug: string,
+  rulesFile: object,
+) => {
+  await writeRepositoryFile(cli.sandbox.workingDirectory, "rules.json", JSON.stringify(rulesFile));
 
   const result = await cli.run([
     "targeting-rules",
@@ -127,6 +132,27 @@ export const setProPlanRule = async (cli: CliUnderTest, configKey: string, envir
   ]);
   requireSuccess(`targeting-rules set ${configKey}`, result);
 };
+
+export const setProPlanRule = (cli: CliUnderTest, configKey: string, environmentSlug: string) =>
+  setTargetingRules(cli, configKey, environmentSlug, proPlanRulesFile);
+
+const evenSplitRulesFile = {
+  defaultValue: "Start free trial",
+  rules: [
+    {
+      type: "percentage",
+      order: 0,
+      target: "percentage",
+      percentages: [
+        { percentage: 50, value: "Start free trial" },
+        { percentage: 50, value: "Try it free for 14 days" },
+      ],
+    },
+  ],
+};
+
+export const setEvenSplit = (cli: CliUnderTest, experimentKey: string, environmentSlug: string) =>
+  setTargetingRules(cli, experimentKey, environmentSlug, evenSplitRulesFile);
 
 export const checkoutFileReading = (configKey: string): string =>
   [

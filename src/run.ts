@@ -12,7 +12,10 @@ import {
   getConfig,
   LIFECYCLE_STATES,
   listConfigs,
+  shipVariation,
   showConfigActivity,
+  showConfigRuns,
+  stopRun,
 } from "./commands/configs.js";
 import { listEnvironments } from "./commands/environments.js";
 import { evaluate } from "./commands/evaluate.js";
@@ -247,7 +250,9 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
 
   const configsCommand = program
     .command("configs")
-    .description("list, show, create, copy and archive a project's configs");
+    .description(
+      "list, show, create, copy and archive a project's configs, and list, ship and stop an experiment's runs",
+    );
 
   configsCommand
     .command("list")
@@ -411,6 +416,41 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
         "without creating anything.",
     )
     .action(commandAction(copyConfig));
+
+  configsCommand
+    .command("runs")
+    .argument("<key>", "the experiment's key, or an old key of it")
+    .description("list an experiment's runs in an environment with their exposures, newest first")
+    .requiredOption("--environment <slug>", "slug of the environment to list the runs of (required)")
+    .action(commandAction(showConfigRuns));
+
+  configsCommand
+    .command("ship")
+    .argument("<key>", "the experiment's key, or an old key of it")
+    .description("serve one variation of an experiment to everyone in an environment, ending its run")
+    .requiredOption("--environment <slug>", "slug of the environment to ship the variation in (required)")
+    .requiredOption("--variation <variation>", "the name or id of the variation to ship (required)")
+    .addHelpText(
+      "after",
+      "\nIn one targeting rules save, the default targeting rule value becomes the variation's value, every " +
+        "percentage rollout is removed, including one a conditional rule serves, and a conditional rule serving a " +
+        "single value stays. It asks for no confirmation and treats a live environment like any other.",
+    )
+    .action(commandAction(shipVariation));
+
+  configsCommand
+    .command("stop")
+    .argument("<key>", "the experiment's key, or an old key of it")
+    .description("end an experiment's run in an environment without choosing a variation")
+    .requiredOption("--environment <slug>", "slug of the environment to stop the run in (required)")
+    .addHelpText(
+      "after",
+      "\nIn one targeting rules save, every percentage rollout is removed, including one a conditional rule serves, " +
+        "the default targeting rule value stays, and a conditional rule serving a single value stays. It asks for " +
+        "no confirmation and treats a live environment like any other. When the config is not an experiment, or no " +
+        "percentage rollout is saved in the environment, there is no run to stop, and the command exits with 2.",
+    )
+    .action(commandAction(stopRun));
 
   configsCommand
     .command("archive")
