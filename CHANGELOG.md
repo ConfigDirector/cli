@@ -4,6 +4,8 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-04
+
 ### Added
 
 - `configdirector configs runs <key> --environment <slug>` lists an experiment's runs in an environment, newest first: when each started and ended, how it ended, and, per rollout, how many distinct contexts each variation reached against the share configured when the run started, and whether the split matches those shares. `--json` prints the Admin API's response as received.
