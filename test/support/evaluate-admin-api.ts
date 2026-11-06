@@ -50,6 +50,7 @@ export const evaluationOf = (overrides: object = {}) => ({
     {
       ruleId: "a1b2c3d4-0000-4000-8000-000000000001",
       outcome: "not-matched",
+      rolloutSkippedNoIdentifier: false,
       conditions: [],
       bucket: {
         identifier: "123",
@@ -61,6 +62,7 @@ export const evaluationOf = (overrides: object = {}) => ({
     {
       ruleId: "a1b2c3d4-0000-4000-8000-000000000002",
       outcome: "matched",
+      rolloutSkippedNoIdentifier: false,
       conditions: [
         {
           conditionId: "c1b2c3d4-0000-4000-8000-000000000001",
@@ -71,7 +73,12 @@ export const evaluationOf = (overrides: object = {}) => ({
         },
       ],
     },
-    { ruleId: "a1b2c3d4-0000-4000-8000-000000000003", outcome: "not-evaluated", conditions: [] },
+    {
+      ruleId: "a1b2c3d4-0000-4000-8000-000000000003",
+      outcome: "not-evaluated",
+      rolloutSkippedNoIdentifier: false,
+      conditions: [],
+    },
   ],
   targetingRules: targetingRulesOf([
     {

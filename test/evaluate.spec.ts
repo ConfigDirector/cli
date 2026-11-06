@@ -267,7 +267,7 @@ const traitCondition = (id: string, trait: string, operator: string, targetValue
   targetValues,
 });
 
-const everyOutcomeEvaluation = evaluationOf({
+const evaluationServedByFifthRule = evaluationOf({
   context: { kind: "user", identifier: "123", name: "Ada", traits: { plan: "free", country: "NZ" } },
   value: "true",
   servedBy: { kind: "rule", ruleId: "rule-5" },
@@ -275,6 +275,7 @@ const everyOutcomeEvaluation = evaluationOf({
     {
       ruleId: "rule-1",
       outcome: "not-matched",
+      rolloutSkippedNoIdentifier: false,
       conditions: [],
       bucket: {
         identifier: "123",
@@ -286,6 +287,7 @@ const everyOutcomeEvaluation = evaluationOf({
     {
       ruleId: "rule-2",
       outcome: "not-matched",
+      rolloutSkippedNoIdentifier: false,
       conditions: [
         {
           conditionId: "condition-plan-pro",
@@ -297,10 +299,11 @@ const everyOutcomeEvaluation = evaluationOf({
         { conditionId: "condition-country", outcome: "not-evaluated" },
       ],
     },
-    { ruleId: "rule-3", outcome: "errored", conditions: [] },
+    { ruleId: "rule-3", outcome: "errored", rolloutSkippedNoIdentifier: false, conditions: [] },
     {
       ruleId: "rule-4",
       outcome: "not-matched",
+      rolloutSkippedNoIdentifier: false,
       conditions: [
         {
           conditionId: "condition-beta",
@@ -314,6 +317,7 @@ const everyOutcomeEvaluation = evaluationOf({
     {
       ruleId: "rule-5",
       outcome: "matched",
+      rolloutSkippedNoIdentifier: false,
       conditions: [
         {
           conditionId: "condition-plan-free",
@@ -341,7 +345,7 @@ const everyOutcomeEvaluation = evaluationOf({
         selectedPercentageId: "share-5-true",
       },
     },
-    { ruleId: "rule-6", outcome: "not-evaluated", conditions: [] },
+    { ruleId: "rule-6", outcome: "not-evaluated", rolloutSkippedNoIdentifier: false, conditions: [] },
   ],
   targetingRules: targetingRulesOf([
     {
@@ -412,7 +416,7 @@ const everyOutcomeEvaluation = evaluationOf({
 describe("evaluate output", () => {
   it("shows the value, the rule that served it and what each rule tested with its outcome", async () => {
     const adminApi = await startEvaluateAdminApi({
-      evaluateReply: { status: 200, body: everyOutcomeEvaluation },
+      evaluateReply: { status: 200, body: evaluationServedByFifthRule },
     });
 
     const { exitCode, stdout, stderr } = await evaluate(adminApi.baseUrl, [
@@ -453,6 +457,7 @@ describe("evaluate output", () => {
             {
               ruleId: "rule-rollout",
               outcome: "matched",
+              rolloutSkippedNoIdentifier: false,
               conditions: [],
               bucket: {
                 identifier: "123",
@@ -533,6 +538,7 @@ describe("evaluate output", () => {
             {
               ruleId: "rule-pro",
               outcome: "not-matched",
+              rolloutSkippedNoIdentifier: false,
               conditions: [
                 {
                   conditionId: "condition-plan",
@@ -579,22 +585,153 @@ describe("evaluate output", () => {
     ]);
   });
 
-  it("says a context without an identifier gets bucket 0 in a percentage rule", async () => {
+  it("says a percentage rollout was skipped because the context has no identifier, and shows the rules after it as not evaluated", async () => {
     const adminApi = await startEvaluateAdminApi({
       evaluateReply: {
         status: 200,
         body: evaluationOf({
           context: { kind: "device", identifier: null, name: null, traits: null },
+          value: "false",
+          servedBy: { kind: "default" },
+          rules: [
+            {
+              ruleId: "rule-rollout",
+              outcome: "not-matched",
+              rolloutSkippedNoIdentifier: true,
+              conditions: [],
+            },
+            {
+              ruleId: "rule-pro",
+              outcome: "not-evaluated",
+              rolloutSkippedNoIdentifier: false,
+              conditions: [],
+            },
+          ],
+          targetingRules: targetingRulesOf([
+            {
+              id: "rule-rollout",
+              type: "percentage",
+              target: "percentage",
+              order: 0,
+              percentages: [
+                { id: "share-true", percentage: 30, value: true },
+                { id: "share-false", percentage: 70, value: false },
+              ],
+            },
+            {
+              id: "rule-pro",
+              type: "conditional",
+              order: 1,
+              conditions: [traitCondition("condition-plan", "/plan", "is one of", ["pro"])],
+              target: "value",
+              value: true,
+              percentages: [],
+            },
+          ]),
+        }),
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await evaluate(adminApi.baseUrl, [
+      "new-checkout",
+      "--environment",
+      "production",
+      "--context-kind",
+      "device",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "new-checkout in Production for a device context without an identifier",
+      "",
+      "false, served by the default targeting rule",
+      "",
+      "1. 30% get true, 70% get false   rollout skipped: the context has no identifier",
+      "2. plan is one of pro: true      not evaluated",
+      "Default targeting rule: false",
+      "",
+    ]);
+  });
+
+  it("says the rollout a conditional rule serves was skipped when its conditions matched a context without an identifier", async () => {
+    const adminApi = await startEvaluateAdminApi({
+      evaluateReply: {
+        status: 200,
+        body: evaluationOf({
+          context: { kind: "user", identifier: null, name: null, traits: { plan: "pro" } },
+          value: "false",
+          servedBy: { kind: "default" },
+          rules: [
+            {
+              ruleId: "rule-pro-rollout",
+              outcome: "not-matched",
+              rolloutSkippedNoIdentifier: true,
+              conditions: [
+                {
+                  conditionId: "condition-plan",
+                  kind: "attribute",
+                  outcome: "matched",
+                  resolvedValue: "pro",
+                  resolvedType: "scalar",
+                },
+              ],
+            },
+          ],
+          targetingRules: targetingRulesOf([
+            {
+              id: "rule-pro-rollout",
+              type: "conditional",
+              order: 0,
+              conditions: [traitCondition("condition-plan", "/plan", "is one of", ["pro"])],
+              target: "percentage",
+              percentages: [
+                { id: "share-true", percentage: 50, value: true },
+                { id: "share-false", percentage: 50, value: false },
+              ],
+            },
+          ]),
+        }),
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await evaluate(adminApi.baseUrl, [
+      "new-checkout",
+      "--environment",
+      "production",
+      "--context-trait",
+      "plan=pro",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "new-checkout in Production for a user context without an identifier",
+      "",
+      "false, served by the default targeting rule",
+      "",
+      "1. plan is one of pro: 50% get true, 50% get false   rollout skipped: the context has no identifier",
+      "Default targeting rule: false",
+      "",
+    ]);
+  });
+
+  it("shows a rollout's bucket when the response's bucket has no defaultedToPredefinedBucket", async () => {
+    const adminApi = await startEvaluateAdminApi({
+      evaluateReply: {
+        status: 200,
+        body: evaluationOf({
           value: "true",
           servedBy: { kind: "rule", ruleId: "rule-rollout" },
           rules: [
             {
               ruleId: "rule-rollout",
               outcome: "matched",
+              rolloutSkippedNoIdentifier: false,
               conditions: [],
               bucket: {
-                defaultedToPredefinedBucket: true,
-                assignedPercentage: 0,
+                identifier: "123",
+                assignedPercentage: 12.5,
                 shares: [
                   { percentageId: "share-true", from: 0, to: 30, value: "true" },
                   { percentageId: "share-false", from: 30, to: 100, value: "false" },
@@ -623,21 +760,15 @@ describe("evaluate output", () => {
       "new-checkout",
       "--environment",
       "production",
-      "--context-kind",
-      "device",
+      "--context-id",
+      "123",
     ]);
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
-    expect(stdout.split("\n")).toEqual([
-      "new-checkout in Production for a device context without an identifier",
-      "",
-      "true, served by rule 1",
-      "",
-      "1. 30% get true, 70% get false   matched: no identifier, so bucket 0.0 is in 0 to 30",
-      "Default targeting rule: false",
-      "",
-    ]);
+    expect(stdout.split("\n")[4]).toEqual(
+      "1. 30% get true, 70% get false   matched: bucket 12.5 is in 0 to 30",
+    );
   });
 
   it("names the group that matched when a not in segment condition fails", async () => {
@@ -651,6 +782,7 @@ describe("evaluate output", () => {
             {
               ruleId: "rule-not-internal",
               outcome: "not-matched",
+              rolloutSkippedNoIdentifier: false,
               conditions: [
                 {
                   conditionId: "condition-internal",
@@ -710,6 +842,7 @@ describe("evaluate output", () => {
             {
               ruleId: "rule-deleted-segment",
               outcome: "not-matched",
+              rolloutSkippedNoIdentifier: false,
               conditions: [
                 {
                   conditionId: "condition-deleted",
@@ -770,6 +903,7 @@ describe("evaluate output", () => {
             {
               ruleId: "rule-attributes",
               outcome: "not-matched",
+              rolloutSkippedNoIdentifier: false,
               conditions: [
                 {
                   conditionId: "condition-identifier",

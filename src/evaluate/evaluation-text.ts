@@ -68,13 +68,8 @@ const bucketPlacement = (bucket: Bucket): string => {
   return `${assigned} is outside ${describeShareRange(0, bucket.shares.at(-1)?.to ?? 0)}`;
 };
 
-const describeBucket = (bucket: Bucket): string =>
-  bucket.defaultedToPredefinedBucket
-    ? `no identifier, so ${bucketPlacement(bucket)}`
-    : bucketPlacement(bucket);
-
 const withBucket = (outcome: string, bucket: Bucket | undefined): string =>
-  bucket === undefined ? outcome : `${outcome}: ${describeBucket(bucket)}`;
+  bucket === undefined ? outcome : `${outcome}: ${bucketPlacement(bucket)}`;
 
 const conditionsOf = (rule: Rule | undefined): Condition[] =>
   rule?.type === "conditional" ? rule.conditions : [];
@@ -124,8 +119,13 @@ const describeNotMatched = (
     : `not matched: ${failingCondition}`;
 };
 
+type EvaluatorRuleOutcome = RuleExplanation["outcome"] | "rollout-skipped-no-identifier";
+
+const evaluatorRuleOutcomeOf = (explanation: RuleExplanation): EvaluatorRuleOutcome =>
+  explanation.rolloutSkippedNoIdentifier ? "rollout-skipped-no-identifier" : explanation.outcome;
+
 const RULE_OUTCOME_DESCRIPTIONS: {
-  [O in RuleExplanation["outcome"]]: (
+  [O in EvaluatorRuleOutcome]: (
     explanation: RuleExplanation,
     conditions: Condition[],
     segments: SegmentsById,
@@ -135,6 +135,7 @@ const RULE_OUTCOME_DESCRIPTIONS: {
   "not-matched": describeNotMatched,
   "not-evaluated": () => "not evaluated",
   errored: () => "errored",
+  "rollout-skipped-no-identifier": () => "rollout skipped: the context has no identifier",
 };
 
 const ruleLines = (evaluation: ConfigEvaluation): string[] => {
@@ -144,7 +145,11 @@ const ruleLines = (evaluation: ConfigEvaluation): string[] => {
       const rule = rulesById.get(explanation.ruleId);
       return [
         `${index + 1}. ${rule === undefined ? explanation.ruleId : describeRule(rule, evaluation.segments, evaluation.variations)}`,
-        RULE_OUTCOME_DESCRIPTIONS[explanation.outcome](explanation, conditionsOf(rule), evaluation.segments),
+        RULE_OUTCOME_DESCRIPTIONS[evaluatorRuleOutcomeOf(explanation)](
+          explanation,
+          conditionsOf(rule),
+          evaluation.segments,
+        ),
       ];
     }),
   );

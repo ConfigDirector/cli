@@ -4,6 +4,10 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+### Changed
+
+- `configdirector evaluate` says when a percentage rollout was skipped because the context has no identifier. The rule's line ends with `rollout skipped: the context has no identifier`, where it showed `not matched` with no reason, both for a percentage rule and for a conditional rule that serves a percentage rollout once its conditions matched. The rules after it show `not evaluated` and the context gets the default targeting rule value, as before. `--json` prints the Admin API's response as received, as before.
+
 ## [0.19.0] - 2026-11-04
 
 ### Added

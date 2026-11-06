@@ -40,7 +40,6 @@ const ConditionExplanationSchema = v.union([
 ]);
 
 const BucketSchema = v.object({
-  defaultedToPredefinedBucket: v.boolean(),
   assignedPercentage: v.number(),
   shares: v.array(v.object({ percentageId: v.string(), from: v.number(), to: v.number() })),
   selectedPercentageId: v.optional(v.string()),
@@ -53,6 +52,7 @@ const RuleExplanationSchema = v.object({
   outcome: v.picklist(["matched", "not-matched", "not-evaluated", "errored"]),
   conditions: v.array(ConditionExplanationSchema),
   bucket: v.optional(BucketSchema),
+  rolloutSkippedNoIdentifier: v.boolean(),
 });
 
 export type RuleExplanation = v.InferOutput<typeof RuleExplanationSchema>;

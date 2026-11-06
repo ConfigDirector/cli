@@ -159,7 +159,7 @@ true, served by rule 2
 Default targeting rule: false
 ```
 
-A rule that did not match names the first condition that failed and the context's value for it, as in `plan is one of pro, team, but it is "free"`, or the bucket a percentage rollout put the context in. A rule after the one that served the value is not evaluated, and a rule that could not be evaluated is shown as errored.
+A rule that did not match names the first condition that failed and the context's value for it, as in `plan is one of pro, team, but it is "free"`, or the bucket a percentage rollout put the context in. A context without an identifier gets no bucket: the first percentage rollout it reaches shows `rollout skipped: the context has no identifier`, and the context gets the default targeting rule value. A rule after the one that served the value, or after a skipped rollout, is not evaluated, and a rule that could not be evaluated is shown as errored.
 
 `--environment` takes the environment's slug and is required. Give the context one of three ways:
 

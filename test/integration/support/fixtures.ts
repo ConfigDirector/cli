@@ -136,6 +136,21 @@ const setTargetingRules = async (
 export const setProPlanRule = (cli: CliUnderTest, configKey: string, environmentSlug: string) =>
   setTargetingRules(cli, configKey, environmentSlug, proPlanRulesFile);
 
+const everyoneGetsTrueRulesFile = {
+  defaultValue: false,
+  rules: [
+    {
+      type: "percentage",
+      order: 0,
+      target: "percentage",
+      percentages: [{ percentage: 100, value: true }],
+    },
+  ],
+};
+
+export const setEveryoneGetsTrue = (cli: CliUnderTest, configKey: string, environmentSlug: string) =>
+  setTargetingRules(cli, configKey, environmentSlug, everyoneGetsTrueRulesFile);
+
 const evenSplitRulesFile = {
   defaultValue: "Start free trial",
   rules: [

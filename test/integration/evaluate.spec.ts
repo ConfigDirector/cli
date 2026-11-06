@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { adminApiUnderTest, firstEnvironmentOf } from "./support/admin-api-under-test.js";
 import { jsonOf, startCliUnderTest, uniqueKey } from "./support/built-cli.js";
-import { createBooleanFlag, setProPlanRule } from "./support/fixtures.js";
+import { createBooleanFlag, setProPlanRule, setEveryoneGetsTrue } from "./support/fixtures.js";
 
-type ConfigEvaluation = { key: string; value: string; servedBy: { kind: string } };
+type ConfigEvaluation = {
+  key: string;
+  value: string;
+  servedBy: { kind: string };
+  rules: { outcome: string; rolloutSkippedNoIdentifier: boolean }[];
+};
 
 describe.skipIf(adminApiUnderTest() === undefined)("evaluate against the Admin API", () => {
   it("serves the value of the rule a context's trait matches", async () => {
@@ -52,6 +57,38 @@ describe.skipIf(adminApiUnderTest() === undefined)("evaluate against the Admin A
     expect(evaluation).toEqual(
       expect.objectContaining({ key, value: "false", servedBy: { kind: "default" } }),
     );
+  });
+
+  it("serves the default targeting rule value to a context without an identifier that reaches a percentage rollout", async () => {
+    const cli = await startCliUnderTest();
+    const environment = await firstEnvironmentOf(cli.adminApi, cli.project);
+    const key = await createBooleanFlag(cli);
+    await setEveryoneGetsTrue(cli, key, environment.slug);
+    const evaluateWithoutIdentifier = [
+      "evaluate",
+      key,
+      "--environment",
+      environment.slug,
+      "--context-kind",
+      "device",
+    ];
+
+    const explanation = await cli.run(evaluateWithoutIdentifier);
+    const evaluation = jsonOf(await cli.run([...evaluateWithoutIdentifier, "--json"])) as ConfigEvaluation;
+
+    expect(explanation.exitCode).toEqual(0);
+    expect(explanation.stdout.split("\n").slice(2, 6)).toEqual([
+      "false, served by the default targeting rule",
+      "",
+      "1. 100% get true   rollout skipped: the context has no identifier",
+      "Default targeting rule: false",
+    ]);
+    expect(evaluation).toEqual(
+      expect.objectContaining({ key, value: "false", servedBy: { kind: "default" } }),
+    );
+    expect(evaluation.rules).toEqual([
+      expect.objectContaining({ outcome: "not-matched", rolloutSkippedNoIdentifier: true }),
+    ]);
   });
 
   it("exits 2 naming the project's environments when the environment slug is missing", async () => {
