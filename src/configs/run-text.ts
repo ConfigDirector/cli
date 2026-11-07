@@ -78,8 +78,8 @@ const runLines = (run: ExperimentRun, variations: Variation[]): string[] => [
     ),
     ...uncountedEvaluationsLines(
       run.exposures.evaluationsWithoutIdentifier,
-      "came from a context without an identifier and was served the default targeting rule value. It skips the split and is not an exposure.",
-      "came from contexts without an identifier and were served the default targeting rule value. They skip the split and are not exposures.",
+      "came from an anonymous context, so it is not an exposure. In a server SDK, a context without an identifier skips the split and is served the default targeting rule value; any other anonymous context sees its share of the split without being stored.",
+      "came from anonymous contexts, so they are not exposures. In a server SDK, a context without an identifier skips the split and is served the default targeting rule value; any other anonymous context sees its share of the split without being stored.",
     ),
   ].map((line) => `  ${line}`),
 ];

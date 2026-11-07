@@ -305,20 +305,20 @@ describe("configs runs", () => {
     ]);
   });
 
-  it("says how many evaluations came from contexts without an identifier", async () => {
+  it("says how many evaluations came from anonymous contexts", async () => {
     const lines = await uncountedEvaluationLinesOf({ evaluationsWithoutIdentifier: 12 });
 
     expect(lines).toEqual([
-      "  12 evaluations came from contexts without an identifier and were served the default targeting rule value. They skip the split and are not exposures.",
+      "  12 evaluations came from anonymous contexts, so they are not exposures. In a server SDK, a context without an identifier skips the split and is served the default targeting rule value; any other anonymous context sees its share of the split without being stored.",
       "",
     ]);
   });
 
-  it("writes one evaluation from a context without an identifier in the singular", async () => {
+  it("writes one evaluation from an anonymous context in the singular", async () => {
     const lines = await uncountedEvaluationLinesOf({ evaluationsWithoutIdentifier: 1 });
 
     expect(lines).toEqual([
-      "  1 evaluation came from a context without an identifier and was served the default targeting rule value. It skips the split and is not an exposure.",
+      "  1 evaluation came from an anonymous context, so it is not an exposure. In a server SDK, a context without an identifier skips the split and is served the default targeting rule value; any other anonymous context sees its share of the split without being stored.",
       "",
     ]);
   });
