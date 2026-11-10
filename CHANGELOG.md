@@ -4,6 +4,8 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-10
+
 ### Added
 
 - `configdirector metrics list` lists the project's metrics, each an event name your application sends with `track`, with the kinds it reports, its direction and how many experiments use it, and `configdirector metrics get <event name>` shows one metric with each experiment that uses it, its role there, and the environments where a run is in progress. `configdirector metrics create --event-name <event name> --kind <kind> --direction <direction>`, with `--kind` repeatable and an optional `--description`, creates a metric; `configdirector metrics update <event name>` changes its kinds, direction or description; and `configdirector metrics delete <event name>` deletes it and detaches it from its experiments. They exit with 2, listing the experiments, when ConfigDirector refuses to remove a kind an experiment's primary metric decides on, or to delete a metric an experiment with a run in progress uses. `--json` prints the Admin API's response as received, `metrics get --json` the metric as the Admin API listed it for its event name, and `metrics delete --json` `{ "deletedEventName": ... }`.
