@@ -17,7 +17,22 @@ import {
   UnexpectedApiResponseError,
 } from "./admin-api-errors.js";
 import { CopyPlanResponseSchema, type CopyConfigRequest, type CopyPlanResponse } from "./config-copy.js";
-import { ExperimentRunsSchema, type ExperimentRun } from "./experiment-runs.js";
+import {
+  ExperimentRunsSchema,
+  type ExperimentRun,
+  type RunEndRequest,
+  type ShipVariationRequest,
+} from "./experiment-runs.js";
+import {
+  MetricInUseBodySchema,
+  MetricKindInUseBodySchema,
+  MetricSchema,
+  type CreateMetricRequest,
+  type DecidingExperiment,
+  type ExperimentWithOpenRuns,
+  type Metric,
+  type UpdateMetricRequest,
+} from "./metrics.js";
 import { CreatedConfigSchema, type CreateConfigRequest, type CreatedConfig } from "./config-creation.js";
 import { retryDecisionAfter } from "./connection-failure-retry.js";
 import {
@@ -150,6 +165,16 @@ type SegmentDeletionOutcome =
 
 type ScannedRepositoryRemovalOutcome = "removed" | "not-found";
 
+type MetricUpdateOutcome =
+  | { outcome: "updated"; metric: ParsedResponse<Metric> }
+  | { outcome: "not-found" }
+  | { outcome: "kind-in-use"; decidingExperiments: DecidingExperiment[] };
+
+type MetricDeletionOutcome =
+  | { outcome: "deleted" }
+  | { outcome: "not-found" }
+  | { outcome: "in-use"; experimentsWithOpenRuns: ExperimentWithOpenRuns[] };
+
 const MissingResourceBodySchema = v.union([v.strictObject({}), ResourceNotFoundBodySchema]);
 
 const readJsonBody = async (response: Response): Promise<unknown> => {
@@ -196,7 +221,7 @@ const failureFor = (url: string, response: Response, body: unknown): CliError =>
   }
 };
 
-type JsonRequest = { method: "GET" | "DELETE" } | { method: "POST" | "PUT"; body: object };
+type JsonRequest = { method: "GET" | "DELETE" } | { method: "POST" | "PUT" | "PATCH"; body: object };
 
 type ReceivedResponse = { url: string; response: Response; body: unknown };
 
@@ -219,6 +244,39 @@ const segmentDeletionOutcomeOf = (received: ReceivedResponse): SegmentDeletionOu
   }
   if (isSegmentInUse(received)) {
     return { outcome: "in-use", usages: received.body.usages };
+  }
+  if (!received.response.ok) {
+    throw failureFor(received.url, received.response, received.body);
+  }
+  return { outcome: "deleted" };
+};
+
+type MetricKindInUseResponse = ReceivedResponse & { body: v.InferOutput<typeof MetricKindInUseBodySchema> };
+
+const isMetricKindInUse = (received: ReceivedResponse): received is MetricKindInUseResponse =>
+  received.response.status === 409 && v.is(MetricKindInUseBodySchema, received.body);
+
+const metricUpdateOutcomeOf = (received: ReceivedResponse): MetricUpdateOutcome => {
+  if (isMissingResource(received)) {
+    return { outcome: "not-found" };
+  }
+  if (isMetricKindInUse(received)) {
+    return { outcome: "kind-in-use", decidingExperiments: received.body.usages };
+  }
+  return { outcome: "updated", metric: parsedResponseOf(received, MetricSchema) };
+};
+
+type MetricInUseResponse = ReceivedResponse & { body: v.InferOutput<typeof MetricInUseBodySchema> };
+
+const isMetricInUse = (received: ReceivedResponse): received is MetricInUseResponse =>
+  received.response.status === 409 && v.is(MetricInUseBodySchema, received.body);
+
+const metricDeletionOutcomeOf = (received: ReceivedResponse): MetricDeletionOutcome => {
+  if (isMissingResource(received)) {
+    return { outcome: "not-found" };
+  }
+  if (isMetricInUse(received)) {
+    return { outcome: "in-use", experimentsWithOpenRuns: received.body.usages };
   }
   if (!received.response.ok) {
     throw failureFor(received.url, received.response, received.body);
@@ -330,6 +388,59 @@ export class AdminApiClient {
     );
   }
 
+  public listMetrics(projectId: string): Promise<ParsedResponse<Metric[]>> {
+    return this.get(`/v1/projects/${encodeURIComponent(projectId)}/metrics`, v.array(MetricSchema));
+  }
+
+  public async findMetricByEventName(
+    projectId: string,
+    eventName: string,
+  ): Promise<ParsedResponse<Metric> | undefined> {
+    const { parsedBody: metrics, responseBody } = await this.get(
+      `/v1/projects/${encodeURIComponent(projectId)}/metrics?${new URLSearchParams({ eventName })}`,
+      v.array(MetricSchema),
+    );
+    const index = metrics.findIndex((metric) => metric.eventName === eventName);
+    const metric = metrics[index];
+    return metric === undefined
+      ? undefined
+      : { parsedBody: metric, responseBody: v.parse(v.array(v.unknown()), responseBody)[index] };
+  }
+
+  public createMetric(projectId: string, request: CreateMetricRequest): Promise<ParsedResponse<Metric>> {
+    return this.requestJson(`/v1/projects/${encodeURIComponent(projectId)}/metrics`, MetricSchema, {
+      method: "POST",
+      body: request,
+    });
+  }
+
+  public async updateMetric(
+    projectId: string,
+    metricId: string,
+    request: UpdateMetricRequest,
+  ): Promise<MetricUpdateOutcome> {
+    return metricUpdateOutcomeOf(
+      await this.send(
+        `/v1/projects/${encodeURIComponent(projectId)}/metrics/${encodeURIComponent(metricId)}`,
+        {
+          method: "PATCH",
+          body: request,
+        },
+      ),
+    );
+  }
+
+  public async deleteMetric(projectId: string, metricId: string): Promise<MetricDeletionOutcome> {
+    return metricDeletionOutcomeOf(
+      await this.send(
+        `/v1/projects/${encodeURIComponent(projectId)}/metrics/${encodeURIComponent(metricId)}`,
+        {
+          method: "DELETE",
+        },
+      ),
+    );
+  }
+
   public async findTagByName(projectId: string, name: string): Promise<Tag | undefined> {
     return (
       await this.getIfFound(
@@ -385,12 +496,12 @@ export class AdminApiClient {
     projectId: string,
     configKey: string,
     environmentId: string,
-    variationId: string,
+    request: ShipVariationRequest,
   ): Promise<ParsedResponse<ConfigWithTargetingRules> | undefined> {
     return this.requestIfFound(
       `/v1/projects/${encodeURIComponent(projectId)}/configs/${encodeURIComponent(configKey)}/environments/${encodeURIComponent(environmentId)}/ship`,
       ConfigWithTargetingRulesSchema,
-      { method: "POST", body: { variationId } },
+      { method: "POST", body: request },
     );
   }
 
@@ -398,11 +509,12 @@ export class AdminApiClient {
     projectId: string,
     configKey: string,
     environmentId: string,
+    request: RunEndRequest,
   ): Promise<ParsedResponse<ConfigWithTargetingRules> | undefined> {
     return this.requestIfFound(
       `/v1/projects/${encodeURIComponent(projectId)}/configs/${encodeURIComponent(configKey)}/environments/${encodeURIComponent(environmentId)}/stop`,
       ConfigWithTargetingRulesSchema,
-      { method: "POST", body: {} },
+      { method: "POST", body: request },
     );
   }
 

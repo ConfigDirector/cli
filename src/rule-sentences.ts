@@ -55,6 +55,14 @@ export const valueWithVariationName = (value: RuleValue, variationName: string |
 export const describeVariation = (variation: Variation): string =>
   valueWithVariationName(variation.value, variation.name);
 
+export const describeVariationById = (variationId: string, variations: Variation[]): string | undefined => {
+  const variation = variations.find((candidate) => candidate.id === variationId);
+  return variation && describeVariation(variation);
+};
+
+export const describeVariationOrNoLongerListed = (variationId: string, variations: Variation[]): string =>
+  describeVariationById(variationId, variations) ?? "a variation no longer listed";
+
 export const describeValue = (
   value: RuleValue,
   variationId: string | undefined,

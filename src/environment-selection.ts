@@ -1,3 +1,4 @@
+import { ifPermitted } from "./admin-api/admin-api-errors.js";
 import type { AdminApiClient, Environment, Project } from "./admin-api/AdminApiClient.js";
 import { CliError } from "./CliError.js";
 
@@ -19,4 +20,12 @@ export const findEnvironmentBySlug = async (
     );
   }
   return environment;
+};
+
+export const environmentSlugsById = async (
+  client: AdminApiClient,
+  project: Project,
+): Promise<ReadonlyMap<string, string>> => {
+  const environments = await ifPermitted(client.listEnvironments(project.id));
+  return new Map((environments?.parsedBody ?? []).map((environment) => [environment.id, environment.slug]));
 };

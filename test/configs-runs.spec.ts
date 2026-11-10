@@ -40,6 +40,10 @@ const noExposures = {
   evaluationsFromSdksNotReportingExposures: 0,
 };
 
+const noResults = { rollouts: [], primary: [], secondary: [], guardrail: [] };
+
+const noTrackedEvents = { events: [] };
+
 const runningRun = {
   id: "run-running",
   configId: experiment.id,
@@ -62,6 +66,8 @@ const runningRun = {
     evaluationsWithoutIdentifier: 0,
     evaluationsFromSdksNotReportingExposures: 0,
   },
+  trackedEvents: noTrackedEvents,
+  results: noResults,
 };
 
 const endedRun = (fields: { outcome: string; shippedVariationId?: string }) => ({
@@ -72,6 +78,8 @@ const endedRun = (fields: { outcome: string; shippedVariationId?: string }) => (
   endedAt: "2026-10-15T09:30:00.000Z",
   rollouts: [],
   exposures: noExposures,
+  trackedEvents: noTrackedEvents,
+  results: noResults,
   ...fields,
 });
 
@@ -404,6 +412,444 @@ describe("configs runs", () => {
   });
 });
 
+const thirdId = "0a000000-0000-4000-8000-000000000004";
+
+const conversionResultOf = (variations: object[]) => ({
+  metricId: "0c000000-0000-4000-8000-000000000001",
+  eventName: "checkout_completed",
+  direction: "higher-is-better",
+  primaryKind: "conversion",
+  kinds: [{ kind: "conversion", rollouts: [{ ruleId: rolloutRuleId, variations }] }],
+});
+
+const controlConversion = { variationId: controlId, exposures: 412, converters: 12, value: 0.0291 };
+
+const treatmentConversion = {
+  variationId: treatmentId,
+  exposures: 398,
+  converters: 18,
+  value: 0.0452,
+  lift: 0.553,
+  interval: { low: 0.12, high: 0.98 },
+  chanceToBeatControl: 0.996,
+  verdict: "likely-better",
+};
+
+const supportTicketsGuardrail = {
+  metricId: "0c000000-0000-4000-8000-000000000002",
+  eventName: "support_ticket_opened",
+  direction: "lower-is-better",
+  primaryKind: null,
+  kinds: [
+    {
+      kind: "count-per-context",
+      rollouts: [
+        {
+          ruleId: rolloutRuleId,
+          variations: [
+            { variationId: controlId, exposures: 412, value: 0.12 },
+            {
+              variationId: treatmentId,
+              exposures: 398,
+              value: 0.13,
+              lift: 0.0833,
+              interval: { low: -0.1, high: 0.29 },
+              chanceToBeatControl: 0.22,
+              verdict: "no-clear-difference",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+const readyRollout = { ruleId: rolloutRuleId, controlVariationId: controlId, state: "ready", crossovers: 0 };
+
+const runWithResults = (results: object, fields: object = {}) => ({
+  ...runningRun,
+  results: { rollouts: [readyRollout], primary: [], secondary: [], guardrail: [], ...results },
+  ...fields,
+});
+
+const runLinesOf = async (runs: object[], configBody: object = experiment) => {
+  const adminApi = await startBrowseAdminApi({
+    [configPath]: { status: 200, body: configBody },
+    [runsPath]: { status: 200, body: runs },
+  });
+
+  const { stdout } = await listRuns(adminApi.baseUrl);
+
+  return stdout.split("\n");
+};
+
+describe("configs runs results", () => {
+  it("prints each metric kind's results under its rollout: every variation's value against the control, with the lift and its likely range, the chance to beat control and the verdict", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        primary: [conversionResultOf([controlConversion, treatmentConversion])],
+        guardrail: [supportTicketsGuardrail],
+      }),
+    ]);
+
+    expect(lines).toEqual([
+      "Runs of checkout-cta-copy in production (live), newest first:",
+      "",
+      "Running since 2026-11-03 12:00 UTC",
+      "  Rollout: everyone not caught by a rule above",
+      "    control (Start free trial)              412 exposures   configured 50%",
+      "    treatment-a (Try it free for 14 days)   398 exposures   configured 50%",
+      "    810 contexts exposed, 3201 evaluations. The split matches the configured shares.",
+      "    Primary metric: checkout_completed, conversion, higher is better",
+      "      control (Start free trial)              2.9%   control",
+      "      treatment-a (Try it free for 14 days)   4.5%   +55% (+12% to +98%)   >99% chance to beat control   likely better",
+      "    Guardrail: support_ticket_opened, count per context, lower is better",
+      "      control (Start free trial)              0.12   control",
+      "      treatment-a (Try it free for 14 days)   0.13   +8% (-10% to +29%)   22% chance to beat control   no clear difference",
+      "  Results can be up to 25 minutes behind.",
+      "",
+    ]);
+  });
+
+  it("names a secondary metric as one", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        secondary: [{ ...conversionResultOf([controlConversion, treatmentConversion]), primaryKind: null }],
+      }),
+    ]);
+
+    expect(lines[7]).toEqual("    Secondary metric: checkout_completed, conversion, higher is better");
+  });
+
+  it("prints a line for each kind a metric reports", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        primary: [
+          {
+            ...conversionResultOf([controlConversion, treatmentConversion]),
+            kinds: [
+              ...conversionResultOf([controlConversion, treatmentConversion]).kinds,
+              {
+                kind: "value-per-context",
+                rollouts: [
+                  {
+                    ruleId: rolloutRuleId,
+                    variations: [
+                      { variationId: controlId, exposures: 412, value: 1234.5 },
+                      {
+                        variationId: treatmentId,
+                        exposures: 398,
+                        value: 1301.25,
+                        lift: 0.054,
+                        interval: { low: -0.021, high: 0.13 },
+                        chanceToBeatControl: 0.91,
+                        verdict: "no-clear-difference",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(10, 13)).toEqual([
+      "    Primary metric: checkout_completed, value per context, higher is better",
+      "      control (Start free trial)              1,234.50   control",
+      "      treatment-a (Try it free for 14 days)   1,301.25   +5% (-2% to +13%)   91% chance to beat control   no clear difference",
+    ]);
+  });
+
+  it("says the run needs more exposures and prints the values alone while the rollout does", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        rollouts: [{ ...readyRollout, state: "needs-more-exposures" }],
+        primary: [
+          conversionResultOf([
+            controlConversion,
+            { variationId: treatmentId, exposures: 98, converters: 4, value: 0.0408 },
+          ]),
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(7, 11)).toEqual([
+      "    The run needs more exposures before the variations can be compared.",
+      "    Primary metric: checkout_completed, conversion, higher is better",
+      "      control (Start free trial)              2.9%   control",
+      "      treatment-a (Try it free for 14 days)   4.1%",
+    ]);
+  });
+
+  it("says how many contexts were exposed to more than one variation and left out of every metric", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        rollouts: [{ ...readyRollout, crossovers: 3 }],
+        primary: [conversionResultOf([controlConversion, treatmentConversion])],
+      }),
+    ]);
+
+    expect(lines[7]).toEqual(
+      "    3 contexts were exposed to more than one variation and are left out of every metric.",
+    );
+  });
+
+  it("writes one context exposed to more than one variation in the singular", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        rollouts: [{ ...readyRollout, crossovers: 1 }],
+        primary: [conversionResultOf([controlConversion, treatmentConversion])],
+      }),
+    ]);
+
+    expect(lines[7]).toEqual(
+      "    1 context was exposed to more than one variation and is left out of every metric.",
+    );
+  });
+
+  it("adds each variation's chance to be best, the control's included, with three or more variations", async () => {
+    const threeVariationExperiment = {
+      ...experiment,
+      variations: [...experiment.variations, { id: thirdId, name: "treatment-b", value: "Start your trial" }],
+    };
+    const lines = await runLinesOf(
+      [
+        runWithResults({
+          primary: [
+            conversionResultOf([
+              { ...controlConversion, chanceToBeBest: 0.01 },
+              { ...treatmentConversion, chanceToBeBest: 0.82 },
+              {
+                variationId: thirdId,
+                exposures: 401,
+                converters: 13,
+                value: 0.0324,
+                lift: 0.113,
+                interval: { low: -0.4, high: 1.1 },
+                chanceToBeatControl: 0.62,
+                chanceToBeBest: 0.17,
+                verdict: "no-clear-difference",
+              },
+            ]),
+          ],
+        }),
+      ],
+      threeVariationExperiment,
+    );
+
+    expect(lines.slice(8, 11)).toEqual([
+      "      control (Start free trial)              2.9%   control                                              1% chance to be best",
+      "      treatment-a (Try it free for 14 days)   4.5%   +55% (+12% to +98%)    >99% chance to beat control   82% chance to be best   likely better",
+      "      treatment-b (Start your trial)          3.2%   +11% (-40% to +110%)   62% chance to beat control    17% chance to be best   no clear difference",
+    ]);
+  });
+
+  it("writes a dash for a lift there is no control value to take, and the lift alone when its range cannot be told", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        primary: [
+          {
+            ...supportTicketsGuardrail,
+            primaryKind: "count-per-context",
+            kinds: [
+              {
+                kind: "count-per-context",
+                rollouts: [
+                  {
+                    ruleId: rolloutRuleId,
+                    variations: [
+                      { variationId: controlId, exposures: 412, value: 0 },
+                      {
+                        variationId: treatmentId,
+                        exposures: 398,
+                        value: 0.02,
+                        chanceToBeatControl: 0.31,
+                        verdict: "no-clear-difference",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        guardrail: [
+          {
+            ...supportTicketsGuardrail,
+            eventName: "refund_requested",
+            kinds: [
+              {
+                kind: "count-per-context",
+                rollouts: [
+                  {
+                    ruleId: rolloutRuleId,
+                    variations: [
+                      { variationId: controlId, exposures: 412, value: 0.01 },
+                      {
+                        variationId: treatmentId,
+                        exposures: 398,
+                        value: 0.012,
+                        lift: 0.2,
+                        chanceToBeatControl: 0.4,
+                        verdict: "no-clear-difference",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    ]);
+
+    expect([lines[9], lines[12]]).toEqual([
+      "      treatment-a (Try it free for 14 days)   0.02   -         31% chance to beat control   no clear difference",
+      "      treatment-a (Try it free for 14 days)   0.01   +20%      40% chance to beat control   no clear difference",
+    ]);
+  });
+
+  it("writes a lift or a range bound that rounds to zero as 0%, with no sign", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        primary: [
+          conversionResultOf([
+            controlConversion,
+            { ...treatmentConversion, lift: -0.004, interval: { low: -0.003, high: 0.06 } },
+          ]),
+        ],
+      }),
+    ]);
+
+    expect(lines[9]).toEqual(
+      "      treatment-a (Try it free for 14 days)   4.5%   0% (0% to +6%)   >99% chance to beat control   likely better",
+    );
+  });
+
+  it("writes a verdict and a kind the CLI does not know by their names", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        primary: [
+          {
+            ...conversionResultOf([
+              controlConversion,
+              { ...treatmentConversion, verdict: "likely-equivalent" },
+            ]),
+            kinds: [
+              {
+                kind: "ratio",
+                rollouts: [
+                  {
+                    ruleId: rolloutRuleId,
+                    variations: [controlConversion, { ...treatmentConversion, verdict: "likely-equivalent" }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(7, 10)).toEqual([
+      "    Primary metric: checkout_completed, ratio, higher is better",
+      "      control (Start free trial)              0.03   control",
+      "      treatment-a (Try it free for 14 days)   0.05   +55% (+12% to +98%)   >99% chance to beat control   likely-equivalent",
+    ]);
+  });
+
+  it("says when an ended run's final results were taken", async () => {
+    const lines = await runLinesOf([
+      {
+        ...endedRun({ outcome: "stopped" }),
+        rollouts: runningRun.rollouts,
+        exposures: runningRun.exposures,
+        results: {
+          asOf: "2026-10-15T09:30:00.000Z",
+          rollouts: [readyRollout],
+          primary: [conversionResultOf([controlConversion, treatmentConversion])],
+          secondary: [],
+          guardrail: [],
+        },
+      },
+    ]);
+
+    expect(lines.at(-2)).toEqual("  Final results, as of 2026-10-15 09:30 UTC, when the run ended.");
+  });
+
+  it("says nothing about how fresh the results are for an ended run without its final results yet", async () => {
+    const lines = await runLinesOf([
+      {
+        ...endedRun({ outcome: "stopped" }),
+        rollouts: runningRun.rollouts,
+        exposures: runningRun.exposures,
+        results: {
+          rollouts: [readyRollout],
+          primary: [conversionResultOf([controlConversion, treatmentConversion])],
+          secondary: [],
+          guardrail: [],
+        },
+      },
+    ]);
+
+    expect(lines.at(-2)).toEqual(
+      "      treatment-a (Try it free for 14 days)   4.5%   +55% (+12% to +98%)   >99% chance to beat control   likely better",
+    );
+  });
+
+  it("prints the run's hypothesis and the note it ended with", async () => {
+    const lines = await runLinesOf([
+      {
+        ...endedRun({ outcome: "stopped" }),
+        hypothesis: "Urgency copy raises checkout completion by 5%",
+        note: "Support tickets rose with the new copy",
+      },
+    ]);
+
+    expect(lines.slice(2, 5)).toEqual([
+      "Stopped, 2026-10-01 09:00 UTC to 2026-10-15 09:30 UTC",
+      "  Hypothesis: Urgency copy raises checkout completion by 5%",
+      "  Ended with note: Support tickets rose with the new copy",
+    ]);
+  });
+
+  it("lists the events reported during the run that no metric measures, with how many contexts reported each", async () => {
+    const lines = await runLinesOf([
+      runWithResults(
+        { primary: [conversionResultOf([controlConversion, treatmentConversion])] },
+        {
+          trackedEvents: {
+            events: [
+              { name: "add_to_cart", contexts: 340, variations: [] },
+              { name: "checkout_completed", contexts: 30, variations: [] },
+              { name: "search_used", contexts: 1, variations: [] },
+            ],
+          },
+        },
+      ),
+    ]);
+
+    expect(lines.slice(-3)).toEqual([
+      "  Events with no metric: add_to_cart (340 contexts), search_used (1 context)",
+      "  Results can be up to 25 minutes behind.",
+      "",
+    ]);
+  });
+
+  it("lists every event reported during the run when the experiment has no metric, and says nothing about results", async () => {
+    const lines = await runLinesOf([
+      {
+        ...runningRun,
+        trackedEvents: { events: [{ name: "checkout_completed", contexts: 30, variations: [] }] },
+      },
+    ]);
+
+    expect(lines.slice(-2)).toEqual(["  Events with no metric: checkout_completed (30 contexts)", ""]);
+  });
+});
+
 const proPlanRule = {
   id: "0c000000-0000-4000-8000-000000000001",
   type: "conditional",
@@ -497,6 +943,22 @@ describe("configs ship", () => {
       `POST ${projectPath(shipPath)}`,
     ]);
     expect(shipBodies(adminApi)).toEqual([{ variationId: treatmentId }]);
+  });
+
+  it("sends --note with the ship, for the ended run to keep", async () => {
+    const adminApi = await startShipAdminApi(shippedTreatment);
+
+    const { exitCode } = await ship(
+      adminApi.baseUrl,
+      "treatment-a",
+      "--note",
+      "Checkout completion rose 14%",
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(shipBodies(adminApi)).toEqual([
+      { variationId: treatmentId, note: "Checkout completion rose 14%" },
+    ]);
   });
 
   it("ships the variation --variation names by id", async () => {
@@ -680,6 +1142,11 @@ const stoppedRun: StubReply = {
   body: experimentServing(controlId, "Start free trial", [proPlanRule]),
 };
 
+const stopBodies = (adminApi: Awaited<ReturnType<typeof startBrowseAdminApi>>) =>
+  adminApi.receivedRequests
+    .filter((request) => request.method === "POST" && request.path === projectPath(stopPath))
+    .map((request) => request.body);
+
 describe("configs stop", () => {
   it("stops the run in a live environment, asking nothing, and prints the rules it saved", async () => {
     const adminApi = await startBrowseAdminApi({ [stopPath]: stoppedRun });
@@ -701,6 +1168,23 @@ describe("configs stop", () => {
       `GET ${projectPath("/environments")}`,
       `POST ${projectPath(stopPath)}`,
     ]);
+  });
+
+  it("sends an empty stop without --note", async () => {
+    const adminApi = await startBrowseAdminApi({ [stopPath]: stoppedRun });
+
+    await stop(adminApi.baseUrl);
+
+    expect(stopBodies(adminApi)).toEqual([{}]);
+  });
+
+  it("sends --note with the stop, for the ended run to keep", async () => {
+    const adminApi = await startBrowseAdminApi({ [stopPath]: stoppedRun });
+
+    const { exitCode } = await stop(adminApi.baseUrl, "--note", "Support tickets rose with the new copy");
+
+    expect(exitCode).toEqual(0);
+    expect(stopBodies(adminApi)).toEqual([{ note: "Support tickets rose with the new copy" }]);
   });
 
   it("says the key is an old key when the config was renamed", async () => {

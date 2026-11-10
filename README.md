@@ -1,6 +1,6 @@
 # ConfigDirector CLI
 
-`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. Commands and output may change before 1.0. This release signs in to one or more organizations, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules and segments, creates and copies configs, replaces a config's targeting rules in an environment, lists an experiment's runs and ships or stops them, archives configs, creates, updates and deletes segments, uploads the repository's code references to the project, and lists and removes the project's scanned repositories.
+`configdirector` is the command line tool for [ConfigDirector](https://www.configdirector.com), the managed configuration and feature flag service. Commands and output may change before 1.0. This release signs in to one or more organizations, links a repository to a project, lists where the repository's code reads config keys, checks those keys against the project's configs, shows the value a context gets for a config and why, reads a project's environments, configs, targeting rules, segments and metrics, creates and copies configs, replaces a config's targeting rules in an environment, lists an experiment's runs with their results and ships or stops them, archives configs, creates, updates and deletes segments and metrics, uploads the repository's code references to the project, and lists and removes the project's scanned repositories.
 
 The [CLI page of the ConfigDirector docs](https://docs.configdirector.com/integrations/cli) covers the API token, CI setup for GitHub Actions and GitLab, and what each problem `validate` reports means for your build.
 
@@ -181,6 +181,8 @@ configdirector configs get <key>
 configdirector configs activity <key>
 configdirector segments list
 configdirector segments get <key>
+configdirector metrics list
+configdirector metrics get <event name>
 ```
 
 `projects list` lists your organization's projects with their slugs and names, whichever project is selected. The other commands read the project from `--project`, `CONFIGDIRECTOR_PROJECT` or `configdirector.json`, as `scan` does:
@@ -190,6 +192,7 @@ configdirector segments get <key>
 - `configs get <key>` shows the config's settings, including its type's constraints, then each environment's targeting rules in order, written as `evaluate` writes them, with the default targeting rule value last. An old key works, and the output then starts with a line naming the current key.
 - `configs activity <key>` shows when SDKs last evaluated the config, one line per environment, SDK key kind, SDK name and SDK version, with the time in UTC.
 - `segments list` lists the segments with how many configs use each, and `segments get <key>` shows a segment's condition groups and its environment overrides.
+- `metrics list` lists the metrics with their kinds, their direction and how many experiments use each, and `metrics get <event name>` shows a metric's kinds and direction, and each experiment that uses it, with its role and the environments of its runs in progress.
 
 ```txt
 new-checkout
@@ -213,11 +216,11 @@ production (live)
 
 On an experiment, each value comes after the name of its variation, as in `40% get control (Start free trial), 60% get treatment-a (Try it free for 14 days)`. `evaluate` names the variation it served the same way, as in `treatment-a (Try it free for 14 days), served by rule 2`, and `configs create` names the variation of the default targeting rule value it starts with.
 
-`projects list`, `environments list`, `configs list`, `configs activity` and `segments list` print a header row that names their columns above their lines, such as `KEY   TYPE   ROLE   LIFETIME   STATE` for `configs list`, and `--no-headers` leaves it out. An empty list prints only a sentence, such as `No configs found in web-app.`
+`projects list`, `environments list`, `configs list`, `configs activity`, `segments list` and `metrics list` print a header row that names their columns above their lines, such as `KEY   TYPE   ROLE   LIFETIME   STATE` for `configs list`, and `--no-headers` leaves it out. An empty list prints only a sentence, such as `No configs found in web-app.`
 
-With `--json`, each prints the Admin API's response as received, except `configs list --state`, which prints only the configs in that state. A key no config or segment has exits with 2.
+With `--json`, each prints the Admin API's response as received, except `configs list --state`, which prints only the configs in that state, and `metrics get`, which prints the metric as the Admin API listed it for its event name. A key no config or segment has, or an event name no metric has, exits with 2.
 
-`projects list` needs `projects:read`. The others need `projects:read` to find the project, and `environments list` needs `environments:read`, `configs list`, `configs get` and `configs activity` need `configs:read`, plus `tags:read` for `--tag`, and `segments list` and `segments get` need `segments:read`. Without `segments:read`, `configs get` shows a segment condition's segment ID instead of its name; without `environments:read`, `segments get` names an override's environment by its ID instead of its slug.
+`projects list` needs `projects:read`. The others need `projects:read` to find the project, and `environments list` needs `environments:read`, `configs list`, `configs get` and `configs activity` need `configs:read`, plus `tags:read` for `--tag`, `segments list` and `segments get` need `segments:read`, and `metrics list` and `metrics get` need `metrics:read`. Without `segments:read`, `configs get` shows a segment condition's segment ID instead of its name; without `environments:read`, `segments get` names an override's environment by its ID instead of its slug, and `metrics get` a run's environment.
 
 ## Create a config
 
@@ -234,7 +237,7 @@ Default targeting rule in every environment: false
 
 - `--key`, `--type` (`boolean`, `string`, `integer`, `float`, `timespan`, `enum`, `url` or `json`), `--role` (`config`, `flag`, `kill-switch` or `experiment`) and `--default-value` are required. `--default-value` is the default targeting rule value every environment starts with, not the in-code default value an application passes to the SDK.
 - `--lifetime` (`temporary` or `permanent`) is required for the `config` role. The role decides the lifetime of the others, so you can leave it out: a feature flag and an experiment are always temporary, and a kill switch is always permanent. A lifetime the role does not have is a usage error.
-- `--description <text>`; `--client-only` or `--server-only`, without which client and server SDKs both receive the config; and `--variation <name=value>`, repeatable, for an experiment's variations.
+- `--description <text>`; `--client-only` or `--server-only`, without which client and server SDKs both receive the config; `--variation <name=value>`, repeatable, for an experiment's variations; and `--hypothesis <text>`, what an experiment is expected to do, which each of its runs keeps as it was when the run started.
 - `--tag <name>`, repeatable, names a tag the project already has, and `--new-tag <name>`, repeatable, creates a tag with that name in the project's tag catalog. The config gets the tags of both, at most 20 in all. Every `--tag` name is looked up before any tag is created, so a misspelled `--tag` creates nothing; a name no tag has, a `--new-tag` name a tag already has, a `--new-tag` name given twice and a name given with both options exit with 2. When a later step fails, such as a key that is taken, the tags already created stay in the catalog, and the command names them so you can pass them with `--tag` next time.
 - The values of `--default-value` and `--variation` are read in the config's type: `true` or `false`, a number for an integer, float or timespan, the text as written for a string, enum or URL, and JSON for a JSON config, with `@file` reading it from a file. A value that does not fit the type is a usage error.
 - Constraints, each accepted only by its types: `--min` and `--max` (a value may equal them) for an integer, float or timespan; `--exclusive-min` and `--exclusive-max` for an integer or float; `--unit` (`milliseconds`, `seconds` or `minutes`) and `--allow-fractions` for a timespan, which needs `--unit`, `--min` and `--max`; `--allowed-value`, repeatable, and `--enum-value-type string|number` (default `string`) for an enum; `--https-only` for a URL, without which any HTTP or HTTPS URL is accepted; and `--json-schema <file>` for a JSON config. An option of another type is a usage error naming the types it belongs to. A timespan without `--unit`, `--min` or `--max` is a usage error too.
@@ -326,22 +329,33 @@ configdirector configs ship checkout-cta-copy --environment production --variati
 configdirector configs stop checkout-cta-copy --environment production
 ```
 
-A run is a period during which an experiment's targeting rules in one environment split traffic between its variations. `configs runs` lists the experiment's runs in an environment, newest first, with how many distinct contexts each variation reached, called exposures, against the share configured when the run started:
+A run is a period during which an experiment's targeting rules in one environment split traffic between its variations. `configs runs` lists the experiment's runs in an environment, newest first, with how many distinct contexts each variation reached, called exposures, against the share configured when the run started, and the results of the metrics the experiment measures:
 
 ```txt
 Runs of checkout-cta-copy in production (live), newest first:
 
 Running since 2026-11-03 12:00 UTC
+  Hypothesis: Urgency copy raises checkout completion by 5%
   Rollout: everyone not caught by a rule above
     control (Start free trial)              412 exposures   configured 50%
     treatment-a (Try it free for 14 days)   398 exposures   configured 50%
     810 contexts exposed, 3201 evaluations. The split matches the configured shares.
+    Primary metric: checkout_completed, conversion, higher is better
+      control (Start free trial)              2.9%   control
+      treatment-a (Try it free for 14 days)   4.5%   +55% (+12% to +98%)   >99% chance to beat control   likely better
+    Guardrail: support_ticket_opened, count per context, lower is better
+      control (Start free trial)              0.12   control
+      treatment-a (Try it free for 14 days)   0.13   +8% (-10% to +29%)   22% chance to beat control   no clear difference
+  Events with no metric: add_to_cart (340 contexts)
+  Results can be up to 25 minutes behind.
 ```
+
+Each kind a metric reports gets a line with the metric's role, its event name, the kind and its direction, then one row per variation, the control first: its value, and for every other variation the lift against the control with the range it is likely in, the chance to beat control and the verdict, `likely better`, `likely worse` or `no clear difference`. With three or more variations, each row also shows the variation's chance to be best. Until every variation has enough exposures, the rollout says the run needs more exposures and shows the values alone. An ended run's last line says when its final results were taken, once they are in. A run also shows its hypothesis and the note it ended with, and lists the events sent with `track` during the run that no metric measures.
 
 - `configs ship` serves one variation to everyone in the environment and ends the run. `--variation` takes its name or its ID. The default targeting rule value becomes the variation's value, every percentage rollout is removed, including one a conditional rule serves, and a conditional rule serving a single value stays.
 - `configs stop` ends the run without choosing a variation: every percentage rollout is removed, including one a conditional rule serves, and the default targeting rule value and any conditional rule serving a single value stay.
 
-Both print the rules they saved, ask for no confirmation and treat a live environment like any other, so check the environment before you run them.
+Both take `--note <text>`, up to 1,000 characters on why, which the ended run keeps. Both print the rules they saved, ask for no confirmation and treat a live environment like any other, so check the environment before you run them.
 
 `configs ship` exits with 2 when `--variation` matches none of the experiment's variations, or several with the same name, and lists them with their IDs, and when the config has no variations, since only an experiment has them. `configs stop` exits with 2 when the config is not an experiment or the environment holds no percentage rollout. All three exit with 2 when no config has the key or no environment has the slug. With `--json`, they print the Admin API's response as received.
 
@@ -399,6 +413,24 @@ configdirector segments delete beta-testers
 `segments delete <key>` deletes a segment and its environment overrides, with no confirmation, and prints `Deleted segment beta-testers from web-app.`; `--json` prints `{ "deletedSegmentKey": "beta-testers" }` with the key as given. While the targeting rules of a config use the segment, in any environment, it is not deleted: the command exits with 2 and lists each config with the environments whose rules use it, so you can remove those segment conditions with `targeting-rules set` first. A key no segment has exits with 2 for `update` and `delete`.
 
 `segments create` needs `projects:read` and `segments:create`, `segments update` needs `projects:read`, `segments:read` and `segments:update`, and `segments delete` needs `projects:read` and `segments:delete`. Without `environments:read`, they name environments by ID instead of by slug. The change shows in the audit log with the source CLI.
+
+## Change metrics
+
+```bash
+configdirector metrics create --event-name checkout_completed --kind conversion --kind value-per-context --direction higher-is-better
+configdirector metrics update checkout_completed --direction lower-is-better
+configdirector metrics delete checkout_completed
+```
+
+A metric is what an experiment measures: an event name the application sends with the SDK's `track` call, the numbers it reports and whether a higher or a lower number is better. A project has one metric per event name, and the commands name a metric by its event name. Attaching metrics to an experiment happens on its Settings tab in the dashboard, or through the Admin API or the MCP server.
+
+- `metrics create` needs `--event-name`, exactly as the application passes it to `track`; `--kind`, repeatable: `conversion`, `count-per-context` or `value-per-context`; and `--direction`: `higher-is-better` or `lower-is-better`. `--description <text>` is optional. It prints `Created metric checkout_completed in web-app.`, then the metric as `metrics get` shows it.
+- `metrics update <event name>` changes what its options name: `--kind`, repeated, replaces the kinds, and `--direction` and `--description` replace theirs; `--description ""` removes the description. A metric keeps its event name. Removing a kind an experiment's primary metric decides on is refused, and the command exits with 2 listing those experiments.
+- `metrics delete <event name>` deletes the metric and detaches it from the experiments that use it, and prints `Deleted metric checkout_completed from web-app.`; `--json` prints `{ "deletedEventName": "checkout_completed" }` with the event name as given. While an experiment that uses the metric has a run in progress, it is not deleted: the command exits with 2 and lists each experiment with the environments of its runs.
+
+None of them asks for confirmation. An event name no metric has exits with 2 for `update` and `delete`, and so does a metric ConfigDirector refuses, such as a second metric for an event name. With `--json`, `create` and `update` print the metric as the Admin API returned it.
+
+`metrics create` needs `projects:read` and `metrics:create`, `metrics update` needs `projects:read`, `metrics:read` and `metrics:update`, and `metrics delete` needs `projects:read`, `metrics:read` and `metrics:delete`. Without `environments:read`, `metrics update` and `metrics delete` name environments by ID instead of by slug. The change shows in the audit log with the source CLI.
 
 ## Archive a config
 

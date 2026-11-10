@@ -5,9 +5,22 @@ import type { Variation } from "../admin-api/variations.js";
 import { alignedColumns } from "../aligned-columns.js";
 import { oldKeyLines } from "../old-key-lines.js";
 import { plural } from "../plural.js";
-import { describeVariation, formatPercentage, type SegmentsById } from "../rule-sentences.js";
+import {
+  describeVariation,
+  describeVariationById,
+  describeVariationOrNoLongerListed,
+  formatPercentage,
+  type SegmentsById,
+} from "../rule-sentences.js";
 import { utcMinute } from "../utc-minute.js";
 import { environmentLabel, targetingRuleLines } from "./config-text.js";
+import {
+  eventsWithoutAMetricLines,
+  resultsFreshnessLines,
+  rolloutResultLines,
+  runResultsOf,
+  type RunResults,
+} from "./run-results-text.js";
 
 const OUTCOME_LABELS: Readonly<Record<string, string>> = {
   shipped: "Shipped",
@@ -24,17 +37,13 @@ const VERDICT_SENTENCES: Readonly<Record<string, string>> = {
     "The run needs more exposures before the split can be checked against the configured shares.",
 };
 
-const variationDescription = (variationId: string, variations: Variation[]): string | undefined => {
-  const variation = variations.find((candidate) => candidate.id === variationId);
-  return variation && describeVariation(variation);
-};
-
 const runHeadline = (run: ExperimentRun, variations: Variation[]): string => {
   if (run.outcome === undefined || run.endedAt === undefined) {
     return `Running since ${utcMinute(run.startedAt)}`;
   }
   const outcomeLabel = OUTCOME_LABELS[run.outcome] ?? run.outcome;
-  const shippedVariation = run.shippedVariationId && variationDescription(run.shippedVariationId, variations);
+  const shippedVariation =
+    run.shippedVariationId && describeVariationById(run.shippedVariationId, variations);
   const outcome = shippedVariation ? `${outcomeLabel} ${shippedVariation}` : outcomeLabel;
   return `${outcome}, ${utcMinute(run.startedAt)} to ${utcMinute(run.endedAt)}`;
 };
@@ -48,16 +57,22 @@ const rolloutSummary = (rollout: RolloutExposures): string =>
   `${rollout.evaluations} ${plural(rollout.evaluations, "evaluation", "evaluations")}. ` +
   (VERDICT_SENTENCES[rollout.verdict] ?? rollout.verdict);
 
-const rolloutLines = (run: ExperimentRun, rollout: RolloutExposures, variations: Variation[]): string[] => [
+const rolloutLines = (
+  run: ExperimentRun,
+  runResults: RunResults,
+  rollout: RolloutExposures,
+  variations: Variation[],
+): string[] => [
   `Rollout: ${rolloutAudience(run, rollout)}`,
   ...alignedColumns(
     rollout.variations.map((variation) => [
-      variationDescription(variation.variationId, variations) ?? "a variation no longer listed",
+      describeVariationOrNoLongerListed(variation.variationId, variations),
       `${variation.exposures} ${plural(variation.exposures, "exposure", "exposures")}`,
       `configured ${formatPercentage(variation.percentage)}%`,
     ]),
   ).map((line) => `  ${line}`),
   `  ${rolloutSummary(rollout)}`,
+  ...rolloutResultLines(runResults, rollout.ruleId, variations).map((line) => `  ${line}`),
 ];
 
 const uncountedEvaluationsLines = (evaluations: number, one: string, several: string): string[] => {
@@ -67,22 +82,29 @@ const uncountedEvaluationsLines = (evaluations: number, one: string, several: st
   return [evaluations === 1 ? `1 evaluation ${one}` : `${evaluations} evaluations ${several}`];
 };
 
-const runLines = (run: ExperimentRun, variations: Variation[]): string[] => [
-  runHeadline(run, variations),
-  ...[
-    ...run.exposures.rollouts.flatMap((rollout) => rolloutLines(run, rollout, variations)),
-    ...uncountedEvaluationsLines(
-      run.exposures.evaluationsFromSdksNotReportingExposures,
-      "came from an SDK version that does not report exposures yet. It is not counted above; update that SDK to count it.",
-      "came from SDK versions that do not report exposures yet. They are not counted above; update those SDKs to count them.",
-    ),
-    ...uncountedEvaluationsLines(
-      run.exposures.evaluationsWithoutIdentifier,
-      "came from an anonymous context, so it is not an exposure. In a server SDK, a context without an identifier skips the split and is served the default targeting rule value; any other anonymous context sees its share of the split without being stored.",
-      "came from anonymous contexts, so they are not exposures. In a server SDK, a context without an identifier skips the split and is served the default targeting rule value; any other anonymous context sees its share of the split without being stored.",
-    ),
-  ].map((line) => `  ${line}`),
-];
+const runLines = (run: ExperimentRun, variations: Variation[]): string[] => {
+  const runResults = runResultsOf(run);
+  return [
+    runHeadline(run, variations),
+    ...[
+      ...(run.hypothesis === undefined ? [] : [`Hypothesis: ${run.hypothesis}`]),
+      ...(run.note === undefined ? [] : [`Ended with note: ${run.note}`]),
+      ...run.exposures.rollouts.flatMap((rollout) => rolloutLines(run, runResults, rollout, variations)),
+      ...uncountedEvaluationsLines(
+        run.exposures.evaluationsFromSdksNotReportingExposures,
+        "came from an SDK version that does not report exposures yet. It is not counted above; update that SDK to count it.",
+        "came from SDK versions that do not report exposures yet. They are not counted above; update those SDKs to count them.",
+      ),
+      ...uncountedEvaluationsLines(
+        run.exposures.evaluationsWithoutIdentifier,
+        "came from an anonymous context, so it is not an exposure. In a server SDK, a context without an identifier skips the split and is served the default targeting rule value; any other anonymous context sees its share of the split without being stored.",
+        "came from anonymous contexts, so they are not exposures. In a server SDK, a context without an identifier skips the split and is served the default targeting rule value; any other anonymous context sees its share of the split without being stored.",
+      ),
+      ...eventsWithoutAMetricLines(run, runResults),
+      ...resultsFreshnessLines(run, runResults),
+    ].map((line) => `  ${line}`),
+  ];
+};
 
 export const runsText = (
   config: ConfigWithTargetingRules,

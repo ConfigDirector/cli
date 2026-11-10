@@ -1,4 +1,4 @@
-import { Command, CommanderError, Option, type OptionValues } from "commander";
+import { Command, CommanderError, InvalidArgumentError, Option, type OptionValues } from "commander";
 import { version } from "../package.json";
 import { CliError } from "./CliError.js";
 import type { CommandContext, CommandOutput } from "./CommandContext.js";
@@ -22,6 +22,7 @@ import { evaluate } from "./commands/evaluate.js";
 import { init } from "./commands/init.js";
 import { login } from "./commands/login.js";
 import { logout } from "./commands/logout.js";
+import { createMetric, deleteMetric, getMetric, listMetrics, updateMetric } from "./commands/metrics.js";
 import { listProjects } from "./commands/projects.js";
 import { listScannedRepositories, removeScannedRepository } from "./commands/repositories.js";
 import { DEFAULT_CONTEXT_LINES, MAXIMUM_CONTEXT_LINES, scan } from "./commands/scan.js";
@@ -42,6 +43,7 @@ import {
   TIMESPAN_UNITS,
   typeConstraintHelpGroup,
 } from "./configs/new-config.js";
+import { METRIC_DIRECTIONS, METRIC_KINDS } from "./metrics/metric-words.js";
 
 const DEFAULT_BASE_URL = "https://api.configdirector.com";
 
@@ -69,6 +71,16 @@ const withoutTrailingSlashes = (url: string): string => {
 type CommandArguments = ReadonlyArray<string | undefined>;
 
 const repeatedOption = (value: string, values: string[] | undefined): string[] => [...(values ?? []), value];
+
+const repeatableChoiceOption = (flags: string, description: string, choices: readonly string[]): Option =>
+  new Option(flags, description)
+    .choices(choices)
+    .argParser((value: string, values: string[] | undefined): string[] => {
+      if (!choices.includes(value)) {
+        throw new InvalidArgumentError(`Allowed choices are ${choices.join(", ")}.`);
+      }
+      return repeatedOption(value, values);
+    });
 
 type CommandImplementation<Arguments extends CommandArguments, CommandOptions extends OptionValues> = (
   context: CommandContext,
@@ -331,6 +343,10 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
       "a variation of an experiment, its value in the type given by --type; repeatable",
       repeatedOption,
     )
+    .option(
+      "--hypothesis <text>",
+      "what an experiment is expected to do; each run keeps the hypothesis it started with",
+    )
     .addOption(
       new Option("--min <number>", "the smallest value allowed, included").helpGroup(
         typeConstraintHelpGroup("min"),
@@ -404,8 +420,8 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .option("--dry-run", "print the plan without creating anything")
     .addHelpText(
       "after",
-      "\nThe copy gets the config's role, lifetime, type, constraints, variations, SDK availability, description " +
-        "and tags, and every environment's targeting rules and default targeting rule value. It starts as a new " +
+      "\nThe copy gets the config's role, lifetime, type, constraints, variations, SDK availability, description, " +
+        "hypothesis and tags, and every environment's targeting rules and default targeting rule value. It starts as a new " +
         "config, with no old keys, evaluations or code references, and shares nothing with the config it came from. " +
         "An archived config cannot be copied; restore it first. " +
         "In another project, environments are matched by slug, tags by name and segments by key: a source " +
@@ -420,7 +436,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
   configsCommand
     .command("runs")
     .argument("<key>", "the experiment's key, or an old key of it")
-    .description("list an experiment's runs in an environment with their exposures, newest first")
+    .description("list an experiment's runs in an environment with their exposures and results, newest first")
     .requiredOption("--environment <slug>", "slug of the environment to list the runs of (required)")
     .action(commandAction(showConfigRuns));
 
@@ -430,6 +446,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .description("serve one variation of an experiment to everyone in an environment, ending its run")
     .requiredOption("--environment <slug>", "slug of the environment to ship the variation in (required)")
     .requiredOption("--variation <variation>", "the name or id of the variation to ship (required)")
+    .option("--note <text>", "why the variation is shipped, kept on the ended run")
     .addHelpText(
       "after",
       "\nIn one targeting rules save, the default targeting rule value becomes the variation's value, every " +
@@ -443,6 +460,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .argument("<key>", "the experiment's key, or an old key of it")
     .description("end an experiment's run in an environment without choosing a variation")
     .requiredOption("--environment <slug>", "slug of the environment to stop the run in (required)")
+    .option("--note <text>", "why the run is stopped, kept on the ended run")
     .addHelpText(
       "after",
       "\nIn one targeting rules save, every percentage rollout is removed, including one a conditional rule serves, " +
@@ -520,6 +538,83 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
         "the deletion is refused and the configs are listed with their environments.",
     )
     .action(commandAction(deleteSegment));
+
+  const metricsCommand = program
+    .command("metrics")
+    .description("list, show, create, update and delete the metrics a project's experiments measure");
+
+  metricsCommand
+    .command("list")
+    .description("list the project's metrics with their kinds, direction and how many experiments use each")
+    .option("--no-headers", NO_HEADERS_DESCRIPTION)
+    .action(commandAction(listMetrics));
+
+  metricsCommand
+    .command("get")
+    .argument("<event name>", "the metric's event name, as the application passes it to track")
+    .description("show a metric's kinds and direction, and the experiments that use it")
+    .action(commandAction(getMetric));
+
+  metricsCommand
+    .command("create")
+    .description("create the project's metric for an event name the application passes to track")
+    .requiredOption(
+      "--event-name <event name>",
+      "the event name, exactly as the application passes it to track (required)",
+    )
+    .addOption(
+      repeatableChoiceOption(
+        "--kind <kind>",
+        "a number the metric reports: conversion, the share of exposed contexts that sent the event; " +
+          "count-per-context, how many times each sent it on average; value-per-context, the value sent with it " +
+          "per context on average; repeatable (required)",
+        METRIC_KINDS,
+      ).makeOptionMandatory(),
+    )
+    .addOption(
+      new Option("--direction <direction>", "whether a higher or a lower number is better (required)")
+        .choices(METRIC_DIRECTIONS)
+        .makeOptionMandatory(),
+    )
+    .option("--description <text>", "what the event means")
+    .action(commandAction(createMetric));
+
+  metricsCommand
+    .command("update")
+    .argument("<event name>", "the metric's event name")
+    .description("change a metric's kinds, direction or description, leaving the others as they are")
+    .addOption(
+      repeatableChoiceOption(
+        "--kind <kind>",
+        "a number the metric reports; repeatable, and the kinds given replace the metric's",
+        METRIC_KINDS,
+      ),
+    )
+    .addOption(
+      new Option("--direction <direction>", "whether a higher or a lower number is better").choices(
+        METRIC_DIRECTIONS,
+      ),
+    )
+    .option("--description <text>", 'what the event means; --description "" removes it')
+    .addHelpText(
+      "after",
+      "\nA metric keeps its event name: for another event name, create another metric. Removing a kind that an " +
+        "experiment's primary metric decides on is refused, and the experiments are listed.",
+    )
+    .action(commandAction(updateMetric));
+
+  metricsCommand
+    .command("delete")
+    .argument("<event name>", "the metric's event name")
+    .description("delete a metric and detach it from the experiments that use it")
+    .addHelpText(
+      "after",
+      "\nThe metric is deleted with no confirmation. While an experiment that uses it has a run in progress, " +
+        "the deletion is refused and the experiments are listed with the environments of their runs. " +
+        "Events with its name keep being counted, so a metric created again for the name and attached again " +
+        "shows their history.",
+    )
+    .action(commandAction(deleteMetric));
 
   const targetingRulesCommand = program
     .command("targeting-rules")

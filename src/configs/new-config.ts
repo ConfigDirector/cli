@@ -79,6 +79,7 @@ export type NewConfigOptions = TypeConstraintOptions & {
   clientOnly?: true;
   serverOnly?: true;
   variation?: string[];
+  hypothesis?: string;
 };
 
 type Availability = Pick<CreateConfigRequest, "client" | "server">;
@@ -331,6 +332,7 @@ export const newConfigOf = async (
     typeOptions: await CONFIG_TYPE_RULES[options.type].typeOptionsOf(options, workingDirectory),
     ...availabilityOf(options),
     variations: await variationsOf(options, workingDirectory),
+    hypothesis: options.hypothesis,
     defaultValue: await typedValueOf(options.type, {
       argumentLabel: "--default-value",
       text: options.defaultValue,

@@ -20,10 +20,17 @@ export const adminApiUnderTest = (): AdminApiUnderTest | undefined => {
   return baseUrl === undefined || token === undefined ? undefined : { baseUrl, token };
 };
 
-const requestAdminApi = async (adminApi: AdminApiUnderTest, method: "GET" | "DELETE", path: string) => {
+type AdminApiRequest = { method: "GET" | "DELETE" } | { method: "PATCH"; body: object };
+
+const requestAdminApi = async (adminApi: AdminApiUnderTest, request: AdminApiRequest, path: string) => {
   const response = await fetch(`${adminApi.baseUrl}${path}`, {
-    method,
-    headers: { Accept: "application/json", Authorization: `Bearer ${adminApi.token}` },
+    method: request.method,
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${adminApi.token}`,
+      ...("body" in request ? { "Content-Type": "application/json" } : {}),
+    },
+    ...("body" in request ? { body: JSON.stringify(request.body) } : {}),
   });
   return { status: response.status, body: await response.json().catch(() => undefined) };
 };
@@ -51,7 +58,7 @@ const requireOnlyProject = (projects: ProjectUnderTest[]): ProjectUnderTest => {
 };
 
 export const projectUnderTest = async (adminApi: AdminApiUnderTest): Promise<ProjectUnderTest> => {
-  const { status, body } = await requestAdminApi(adminApi, "GET", "/v1/projects");
+  const { status, body } = await requestAdminApi(adminApi, { method: "GET" }, "/v1/projects");
   if (status !== 200) {
     throw new Error(`GET ${adminApi.baseUrl}/v1/projects answered HTTP ${status}: ${JSON.stringify(body)}`);
   }
@@ -64,7 +71,11 @@ export const environmentsOf = async (
   adminApi: AdminApiUnderTest,
   project: ProjectUnderTest,
 ): Promise<EnvironmentUnderTest[]> => {
-  const { status, body } = await requestAdminApi(adminApi, "GET", `/v1/projects/${project.id}/environments`);
+  const { status, body } = await requestAdminApi(
+    adminApi,
+    { method: "GET" },
+    `/v1/projects/${project.id}/environments`,
+  );
   if (status !== 200) {
     throw new Error(`Listing the environments of ${project.slug} answered HTTP ${status}.`);
   }
@@ -73,7 +84,7 @@ export const environmentsOf = async (
 
 export const removeWhenTestFinishes = (adminApi: AdminApiUnderTest, path: string): void => {
   onTestFinished(async () => {
-    const { status, body } = await requestAdminApi(adminApi, "DELETE", path);
+    const { status, body } = await requestAdminApi(adminApi, { method: "DELETE" }, path);
     if (status !== 404 && (status < 200 || status >= 300)) {
       throw new Error(`Removing the fixture at ${path} answered HTTP ${status}: ${JSON.stringify(body)}`);
     }
@@ -89,4 +100,21 @@ export const firstEnvironmentOf = async (
     throw new Error(`The project ${project.slug} has no environments.`);
   }
   return firstEnvironment;
+};
+
+export const attachPrimaryConversionMetric = async (
+  adminApi: AdminApiUnderTest,
+  project: ProjectUnderTest,
+  configKey: string,
+  metricId: string,
+): Promise<void> => {
+  const path = `/v1/projects/${project.id}/configs/${configKey}`;
+  const { status, body } = await requestAdminApi(
+    adminApi,
+    { method: "PATCH", body: { metrics: [{ metricId, role: "primary", primaryKind: "conversion" }] } },
+    path,
+  );
+  if (status !== 200) {
+    throw new Error(`Attaching the metric at ${path} answered HTTP ${status}: ${JSON.stringify(body)}`);
+  }
 };

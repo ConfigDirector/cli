@@ -12,6 +12,7 @@ export type CreateConfigRequest = {
   client: boolean;
   server: boolean;
   variations: { name: string; value: ConfigValue }[];
+  hypothesis?: string;
   tagIds: string[];
   defaultValue: ConfigValue;
 };

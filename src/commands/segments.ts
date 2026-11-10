@@ -1,9 +1,9 @@
-import { ifPermitted } from "../admin-api/admin-api-errors.js";
 import type { AdminApiClient, Project } from "../admin-api/AdminApiClient.js";
 import type { Segment, SegmentDefinition, SegmentUsage } from "../admin-api/segments.js";
 import { alignedListing, type ListingOptions } from "../aligned-columns.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
+import { environmentSlugsById } from "../environment-selection.js";
 import { ExitCode } from "../ExitCode.js";
 import { plural } from "../plural.js";
 import { connectToLinkedProject } from "../project-selection.js";
@@ -37,14 +37,6 @@ export const listSegments = async (
     text: [...segmentLines(project.slug, segments, options), ""].join("\n"),
     exitCode: ExitCode.success,
   };
-};
-
-const environmentSlugsById = async (
-  client: AdminApiClient,
-  project: Project,
-): Promise<ReadonlyMap<string, string>> => {
-  const environments = await ifPermitted(client.listEnvironments(project.id));
-  return new Map((environments?.parsedBody ?? []).map((environment) => [environment.id, environment.slug]));
 };
 
 const overrideEnvironmentSlugsOf = async (

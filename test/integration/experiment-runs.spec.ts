@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { adminApiUnderTest, firstEnvironmentOf } from "./support/admin-api-under-test.js";
+import {
+  adminApiUnderTest,
+  attachPrimaryConversionMetric,
+  firstEnvironmentOf,
+} from "./support/admin-api-under-test.js";
 import { jsonOf, startCliUnderTest } from "./support/built-cli.js";
-import { createExperiment, setEvenSplit } from "./support/fixtures.js";
+import { createConversionMetric, createExperiment, setEvenSplit } from "./support/fixtures.js";
 
 type ConfigWithTargets = {
   variations: { id: string; name: string; value: string }[];
@@ -11,6 +15,9 @@ type ConfigWithTargets = {
 type Run = {
   endedAt?: string;
   outcome?: string;
+  hypothesis?: string;
+  note?: string;
+  results: { rollouts: { state: string }[]; primary: { eventName: string }[] };
   shippedVariationId?: string;
   startedBy: { sourceClient: string };
   endedBy?: { sourceClient: string };
@@ -48,6 +55,99 @@ describe.skipIf(adminApiUnderTest() === undefined)(
         }),
       ]);
       expect(runs[0]?.endedAt).toBeUndefined();
+    });
+
+    it("prints the results of the experiment's primary metric, which needs more exposures in a run just started", async () => {
+      const cli = await startCliUnderTest();
+      const environment = await firstEnvironmentOf(cli.adminApi, cli.project);
+      const metric = await createConversionMetric(cli);
+      const key = await createExperiment(cli);
+      await attachPrimaryConversionMetric(cli.adminApi, cli.project, key, metric.id);
+      await setEvenSplit(cli, key, environment.slug);
+
+      const listing = await cli.run(["configs", "runs", key, "--environment", environment.slug]);
+      const runs = jsonOf(
+        await cli.run(["configs", "runs", key, "--environment", environment.slug, "--json"]),
+      ) as Run[];
+
+      expect(listing.exitCode).toEqual(0);
+      expect(listing.stdout.split("\n").slice(7)).toEqual([
+        "    The run needs more exposures before the variations can be compared.",
+        `    Primary metric: ${metric.eventName}, conversion, higher is better`,
+        "      control (Start free trial)              0.0%   control",
+        "      treatment-a (Try it free for 14 days)   0.0%",
+        "  Results can be up to 25 minutes behind.",
+        "",
+      ]);
+      expect(runs[0]?.results).toEqual(
+        expect.objectContaining({
+          rollouts: [expect.objectContaining({ state: "needs-more-exposures" })],
+          primary: [expect.objectContaining({ eventName: metric.eventName })],
+        }),
+      );
+    });
+
+    it("copies the hypothesis --hypothesis gave the experiment onto the run its rollout starts", async () => {
+      const cli = await startCliUnderTest();
+      const environment = await firstEnvironmentOf(cli.adminApi, cli.project);
+      const key = await createExperiment(cli, [
+        "--hypothesis",
+        "Urgency copy raises checkout completion by 5%",
+      ]);
+
+      await setEvenSplit(cli, key, environment.slug);
+
+      expect(
+        jsonOf(await cli.run(["configs", "runs", key, "--environment", environment.slug, "--json"])),
+      ).toEqual([expect.objectContaining({ hypothesis: "Urgency copy raises checkout completion by 5%" })]);
+    });
+
+    it("ships with --note: the ended run keeps the note", async () => {
+      const cli = await startCliUnderTest();
+      const environment = await firstEnvironmentOf(cli.adminApi, cli.project);
+      const key = await createExperiment(cli);
+      await setEvenSplit(cli, key, environment.slug);
+
+      const result = await cli.run([
+        "configs",
+        "ship",
+        key,
+        "--environment",
+        environment.slug,
+        "--variation",
+        "treatment-a",
+        "--note",
+        "Checkout completion rose",
+      ]);
+
+      expect(result.exitCode).toEqual(0);
+      expect(
+        jsonOf(await cli.run(["configs", "runs", key, "--environment", environment.slug, "--json"])),
+      ).toEqual([expect.objectContaining({ outcome: "shipped", note: "Checkout completion rose" })]);
+    });
+
+    it("stops with --note: the ended run keeps the note", async () => {
+      const cli = await startCliUnderTest();
+      const environment = await firstEnvironmentOf(cli.adminApi, cli.project);
+      const key = await createExperiment(cli);
+      await setEvenSplit(cli, key, environment.slug);
+
+      const result = await cli.run([
+        "configs",
+        "stop",
+        key,
+        "--environment",
+        environment.slug,
+        "--note",
+        "Support tickets rose with the new copy",
+      ]);
+
+      expect(result.exitCode).toEqual(0);
+      expect(
+        jsonOf(await cli.run(["configs", "runs", key, "--environment", environment.slug, "--json"])),
+      ).toEqual([
+        expect.objectContaining({ outcome: "stopped", note: "Support tickets rose with the new copy" }),
+      ]);
     });
 
     it("ships a variation named by --variation: the targets are saved and the run ends as shipped by the CLI", async () => {

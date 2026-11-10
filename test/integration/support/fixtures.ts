@@ -36,7 +36,7 @@ export const createBooleanFlag = async (cli: CliUnderTest): Promise<string> => {
   return key;
 };
 
-export const createExperiment = async (cli: CliUnderTest): Promise<string> => {
+export const createExperiment = async (cli: CliUnderTest, extraOptions: string[] = []): Promise<string> => {
   const key = configKeyRemovedWhenTestFinishes(cli);
 
   const result = await cli.run([
@@ -54,10 +54,34 @@ export const createExperiment = async (cli: CliUnderTest): Promise<string> => {
     "treatment-a=Try it free for 14 days",
     "--default-value",
     "Start free trial",
+    ...extraOptions,
   ]);
   requireSuccess(`configs create --key ${key}`, result);
 
   return key;
+};
+
+type MetricUnderTest = { id: string; eventName: string };
+
+export const createConversionMetric = async (cli: CliUnderTest): Promise<MetricUnderTest> => {
+  const eventName = uniqueKey();
+
+  const result = await cli.run([
+    "metrics",
+    "create",
+    "--event-name",
+    eventName,
+    "--kind",
+    "conversion",
+    "--direction",
+    "higher-is-better",
+    "--json",
+  ]);
+  requireSuccess(`metrics create --event-name ${eventName}`, result);
+
+  const { id } = JSON.parse(result.stdout) as { id: string };
+  removeWhenTestFinishes(cli.adminApi, `/v1/projects/${cli.project.id}/metrics/${id}`);
+  return { id, eventName };
 };
 
 export const emailCondition = {

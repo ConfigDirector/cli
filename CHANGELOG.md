@@ -4,6 +4,21 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- `configdirector metrics list` lists the project's metrics, each an event name your application sends with `track`, with the kinds it reports, its direction and how many experiments use it, and `configdirector metrics get <event name>` shows one metric with each experiment that uses it, its role there, and the environments where a run is in progress. `configdirector metrics create --event-name <event name> --kind <kind> --direction <direction>`, with `--kind` repeatable and an optional `--description`, creates a metric; `configdirector metrics update <event name>` changes its kinds, direction or description; and `configdirector metrics delete <event name>` deletes it and detaches it from its experiments. They exit with 2, listing the experiments, when ConfigDirector refuses to remove a kind an experiment's primary metric decides on, or to delete a metric an experiment with a run in progress uses. `--json` prints the Admin API's response as received, `metrics get --json` the metric as the Admin API listed it for its event name, and `metrics delete --json` `{ "deletedEventName": ... }`.
+- `configdirector configs runs` shows the results of the metrics an experiment measures under each rollout: per metric kind, each variation's value against the control, with the lift and the range it is likely in, the chance to beat control, the chance to be best with three or more variations, and the verdict, likely better, likely worse or no clear difference. It says when a rollout needs more exposures before the variations can be compared and how many contexts were exposed to more than one variation, that results can be up to 25 minutes behind on a running run, and when an ended run's final results were taken. Each run also shows its hypothesis and the note it ended with, and lists the events sent with `track` during the run that no metric measures. `--json` prints the Admin API's response as received, as before.
+- `configdirector configs ship` and `configs stop` take `--note <text>`, up to 1,000 characters on why, which the ended run keeps.
+- `configdirector configs create` takes `--hypothesis <text>`, what an experiment is expected to do, which each of its runs keeps as it was when the run started.
+
+### Changed
+
+- `configdirector configs copy --help` lists the hypothesis among what a copy gets.
+
+### Fixed
+
+- `configdirector configs runs` describes the evaluations it leaves out of the exposures as coming from anonymous contexts: in a server SDK, a context without an identifier skips the split and is served the default targeting rule value, and any other anonymous context sees its share of the split without being stored. It said every such evaluation was served the default targeting rule value.
+
 ## [0.20.0] - 2026-11-06
 
 ### Changed

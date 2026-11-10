@@ -1646,6 +1646,42 @@ describe("configs create variations", () => {
     ]);
   });
 
+  it("sends the hypothesis given with --hypothesis", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/configs": {
+        status: 200,
+        body: createdConfig({
+          key: "checkout-button-size",
+          type: "integer",
+          role: "experiment",
+          typeOptions: { isInteger: true },
+          variations: [
+            { name: "small", value: "10" },
+            { name: "large", value: "20" },
+          ],
+        }),
+      },
+    });
+
+    const { exitCode } = await createConfig(adminApi.baseUrl, [
+      ...experimentArguments,
+      "--variation",
+      "small=10",
+      "--variation",
+      "large=20",
+      "--hypothesis",
+      "A larger button raises checkout completion",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(configCreationBodies(adminApi)).toEqual([
+      expect.objectContaining({
+        role: "experiment",
+        hypothesis: "A larger button raises checkout completion",
+      }),
+    ]);
+  });
+
   it("names the variation the default targeting rule value is, before the value", async () => {
     const adminApi = await startBrowseAdminApi({
       "/configs": {

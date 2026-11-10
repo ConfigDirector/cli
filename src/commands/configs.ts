@@ -10,6 +10,7 @@ import type {
 import { ApiValidationError, ifPermitted } from "../admin-api/admin-api-errors.js";
 import type { CreateConfigRequest, CreatedConfig } from "../admin-api/config-creation.js";
 import type { ConfigWithTargetingRules } from "../admin-api/config-with-targeting-rules.js";
+import type { RunEndRequest } from "../admin-api/experiment-runs.js";
 import { alignedColumns, alignedListing, type ListingOptions } from "../aligned-columns.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
@@ -405,7 +406,12 @@ export const showConfigRuns = async (
   };
 };
 
-type ShipVariationOptions = ConfigInEnvironmentOptions & { variation: string };
+type RunEndOptions = ConfigInEnvironmentOptions & { note?: string };
+
+const runEndRequestOf = (options: RunEndOptions): RunEndRequest =>
+  options.note === undefined ? {} : { note: options.note };
+
+type ShipVariationOptions = RunEndOptions & { variation: string };
 
 export const shipVariation = async (
   context: CommandContext,
@@ -419,7 +425,10 @@ export const shipVariation = async (
     throw new CliError(`No config in ${project.slug} has the key "${configKey}".`);
   }
   const variation = findVariationToShip(receivedConfig.parsedBody, options.variation);
-  const savedConfig = await client.shipVariation(project.id, configKey, environment.id, variation.id);
+  const savedConfig = await client.shipVariation(project.id, configKey, environment.id, {
+    variationId: variation.id,
+    ...runEndRequestOf(options),
+  });
   if (savedConfig === undefined) {
     throw new CliError(`No config in ${project.slug} has the key "${configKey}".`);
   }
@@ -438,11 +447,11 @@ export const shipVariation = async (
 export const stopRun = async (
   context: CommandContext,
   [configKey]: readonly [string],
-  options: ConfigInEnvironmentOptions,
+  options: RunEndOptions,
 ): Promise<CommandOutput> => {
   const { client, project } = await connectToLinkedProject(context);
   const environment = await findEnvironmentBySlug(client, project, options.environment);
-  const savedConfig = await client.stopRun(project.id, configKey, environment.id);
+  const savedConfig = await client.stopRun(project.id, configKey, environment.id, runEndRequestOf(options));
   if (savedConfig === undefined) {
     throw new CliError(`No config in ${project.slug} has the key "${configKey}".`);
   }
