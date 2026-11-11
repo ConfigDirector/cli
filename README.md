@@ -342,7 +342,15 @@ Running since 2026-11-03 12:00 UTC
     810 contexts exposed, 3201 evaluations. The split matches the configured shares.
     Primary metric: checkout_completed, conversion, higher is better
       control (Start free trial)              2.9%   control
-      treatment-a (Try it free for 14 days)   4.5%   +55% (+12% to +98%)   >99% chance to beat control   likely better
+      treatment-a (Try it free for 14 days)   3.5%   +19% (-43% to +154%)   69% chance to beat control   no clear difference
+    How long to run, at the pace since 2026-11-04 00:00 UTC: about 98 new exposures a day
+      For a real lift of +2%    810 of about 2,082,762 exposures   more than a year remaining
+      For a real lift of +5%    810 of about 338,034 exposures     more than a year remaining
+      For a real lift of +10%   810 of about 86,501 exposures      more than a year remaining
+      For a real lift of +20%   810 of about 22,617 exposures      about 222 days remaining
+      For a real lift of +50%   810 of about 4,089 exposures       about 34 days remaining
+    A row's lift is one a variation might really have over the control, not the lift measured so far: the smaller it is, the longer the run.
+    Whatever the estimate says, a run should cover at least one full week, so every day of the week is in the result.
     Guardrail: support_ticket_opened, count per context, lower is better
       control (Start free trial)              0.12   control
       treatment-a (Try it free for 14 days)   0.13   +8% (-10% to +29%)   22% chance to beat control   no clear difference
@@ -350,7 +358,7 @@ Running since 2026-11-03 12:00 UTC
   Results can be up to 25 minutes behind.
 ```
 
-Each kind a metric reports gets a line with the metric's role, its event name, the kind and its direction, then one row per variation, the control first: its value, and for every other variation the lift against the control with the range it is likely in, the chance to beat control and the verdict, `likely better`, `likely worse` or `no clear difference`. With three or more variations, each row also shows the variation's chance to be best. Until every variation has enough exposures, the rollout says the run needs more exposures and shows the values alone. An ended run's last line says when its final results were taken, once they are in. A run also shows its hypothesis and the note it ended with, and lists the events sent with `track` during the run that no metric measures.
+Each kind a metric reports gets a line with the metric's role, its event name, the kind and its direction, then one row per variation, the control first: its value, and for every other variation the lift against the control with the range it is likely in, the chance to beat control and the verdict, `likely better`, `likely worse` or `no clear difference`. With three or more variations, each row also shows the variation's chance to be best. Until every variation has enough exposures, the rollout says the run needs more exposures and shows the values alone. While a run is going, `How long to run` follows the primary metric's results: for a real lift of 2%, 5%, 10%, 20% and 50%, in the metric's better direction, the exposures so far against those needed before a variation with that lift has a good chance of reading likely better, and about how many days remain at the pace of new exposures since the time it names. An ended run's last line says when its final results were taken, once they are in. A run also shows its hypothesis and the note it ended with, and lists the events sent with `track` during the run that no metric measures.
 
 - `configs ship` serves one variation to everyone in the environment and ends the run. `--variation` takes its name or its ID. The default targeting rule value becomes the variation's value, every percentage rollout is removed, including one a conditional rule serves, and a conditional rule serving a single value stays.
 - `configs stop` ends the run without choosing a variation: every percentage rollout is removed, including one a conditional rule serves, and the default targeting rule value and any conditional rule serving a single value stay.

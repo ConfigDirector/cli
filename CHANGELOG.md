@@ -4,6 +4,10 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- `configdirector configs runs` shows how long a run in progress needs, under each rollout's primary metric results once its variations can be compared. For a real lift of 2%, 5%, 10%, 20% and 50% on the primary metric, in its better direction, it gives the exposures so far against those needed before a variation with that lift has a good chance of reading likely better, and about how many days remain at the pace of new exposures since the time it names. A lift the rollout has enough exposures for says so, more than 365 days reads as more than a year, and when no new contexts were exposed since that time, it says the days cannot be estimated and gives the exposures alone. It also says that a row's lift is one a variation might really have, not the lift measured so far, and that whatever the estimate says, a run should cover at least one full week. The estimate doesn't show while the control's numbers give nothing to estimate from, as when none of its contexts has sent the event yet. `--json` prints the Admin API's response as received, as before.
+
 ## [0.21.0] - 2026-11-10
 
 ### Added

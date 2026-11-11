@@ -414,12 +414,12 @@ describe("configs runs", () => {
 
 const thirdId = "0a000000-0000-4000-8000-000000000004";
 
-const conversionResultOf = (variations: object[]) => ({
+const conversionResultOf = (variations: object[], rolloutFields: object = {}) => ({
   metricId: "0c000000-0000-4000-8000-000000000001",
   eventName: "checkout_completed",
   direction: "higher-is-better",
   primaryKind: "conversion",
-  kinds: [{ kind: "conversion", rollouts: [{ ruleId: rolloutRuleId, variations }] }],
+  kinds: [{ kind: "conversion", rollouts: [{ ruleId: rolloutRuleId, variations, ...rolloutFields }] }],
 });
 
 const controlConversion = { variationId: controlId, exposures: 412, converters: 12, value: 0.0291 };
@@ -847,6 +847,152 @@ describe("configs runs results", () => {
     ]);
 
     expect(lines.slice(-2)).toEqual(["  Events with no metric: checkout_completed (30 contexts)", ""]);
+  });
+});
+
+const treatmentConversionWithoutClearDifference = {
+  variationId: treatmentId,
+  exposures: 398,
+  converters: 14,
+  value: 0.0352,
+  lift: 0.19,
+  interval: { low: -0.43, high: 1.54 },
+  chanceToBeatControl: 0.69,
+  verdict: "no-clear-difference",
+};
+
+const runLengthEstimate = {
+  analyzedExposures: 810,
+  exposuresPerDay: 98.4,
+  paceMeasuredSince: "2026-11-04T00:00:00.000Z",
+  lifts: [
+    { lift: 0.02, exposuresNeeded: 2082762, daysRemaining: 21159 },
+    { lift: 0.05, exposuresNeeded: 338034, daysRemaining: 3428 },
+    { lift: 0.1, exposuresNeeded: 86501, daysRemaining: 871 },
+    { lift: 0.2, exposuresNeeded: 22617, daysRemaining: 222 },
+    { lift: 0.5, exposuresNeeded: 4089, daysRemaining: 34 },
+  ],
+};
+
+const estimateLinesOf = async (estimate: object) =>
+  runLinesOf([
+    runWithResults({
+      primary: [
+        conversionResultOf([controlConversion, treatmentConversionWithoutClearDifference], {
+          runLengthEstimate: estimate,
+        }),
+      ],
+    }),
+  ]);
+
+describe("configs runs run length estimate", () => {
+  it("prints, under the kind that carries the estimate, each lift's exposures so far against those needed and the days remaining at the pace since it was measured", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        primary: [
+          conversionResultOf([controlConversion, treatmentConversionWithoutClearDifference], {
+            runLengthEstimate,
+          }),
+        ],
+        guardrail: [supportTicketsGuardrail],
+      }),
+    ]);
+
+    expect(lines).toEqual([
+      "Runs of checkout-cta-copy in production (live), newest first:",
+      "",
+      "Running since 2026-11-03 12:00 UTC",
+      "  Rollout: everyone not caught by a rule above",
+      "    control (Start free trial)              412 exposures   configured 50%",
+      "    treatment-a (Try it free for 14 days)   398 exposures   configured 50%",
+      "    810 contexts exposed, 3201 evaluations. The split matches the configured shares.",
+      "    Primary metric: checkout_completed, conversion, higher is better",
+      "      control (Start free trial)              2.9%   control",
+      "      treatment-a (Try it free for 14 days)   3.5%   +19% (-43% to +154%)   69% chance to beat control   no clear difference",
+      "    How long to run, at the pace since 2026-11-04 00:00 UTC: about 98 new exposures a day",
+      "      For a real lift of +2%    810 of about 2,082,762 exposures   more than a year remaining",
+      "      For a real lift of +5%    810 of about 338,034 exposures     more than a year remaining",
+      "      For a real lift of +10%   810 of about 86,501 exposures      more than a year remaining",
+      "      For a real lift of +20%   810 of about 22,617 exposures      about 222 days remaining",
+      "      For a real lift of +50%   810 of about 4,089 exposures       about 34 days remaining",
+      "    A row's lift is one a variation might really have over the control, not the lift measured so far: the smaller it is, the longer the run.",
+      "    Whatever the estimate says, a run should cover at least one full week, so every day of the week is in the result.",
+      "    Guardrail: support_ticket_opened, count per context, lower is better",
+      "      control (Start free trial)              0.12   control",
+      "      treatment-a (Try it free for 14 days)   0.13   +8% (-10% to +29%)   22% chance to beat control   no clear difference",
+      "  Results can be up to 25 minutes behind.",
+      "",
+    ]);
+  });
+
+  it("says a lift has enough exposures once the rollout has as many as it needs", async () => {
+    const lines = await estimateLinesOf({
+      ...runLengthEstimate,
+      analyzedExposures: 4240,
+      lifts: [{ lift: 0.5, exposuresNeeded: 4089, daysRemaining: 0 }],
+    });
+
+    expect(lines[11]).toEqual(
+      "      For a real lift of +50%   4,240 of about 4,089 exposures   enough exposures",
+    );
+  });
+
+  it("writes more than 365 days remaining as more than a year", async () => {
+    const lines = await estimateLinesOf({
+      ...runLengthEstimate,
+      lifts: [{ lift: 0.1, exposuresNeeded: 36818, daysRemaining: 366 }],
+    });
+
+    expect(lines[11]).toEqual(
+      "      For a real lift of +10%   810 of about 36,818 exposures   more than a year remaining",
+    );
+  });
+
+  it("writes 365 days remaining in days", async () => {
+    const lines = await estimateLinesOf({
+      ...runLengthEstimate,
+      lifts: [{ lift: 0.1, exposuresNeeded: 36727, daysRemaining: 365 }],
+    });
+
+    expect(lines[11]).toEqual(
+      "      For a real lift of +10%   810 of about 36,727 exposures   about 365 days remaining",
+    );
+  });
+
+  it("says no new contexts were exposed since the pace was measured, and gives the exposures alone for a lift without days remaining", async () => {
+    const lines = await estimateLinesOf({
+      ...runLengthEstimate,
+      exposuresPerDay: 0,
+      lifts: [
+        { lift: 0.2, exposuresNeeded: 22617 },
+        { lift: 0.5, exposuresNeeded: 4089 },
+      ],
+    });
+
+    expect(lines.slice(10, 13)).toEqual([
+      "    How long to run: no new contexts were exposed since 2026-11-04 00:00 UTC, so the days cannot be estimated.",
+      "      For a real lift of +20%   810 of about 22,617 exposures",
+      "      For a real lift of +50%   810 of about 4,089 exposures",
+    ]);
+  });
+
+  it("writes one day remaining in the singular", async () => {
+    const lines = await estimateLinesOf({
+      ...runLengthEstimate,
+      lifts: [{ lift: 0.5, exposuresNeeded: 4089, daysRemaining: 1 }],
+    });
+
+    expect(lines[11]).toEqual(
+      "      For a real lift of +50%   810 of about 4,089 exposures   about 1 day remaining",
+    );
+  });
+
+  it("writes a pace of one new exposure a day in the singular", async () => {
+    const lines = await estimateLinesOf({ ...runLengthEstimate, exposuresPerDay: 1.2 });
+
+    expect(lines[10]).toEqual(
+      "    How long to run, at the pace since 2026-11-04 00:00 UTC: about 1 new exposure a day",
+    );
   });
 });
 

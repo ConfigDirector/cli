@@ -4,6 +4,7 @@ import type {
   MetricResult,
   Results,
   RolloutResults,
+  RunLengthEstimate,
   VariationResult,
 } from "../admin-api/experiment-runs.js";
 import type { Variation } from "../admin-api/variations.js";
@@ -121,6 +122,77 @@ const resultRow = (variation: VariationResult, table: ResultTable): string[] => 
 
 const capitalized = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
+const DAYS_IN_A_YEAR = 365;
+
+const formatCount = (count: number): string => count.toLocaleString("en-US");
+
+type LiftRowForm =
+  | { form: "days-remaining"; days: number }
+  | { form: "more-than-a-year" }
+  | { form: "enough-exposures" }
+  | { form: "no-pace" };
+
+const liftRowFormOf = (daysRemaining: number | undefined): LiftRowForm => {
+  if (daysRemaining === undefined) {
+    return { form: "no-pace" };
+  }
+  if (daysRemaining === 0) {
+    return { form: "enough-exposures" };
+  }
+  return daysRemaining > DAYS_IN_A_YEAR
+    ? { form: "more-than-a-year" }
+    : { form: "days-remaining", days: daysRemaining };
+};
+
+const daysRemainingCells = (liftRow: LiftRowForm): string[] => {
+  switch (liftRow.form) {
+    case "days-remaining":
+      return [`about ${formatCount(liftRow.days)} ${plural(liftRow.days, "day", "days")} remaining`];
+    case "more-than-a-year":
+      return ["more than a year remaining"];
+    case "enough-exposures":
+      return ["enough exposures"];
+    case "no-pace":
+      return [];
+  }
+};
+
+type ExposurePace = { form: "new-exposures"; exposuresPerDay: number } | { form: "no-new-exposures" };
+
+const exposurePaceOf = (estimate: RunLengthEstimate): ExposurePace =>
+  estimate.exposuresPerDay > 0
+    ? { form: "new-exposures", exposuresPerDay: Math.round(estimate.exposuresPerDay) }
+    : { form: "no-new-exposures" };
+
+const paceLine = (estimate: RunLengthEstimate): string => {
+  const since = utcMinute(estimate.paceMeasuredSince);
+  const pace = exposurePaceOf(estimate);
+  switch (pace.form) {
+    case "new-exposures":
+      return `How long to run, at the pace since ${since}: about ${formatCount(pace.exposuresPerDay)} ${plural(pace.exposuresPerDay, "new exposure", "new exposures")} a day`;
+    case "no-new-exposures":
+      return `How long to run: no new contexts were exposed since ${since}, so the days cannot be estimated.`;
+  }
+};
+
+const runLengthEstimateLines = (estimate: RunLengthEstimate | undefined): string[] => {
+  if (estimate === undefined) {
+    return [];
+  }
+  return [
+    paceLine(estimate),
+    ...alignedColumns(
+      estimate.lifts.map((liftEstimate) => [
+        `For a real lift of ${formatLift(liftEstimate.lift)}`,
+        `${formatCount(estimate.analyzedExposures)} of about ${formatCount(liftEstimate.exposuresNeeded)} exposures`,
+        ...daysRemainingCells(liftRowFormOf(liftEstimate.daysRemaining)),
+      ]),
+    ).map((line) => `  ${line}`),
+    "A row's lift is one a variation might really have over the control, not the lift measured so far: the smaller it is, the longer the run.",
+    "Whatever the estimate says, a run should cover at least one full week, so every day of the week is in the result.",
+  ];
+};
+
 const kindResultLines = (
   role: string,
   metric: MetricResult,
@@ -128,12 +200,11 @@ const kindResultLines = (
   rollout: RolloutResults,
   variations: Variation[],
 ): string[] => {
-  const variationResults = kindResult.rollouts.find(
-    (candidate) => candidate.ruleId === rollout.ruleId,
-  )?.variations;
-  if (variationResults === undefined) {
+  const kindResultOfRollout = kindResult.rollouts.find((candidate) => candidate.ruleId === rollout.ruleId);
+  if (kindResultOfRollout === undefined) {
     return [];
   }
+  const variationResults = kindResultOfRollout.variations;
   const table: ResultTable = {
     kind: kindResult.kind,
     controlVariationId: rollout.controlVariationId,
@@ -146,6 +217,7 @@ const kindResultLines = (
     ...alignedColumns(variationResults.map((variation) => resultRow(variation, table))).map((line) =>
       `  ${line}`.trimEnd(),
     ),
+    ...runLengthEstimateLines(kindResultOfRollout.runLengthEstimate),
   ];
 };
 

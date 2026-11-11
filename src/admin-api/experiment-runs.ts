@@ -24,9 +24,26 @@ const VariationResultSchema = v.object({
 
 export type VariationResult = v.InferOutput<typeof VariationResultSchema>;
 
+const RunLengthEstimateSchema = v.object({
+  analyzedExposures: v.number(),
+  exposuresPerDay: v.number(),
+  paceMeasuredSince: TimestampSchema,
+  lifts: v.array(
+    v.object({ lift: v.number(), exposuresNeeded: v.number(), daysRemaining: v.optional(v.number()) }),
+  ),
+});
+
+export type RunLengthEstimate = v.InferOutput<typeof RunLengthEstimateSchema>;
+
 const MetricKindResultSchema = v.object({
   kind: v.string(),
-  rollouts: v.array(v.object({ ruleId: v.string(), variations: v.array(VariationResultSchema) })),
+  rollouts: v.array(
+    v.object({
+      ruleId: v.string(),
+      variations: v.array(VariationResultSchema),
+      runLengthEstimate: v.optional(RunLengthEstimateSchema),
+    }),
+  ),
 });
 
 export type MetricKindResult = v.InferOutput<typeof MetricKindResultSchema>;
