@@ -31,6 +31,8 @@ const checkoutCompleted = {
   id: checkoutCompletedId,
   projectId: webApp.id,
   eventName: "checkout_completed",
+  filter: null,
+  valueField: null,
   description: "Orders paid for.",
   direction: "higher-is-better",
   kinds: ["conversion"],
@@ -41,6 +43,16 @@ const checkoutCompleted = {
 
 const listedByEventName = "/metrics?eventName=checkout_completed";
 const metricPath = `/metrics/${checkoutCompletedId}`;
+
+const teamCheckoutCompletedId = "4f5a6b7c-8d9e-4f0a-9b1c-3d4e5f6a7b8c";
+
+const teamCheckoutCompleted = {
+  ...checkoutCompleted,
+  id: teamCheckoutCompletedId,
+  filter: [{ field: "/plan", targetType: "text", operator: "is one of", targetValues: ["team"] }],
+};
+
+const teamMetricPath = `/metrics/${teamCheckoutCompletedId}`;
 
 describe("metrics update", () => {
   it("sends only the fields given to the metric the event name names, and prints a line saying so, then the metric as metrics get prints it", async () => {
@@ -225,6 +237,78 @@ describe("metrics update", () => {
     expect(stderr).toEqual('Error: No metric in web-app has the event name "checkout_completed".\n');
   });
 
+  it("exits 2 listing each metric with the event name by its id and its name, with no PATCH, when several share it", async () => {
+    const adminApi = await startBrowseAdminApi({
+      [listedByEventName]: { status: 200, body: [checkoutCompleted, teamCheckoutCompleted] },
+    });
+
+    const { exitCode, stdout, stderr } = await updateMetric(adminApi.baseUrl, [
+      "checkout_completed",
+      "--direction",
+      "lower-is-better",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr.split("\n")).toEqual([
+      'Error: 2 metrics in web-app have the event name "checkout_completed". Name one with --id:',
+      `  ${checkoutCompletedId}   checkout_completed`,
+      `  ${teamCheckoutCompletedId}   checkout_completed · /plan is one of [team]`,
+      "",
+    ]);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `GET ${projectPath(listedByEventName)}`]);
+  });
+
+  it("sends the change to the metric --id names, and names it by its event name and its filter", async () => {
+    const adminApi = await startBrowseAdminApi({
+      [teamMetricPath]: (request) =>
+        request.method === "GET"
+          ? { status: 200, body: teamCheckoutCompleted }
+          : { status: 200, body: { ...teamCheckoutCompleted, direction: "lower-is-better" } },
+    });
+
+    const { exitCode, stdout, stderr } = await updateMetric(adminApi.baseUrl, [
+      "--id",
+      teamCheckoutCompletedId,
+      "--direction",
+      "lower-is-better",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n").slice(0, 2)).toEqual([
+      "Updated metric checkout_completed · /plan is one of [team] in web-app.",
+      "checkout_completed · /plan is one of [team]",
+    ]);
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath(teamMetricPath)}`,
+      `PATCH ${projectPath(teamMetricPath)}`,
+    ]);
+    expect(adminApi.receivedRequests[2]?.body).toEqual({ direction: "lower-is-better" });
+  });
+
+  it("exits 2 saying no metric in the project has the id, with no PATCH, when --id names none", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/metrics/not-a-metric-id": { status: 404, body: {} },
+    });
+
+    const { exitCode, stdout, stderr } = await updateMetric(adminApi.baseUrl, [
+      "--id",
+      "not-a-metric-id",
+      "--direction",
+      "lower-is-better",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual('Error: No metric in web-app has the id "not-a-metric-id".\n');
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath("/metrics/not-a-metric-id")}`,
+    ]);
+  });
+
   it("sends the change as JSON in a PATCH with the bearer token and the cli source client", async () => {
     const adminApi = await startBrowseAdminApi({
       [listedByEventName]: { status: 200, body: [checkoutCompleted] },
@@ -358,7 +442,7 @@ describe("metrics update usage errors", () => {
     expect(adminApi.receivedRequests).toEqual([]);
   });
 
-  it("exits 2 without a request when the event name is missing", async () => {
+  it("exits 2 without a request when neither an event name nor --id is given", async () => {
     const adminApi = await startBrowseAdminApi();
 
     const { exitCode, stdout, stderr } = await updateMetric(adminApi.baseUrl, [
@@ -368,7 +452,7 @@ describe("metrics update usage errors", () => {
 
     expect(exitCode).toEqual(2);
     expect(stdout).toEqual("");
-    expect(stderr).toContain("missing required argument 'event name'");
+    expect(stderr).toEqual("Error: Name the metric by its event name, or by its id with --id.\n");
     expect(adminApi.receivedRequests).toEqual([]);
   });
 });

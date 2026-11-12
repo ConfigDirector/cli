@@ -1,4 +1,5 @@
 import type { Metric, MetricUsage, OpenRuns } from "../admin-api/metrics.js";
+import { metricLabel } from "./metric-label.js";
 import { directionWords, kindWords, roleWords } from "./metric-words.js";
 
 export const openRunEnvironmentNames = (
@@ -22,7 +23,7 @@ const usageLines = (metric: Metric, environmentSlugs: ReadonlyMap<string, string
 
 export const metricText = (metric: Metric, environmentSlugs: ReadonlyMap<string, string>): string =>
   [
-    metric.eventName,
+    metricLabel(metric),
     ...(metric.description === null ? [] : [`  Description: ${metric.description}`]),
     `  Kinds: ${metric.kinds.map(kindWords).join(", ")}`,
     `  Direction: ${directionWords(metric.direction)}`,

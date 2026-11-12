@@ -4,6 +4,18 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- `configdirector metrics create` takes `--filter <file>`, or `--filter -` for stdin, a JSON file holding the conditions on an event's details that the event must match to count for the metric, such as only the checkouts on the Team plan, in the shape `metrics get --json` prints a metric's `filter` in. It also takes `--value-field <pointer>`, the field of the event's details whose number value per context sums in place of the event's value, with `--kind value-per-context`. A metric keeps both for its whole life, and a run counts it from the moment it is attached to the experiment.
+- `configdirector metrics get`, `metrics update` and `metrics delete` take `--id <metric id>` in place of the event name, to name one of several metrics with the same event name.
+
+### Changed
+
+- `configdirector metrics get`, `metrics update` and `metrics delete` change nothing when several metrics have the event name you give: they list the metrics with their IDs and exit with 2. Earlier versions act on the first metric ConfigDirector lists for the event name, so once a project has several metrics on one event name, their `metrics update` and `metrics delete` can change or delete another metric than the one you mean. Upgrade every CLI that changes metrics before you create a second metric on an event name.
+- `configdirector metrics list`, `metrics get`, `metrics create`, `metrics update`, `metrics delete` and `configs runs` name a metric by its event name, then its filter's conditions, then its value field, as in `checkout_completed · /plan is one of [team] · value from /items`. The first column of `metrics list` is headed `METRIC`.
+- `configdirector configs runs` says since when a run counted a metric with a filter or a value field that was attached to the experiment while the run was going, under each of the metric's kinds, and that events reported before then are not in its numbers. For such a metric that was not attached while the run was open, it says the run did not count it and shows no numbers. `--json` prints the Admin API's response as received, as before.
+- `configdirector metrics delete --json` prints the deleted metric's `deletedMetricId` beside its `deletedEventName`.
+
 ## [0.22.0] - 2026-11-11
 
 ### Added

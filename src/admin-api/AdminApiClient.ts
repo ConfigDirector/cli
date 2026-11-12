@@ -225,7 +225,7 @@ type JsonRequest = { method: "GET" | "DELETE" } | { method: "POST" | "PUT" | "PA
 
 type ReceivedResponse = { url: string; response: Response; body: unknown };
 
-type ParsedResponse<Body> = {
+export type ParsedResponse<Body> = {
   responseBody: unknown;
   parsedBody: Body;
 };
@@ -392,19 +392,25 @@ export class AdminApiClient {
     return this.get(`/v1/projects/${encodeURIComponent(projectId)}/metrics`, v.array(MetricSchema));
   }
 
-  public async findMetricByEventName(
+  public async listMetricsWithEventName(
     projectId: string,
     eventName: string,
-  ): Promise<ParsedResponse<Metric> | undefined> {
+  ): Promise<ParsedResponse<Metric>[]> {
     const { parsedBody: metrics, responseBody } = await this.get(
       `/v1/projects/${encodeURIComponent(projectId)}/metrics?${new URLSearchParams({ eventName })}`,
       v.array(MetricSchema),
     );
-    const index = metrics.findIndex((metric) => metric.eventName === eventName);
-    const metric = metrics[index];
-    return metric === undefined
-      ? undefined
-      : { parsedBody: metric, responseBody: v.parse(v.array(v.unknown()), responseBody)[index] };
+    const receivedMetrics = v.parse(v.array(v.unknown()), responseBody);
+    return metrics.flatMap((metric, index) =>
+      metric.eventName === eventName ? [{ parsedBody: metric, responseBody: receivedMetrics[index] }] : [],
+    );
+  }
+
+  public getMetric(projectId: string, metricId: string): Promise<ParsedResponse<Metric> | undefined> {
+    return this.getIfFound(
+      `/v1/projects/${encodeURIComponent(projectId)}/metrics/${encodeURIComponent(metricId)}`,
+      MetricSchema,
+    );
   }
 
   public createMetric(projectId: string, request: CreateMetricRequest): Promise<ParsedResponse<Metric>> {

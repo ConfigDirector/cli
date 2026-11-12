@@ -20,16 +20,37 @@ const readRequestSource = async (
   return { origin: `${argumentLabel} names ${file}`, contents };
 };
 
+const readRequestJson = async (
+  argumentLabel: string,
+  argument: string,
+  invocation: Invocation,
+): Promise<{ origin: string; request: unknown }> => {
+  const { origin, contents } = await readRequestSource(argumentLabel, argument, invocation);
+  return { origin, request: parseJson(contents) };
+};
+
 export const readRequestFile = async (
   argumentLabel: string,
   argument: string,
   invocation: Invocation,
   expectedFormatSentence: string,
 ): Promise<JsonObject> => {
-  const { origin, contents } = await readRequestSource(argumentLabel, argument, invocation);
-  const request = parseJson(contents);
+  const { origin, request } = await readRequestJson(argumentLabel, argument, invocation);
   if (!isJsonObject(request)) {
     throw new CliError(`${origin}, which does not hold a JSON object. ${expectedFormatSentence}`);
+  }
+  return request;
+};
+
+export const readRequestListFile = async (
+  argumentLabel: string,
+  argument: string,
+  invocation: Invocation,
+  expectedFormatSentence: string,
+): Promise<unknown[]> => {
+  const { origin, request } = await readRequestJson(argumentLabel, argument, invocation);
+  if (!Array.isArray(request)) {
+    throw new CliError(`${origin}, which does not hold a JSON array. ${expectedFormatSentence}`);
   }
   return request;
 };

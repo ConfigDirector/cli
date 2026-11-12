@@ -31,6 +31,8 @@ const checkoutCompleted = {
   id: checkoutCompletedId,
   projectId: webApp.id,
   eventName: "checkout_completed",
+  filter: null,
+  valueField: null,
   description: null,
   direction: "higher-is-better",
   kinds: ["conversion"],
@@ -41,6 +43,16 @@ const checkoutCompleted = {
 
 const listedByEventName = "/metrics?eventName=checkout_completed";
 const metricPath = `/metrics/${checkoutCompletedId}`;
+
+const teamCheckoutCompletedId = "4f5a6b7c-8d9e-4f0a-9b1c-3d4e5f6a7b8c";
+
+const teamCheckoutCompleted = {
+  ...checkoutCompleted,
+  id: teamCheckoutCompletedId,
+  filter: [{ field: "/plan", targetType: "text", operator: "is one of", targetValues: ["team"] }],
+};
+
+const teamMetricPath = `/metrics/${teamCheckoutCompletedId}`;
 
 const metricInUse = {
   status: 409,
@@ -84,7 +96,7 @@ describe("metrics delete", () => {
     ]);
   });
 
-  it("prints the deleted metric's event name, and nothing else, with --json", async () => {
+  it("prints the deleted metric's id and event name, and nothing else, with --json", async () => {
     const adminApi = await startBrowseAdminApi({
       [listedByEventName]: { status: 200, body: [checkoutCompleted] },
       [metricPath]: { status: 204 },
@@ -97,7 +109,68 @@ describe("metrics delete", () => {
 
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
-    expect(JSON.parse(stdout)).toEqual({ deletedEventName: "checkout_completed" });
+    expect(JSON.parse(stdout)).toEqual({
+      deletedMetricId: checkoutCompletedId,
+      deletedEventName: "checkout_completed",
+    });
+  });
+
+  it("exits 2 listing each metric with the event name by its id and its name, with no DELETE, when several share it", async () => {
+    const adminApi = await startBrowseAdminApi({
+      [listedByEventName]: { status: 200, body: [checkoutCompleted, teamCheckoutCompleted] },
+    });
+
+    const { exitCode, stdout, stderr } = await deleteMetric(adminApi.baseUrl, ["checkout_completed"]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr.split("\n")).toEqual([
+      'Error: 2 metrics in web-app have the event name "checkout_completed". Name one with --id:',
+      `  ${checkoutCompletedId}   checkout_completed`,
+      `  ${teamCheckoutCompletedId}   checkout_completed · /plan is one of [team]`,
+      "",
+    ]);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `GET ${projectPath(listedByEventName)}`]);
+  });
+
+  it("deletes the metric --id names and prints a line naming it by its event name and its filter", async () => {
+    const adminApi = await startBrowseAdminApi({
+      [teamMetricPath]: (request) =>
+        request.method === "GET" ? { status: 200, body: teamCheckoutCompleted } : { status: 204 },
+    });
+
+    const { exitCode, stdout, stderr } = await deleteMetric(adminApi.baseUrl, [
+      "--id",
+      teamCheckoutCompletedId,
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "Deleted metric checkout_completed · /plan is one of [team] from web-app.",
+      "",
+    ]);
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath(teamMetricPath)}`,
+      `DELETE ${projectPath(teamMetricPath)}`,
+    ]);
+  });
+
+  it("exits 2 saying no metric in the project has the id, with no DELETE, when --id names none", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/metrics/not-a-metric-id": { status: 404, body: {} },
+    });
+
+    const { exitCode, stdout, stderr } = await deleteMetric(adminApi.baseUrl, ["--id", "not-a-metric-id"]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual('Error: No metric in web-app has the id "not-a-metric-id".\n');
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `GET ${projectPath("/metrics/not-a-metric-id")}`,
+    ]);
   });
 
   it("exits 2 naming each experiment with an open run and the runs' environments by slug when the API refuses with METRIC_IN_USE", async () => {
@@ -238,14 +311,14 @@ describe("metrics delete", () => {
     expect(stderr).toContain("INSUFFICIENT_PERMISSIONS");
   });
 
-  it("exits 2 without a request when the event name is missing", async () => {
+  it("exits 2 without a request when neither an event name nor --id is given", async () => {
     const adminApi = await startBrowseAdminApi();
 
     const { exitCode, stdout, stderr } = await deleteMetric(adminApi.baseUrl, []);
 
     expect(exitCode).toEqual(2);
     expect(stdout).toEqual("");
-    expect(stderr).toContain("missing required argument 'event name'");
+    expect(stderr).toEqual("Error: Name the metric by its event name, or by its id with --id.\n");
     expect(adminApi.receivedRequests).toEqual([]);
   });
 });

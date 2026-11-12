@@ -9,6 +9,7 @@ import type {
 } from "../admin-api/experiment-runs.js";
 import type { Variation } from "../admin-api/variations.js";
 import { alignedColumns } from "../aligned-columns.js";
+import { metricLabel } from "../metrics/metric-label.js";
 import {
   directionWords,
   isMetricKind,
@@ -193,12 +194,16 @@ const runLengthEstimateLines = (estimate: RunLengthEstimate | undefined): string
   ];
 };
 
+const roleAndMetric = (role: string, metric: MetricResult): string =>
+  `${capitalized(roleWords(role))}: ${metricLabel(metric)}`;
+
 const kindResultLines = (
   role: string,
   metric: MetricResult,
   kindResult: MetricKindResult,
   rollout: RolloutResults,
   variations: Variation[],
+  countingLines: string[],
 ): string[] => {
   const kindResultOfRollout = kindResult.rollouts.find((candidate) => candidate.ruleId === rollout.ruleId);
   if (kindResultOfRollout === undefined) {
@@ -213,12 +218,42 @@ const kindResultLines = (
     showsChanceToBeBest: variationResults.some((variation) => variation.chanceToBeBest !== undefined),
   };
   return [
-    `${capitalized(roleWords(role))}: ${metric.eventName}, ${kindWords(kindResult.kind)}, ${directionWords(metric.direction)}`,
+    `${roleAndMetric(role, metric)}, ${kindWords(kindResult.kind)}, ${directionWords(metric.direction)}`,
+    ...countingLines,
     ...alignedColumns(variationResults.map((variation) => resultRow(variation, table))).map((line) =>
       `  ${line}`.trimEnd(),
     ),
     ...runLengthEstimateLines(kindResultOfRollout.runLengthEstimate),
   ];
+};
+
+const NOT_COUNTED_LINE =
+  "  This run did not count this metric: a metric with a filter or a value field is counted from the moment " +
+  "it is attached to an experiment, and this one was not attached while the run was open.";
+
+const countedSinceLine = (since: string): string =>
+  `  Counted since ${utcMinute(since)}, when this metric was attached to the experiment. ` +
+  "Events reported before then are not in these numbers.";
+
+const metricResultLines = (
+  role: string,
+  metric: MetricResult,
+  rollout: RolloutResults,
+  variations: Variation[],
+): string[] => {
+  const kindResultsWith = (countingLines: string[]): string[] =>
+    metric.kinds.flatMap((kindResult) =>
+      kindResultLines(role, metric, kindResult, rollout, variations, countingLines),
+    );
+  const { counting } = metric;
+  switch (counting.kind) {
+    case "whole-run":
+      return kindResultsWith([]);
+    case "since":
+      return kindResultsWith([countedSinceLine(counting.since)]);
+    case "not-counted":
+      return [`${roleAndMetric(role, metric)}, ${directionWords(metric.direction)}`, NOT_COUNTED_LINE];
+  }
 };
 
 const crossoverLines = (crossovers: number): string[] => {
@@ -266,11 +301,7 @@ export const rolloutResultLines = (
         ...comparisonLines(comparisonOf(rollout)),
         ...crossoverLines(rollout.crossovers),
         ...METRIC_ROLES.flatMap((role) =>
-          results[role].flatMap((metric) =>
-            metric.kinds.flatMap((kindResult) =>
-              kindResultLines(role, metric, kindResult, rollout, variations),
-            ),
-          ),
+          results[role].flatMap((metric) => metricResultLines(role, metric, rollout, variations)),
         ),
       ];
     }

@@ -417,6 +417,9 @@ const thirdId = "0a000000-0000-4000-8000-000000000004";
 const conversionResultOf = (variations: object[], rolloutFields: object = {}) => ({
   metricId: "0c000000-0000-4000-8000-000000000001",
   eventName: "checkout_completed",
+  filter: null,
+  valueField: null,
+  counting: { kind: "whole-run" },
   direction: "higher-is-better",
   primaryKind: "conversion",
   kinds: [{ kind: "conversion", rollouts: [{ ruleId: rolloutRuleId, variations, ...rolloutFields }] }],
@@ -438,6 +441,9 @@ const treatmentConversion = {
 const supportTicketsGuardrail = {
   metricId: "0c000000-0000-4000-8000-000000000002",
   eventName: "support_ticket_opened",
+  filter: null,
+  valueField: null,
+  counting: { kind: "whole-run" },
   direction: "lower-is-better",
   primaryKind: null,
   kinds: [
@@ -508,6 +514,81 @@ describe("configs runs results", () => {
       "      treatment-a (Try it free for 14 days)   0.13   +8% (-10% to +29%)   22% chance to beat control   no clear difference",
       "  Results can be up to 25 minutes behind.",
       "",
+    ]);
+  });
+
+  it("names a metric with a filter and a value field by its event name, its filter and its value field in its results heading", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        secondary: [
+          {
+            ...conversionResultOf([controlConversion, treatmentConversion]),
+            filter: [{ field: "/plan", targetType: "text", operator: "is one of", targetValues: ["team"] }],
+            valueField: "/items",
+            primaryKind: null,
+          },
+        ],
+      }),
+    ]);
+
+    expect(lines[7]).toEqual(
+      "    Secondary metric: checkout_completed · /plan is one of [team] · value from /items, conversion, higher is better",
+    );
+  });
+
+  it("says under each kind heading since when the run counted a metric attached while it was running", async () => {
+    const teamCheckouts = {
+      ...conversionResultOf([controlConversion, treatmentConversion]),
+      filter: [{ field: "/plan", targetType: "text", operator: "is one of", targetValues: ["team"] }],
+      counting: { kind: "since", since: "2026-11-05T09:30:00.000Z" },
+      primaryKind: null,
+    };
+    const lines = await runLinesOf([
+      runWithResults({
+        secondary: [
+          {
+            ...teamCheckouts,
+            kinds: [...teamCheckouts.kinds, { ...teamCheckouts.kinds[0], kind: "count-per-context" }],
+          },
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(7, 15)).toEqual([
+      "    Secondary metric: checkout_completed · /plan is one of [team], conversion, higher is better",
+      "      Counted since 2026-11-05 09:30 UTC, when this metric was attached to the experiment. Events reported before then are not in these numbers.",
+      "      control (Start free trial)              2.9%   control",
+      "      treatment-a (Try it free for 14 days)   4.5%   +55% (+12% to +98%)   >99% chance to beat control   likely better",
+      "    Secondary metric: checkout_completed · /plan is one of [team], count per context, higher is better",
+      "      Counted since 2026-11-05 09:30 UTC, when this metric was attached to the experiment. Events reported before then are not in these numbers.",
+      "      control (Start free trial)              0.03   control",
+      "      treatment-a (Try it free for 14 days)   0.05   +55% (+12% to +98%)   >99% chance to beat control   likely better",
+    ]);
+  });
+
+  it("prints a metric the run did not count with its heading and a line saying so, and no numbers", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        primary: [conversionResultOf([controlConversion, treatmentConversion])],
+        guardrail: [
+          {
+            ...supportTicketsGuardrail,
+            eventName: "checkout_completed",
+            valueField: "/refunded",
+            counting: { kind: "not-counted" },
+            kinds: [],
+          },
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(7, 13)).toEqual([
+      "    Primary metric: checkout_completed, conversion, higher is better",
+      "      control (Start free trial)              2.9%   control",
+      "      treatment-a (Try it free for 14 days)   4.5%   +55% (+12% to +98%)   >99% chance to beat control   likely better",
+      "    Guardrail: checkout_completed · value from /refunded, lower is better",
+      "      This run did not count this metric: a metric with a filter or a value field is counted from the moment it is attached to an experiment, and this one was not attached while the run was open.",
+      "  Results can be up to 25 minutes behind.",
     ]);
   });
 

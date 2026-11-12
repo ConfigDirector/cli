@@ -183,6 +183,7 @@ configdirector segments list
 configdirector segments get <key>
 configdirector metrics list
 configdirector metrics get <event name>
+configdirector metrics get --id <metric id>
 ```
 
 `projects list` lists your organization's projects with their slugs and names, whichever project is selected. The other commands read the project from `--project`, `CONFIGDIRECTOR_PROJECT` or `configdirector.json`, as `scan` does:
@@ -192,7 +193,7 @@ configdirector metrics get <event name>
 - `configs get <key>` shows the config's settings, including its type's constraints, then each environment's targeting rules in order, written as `evaluate` writes them, with the default targeting rule value last. An old key works, and the output then starts with a line naming the current key.
 - `configs activity <key>` shows when SDKs last evaluated the config, one line per environment, SDK key kind, SDK name and SDK version, with the time in UTC.
 - `segments list` lists the segments with how many configs use each, and `segments get <key>` shows a segment's condition groups and its environment overrides.
-- `metrics list` lists the metrics with their kinds, their direction and how many experiments use each, and `metrics get <event name>` shows a metric's kinds and direction, and each experiment that uses it, with its role and the environments of its runs in progress.
+- `metrics list` lists the metrics with their kinds, their direction and how many experiments use each, and `metrics get <event name>` shows a metric's kinds and direction, and each experiment that uses it, with its role and the environments of its runs in progress. Both name a metric by its event name, then its filter's conditions, then its value field, as in `checkout_completed · /plan is one of [team] · value from /items`. When several metrics have the event name, `metrics get` lists them with their IDs and exits with 2, and `metrics get --id <metric id>` shows one of them.
 
 ```txt
 new-checkout
@@ -218,7 +219,7 @@ On an experiment, each value comes after the name of its variation, as in `40% g
 
 `projects list`, `environments list`, `configs list`, `configs activity`, `segments list` and `metrics list` print a header row that names their columns above their lines, such as `KEY   TYPE   ROLE   LIFETIME   STATE` for `configs list`, and `--no-headers` leaves it out. An empty list prints only a sentence, such as `No configs found in web-app.`
 
-With `--json`, each prints the Admin API's response as received, except `configs list --state`, which prints only the configs in that state, and `metrics get`, which prints the metric as the Admin API listed it for its event name. A key no config or segment has, or an event name no metric has, exits with 2.
+With `--json`, each prints the Admin API's response as received, except `configs list --state`, which prints only the configs in that state, and `metrics get`, which prints the metric as the Admin API listed it for its event name, or returned it for its ID. A key no config or segment has, or an event name or ID no metric has, exits with 2.
 
 `projects list` needs `projects:read`. The others need `projects:read` to find the project, and `environments list` needs `environments:read`, `configs list`, `configs get` and `configs activity` need `configs:read`, plus `tags:read` for `--tag`, `segments list` and `segments get` need `segments:read`, and `metrics list` and `metrics get` need `metrics:read`. Without `segments:read`, `configs get` shows a segment condition's segment ID instead of its name; without `environments:read`, `segments get` names an override's environment by its ID instead of its slug, and `metrics get` a run's environment.
 
@@ -358,7 +359,18 @@ Running since 2026-11-03 12:00 UTC
   Results can be up to 25 minutes behind.
 ```
 
-Each kind a metric reports gets a line with the metric's role, its event name, the kind and its direction, then one row per variation, the control first: its value, and for every other variation the lift against the control with the range it is likely in, the chance to beat control and the verdict, `likely better`, `likely worse` or `no clear difference`. With three or more variations, each row also shows the variation's chance to be best. Until every variation has enough exposures, the rollout says the run needs more exposures and shows the values alone. While a run is going, `How long to run` follows the primary metric's results: for a real lift of 2%, 5%, 10%, 20% and 50%, in the metric's better direction, the exposures so far against those needed before a variation with that lift has a good chance of reading likely better, and about how many days remain at the pace of new exposures since the time it names. An ended run's last line says when its final results were taken, once they are in. A run also shows its hypothesis and the note it ended with, and lists the events sent with `track` during the run that no metric measures.
+Each kind a metric reports gets a line with the metric's role, its name, the kind and its direction, then one row per variation, the control first: its value, and for every other variation the lift against the control with the range it is likely in, the chance to beat control and the verdict, `likely better`, `likely worse` or `no clear difference`. With three or more variations, each row also shows the variation's chance to be best. Until every variation has enough exposures, the rollout says the run needs more exposures and shows the values alone. While a run is going, `How long to run` follows the primary metric's results: for a real lift of 2%, 5%, 10%, 20% and 50%, in the metric's better direction, the exposures so far against those needed before a variation with that lift has a good chance of reading likely better, and about how many days remain at the pace of new exposures since the time it names. An ended run's last line says when its final results were taken, once they are in. A run also shows its hypothesis and the note it ended with, and lists the events sent with `track` during the run that no metric measures.
+
+A run counts a metric with a filter or a value field from the moment it is attached to the experiment. When that was during the run, a line under each of the metric's kinds says since when, and that events reported before then are not in its numbers. When the metric was not attached while the run was open, the run shows the metric's line and says it did not count it, with no numbers:
+
+```txt
+    Secondary metric: checkout_completed · /plan is one of [team], conversion, higher is better
+      Counted since 2026-11-05 09:30 UTC, when this metric was attached to the experiment. Events reported before then are not in these numbers.
+      control (Start free trial)              2.1%   control
+      treatment-a (Try it free for 14 days)   3.0%   +43% (-5% to +110%)   91% chance to beat control   no clear difference
+    Guardrail: checkout_completed · value from /refunded, lower is better
+      This run did not count this metric: a metric with a filter or a value field is counted from the moment it is attached to an experiment, and this one was not attached while the run was open.
+```
 
 - `configs ship` serves one variation to everyone in the environment and ends the run. `--variation` takes its name or its ID. The default targeting rule value becomes the variation's value, every percentage rollout is removed, including one a conditional rule serves, and a conditional rule serving a single value stays.
 - `configs stop` ends the run without choosing a variation: every percentage rollout is removed, including one a conditional rule serves, and the default targeting rule value and any conditional rule serving a single value stay.
@@ -426,17 +438,38 @@ configdirector segments delete beta-testers
 
 ```bash
 configdirector metrics create --event-name checkout_completed --kind conversion --kind value-per-context --direction higher-is-better
+configdirector metrics create --event-name checkout_completed --filter team-plan.json --value-field /items --kind value-per-context --direction higher-is-better
 configdirector metrics update checkout_completed --direction lower-is-better
-configdirector metrics delete checkout_completed
+configdirector metrics delete --id 4f5a6b7c-8d9e-4f0a-9b1c-3d4e5f6a7b8c
 ```
 
-A metric is what an experiment measures: an event name the application sends with the SDK's `track` call, the numbers it reports and whether a higher or a lower number is better. A project has one metric per event name, and the commands name a metric by its event name. Attaching metrics to an experiment happens on its Settings tab in the dashboard, or through the Admin API or the MCP server.
+A metric is what an experiment measures: the events with one name the application sends with the SDK's `track` call, all of them or only those whose details match the metric's filter, the numbers it reports and whether a higher or a lower number is better. A project can have several metrics on one event name, told apart by their filter and value field, and the commands name a metric by its event name, then its filter's conditions, then its value field, as in `checkout_completed · /plan is one of [team] · value from /items`. Attaching metrics to an experiment happens on its Settings tab in the dashboard, or through the Admin API or the MCP server.
 
 - `metrics create` needs `--event-name`, exactly as the application passes it to `track`; `--kind`, repeatable: `conversion`, `count-per-context` or `value-per-context`; and `--direction`: `higher-is-better` or `lower-is-better`. `--description <text>` is optional. It prints `Created metric checkout_completed in web-app.`, then the metric as `metrics get` shows it.
-- `metrics update <event name>` changes what its options name: `--kind`, repeated, replaces the kinds, and `--direction` and `--description` replace theirs; `--description ""` removes the description. A metric keeps its event name. Removing a kind an experiment's primary metric decides on is refused, and the command exits with 2 listing those experiments.
-- `metrics delete <event name>` deletes the metric and detaches it from the experiments that use it, and prints `Deleted metric checkout_completed from web-app.`; `--json` prints `{ "deletedEventName": "checkout_completed" }` with the event name as given. While an experiment that uses the metric has a run in progress, it is not deleted: the command exits with 2 and lists each experiment with the environments of its runs.
+- `metrics create --filter <file>`, or `--filter -` for stdin, counts only the events whose details match every condition in the file, 1 to 5 of them, in the shape `metrics get --json` prints a metric's `filter` in:
 
-None of them asks for confirmation. An event name no metric has exits with 2 for `update` and `delete`, and so does a metric ConfigDirector refuses, such as a second metric for an event name. With `--json`, `create` and `update` print the metric as the Admin API returned it.
+  ```json
+  [{ "field": "/plan", "targetType": "text", "operator": "is one of", "targetValues": ["team"] }]
+  ```
+
+  `field` is a JSON pointer into the details the application sends with the event. A `text` condition takes `is one of` or `is NOT one of`; a `number` condition takes `=`, `!=`, `>`, `>=`, `<` or `<=`, with its number as text, such as `"2"`; and a `boolean` condition takes `equals`, with `"true"` or `"false"`. A condition means what it means in a targeting rule, so a field an event lacks reads as empty text, and `is NOT one of` and `!=` count an event without it.
+
+- `metrics create --value-field <pointer>` sums the number at that field of the event's details for value per context, in place of the event's value, and needs `--kind value-per-context`.
+- A metric keeps its filter and value field for its whole life: for others, create another metric. A run counts a metric with a filter or a value field from the moment it is attached to the experiment.
+- `metrics update <event name>` changes what its options name: `--kind`, repeated, replaces the kinds, and `--direction` and `--description` replace theirs; `--description ""` removes the description. A metric keeps its event name, filter and value field. Removing a kind an experiment's primary metric decides on is refused, and the command exits with 2 listing those experiments.
+- `metrics delete <event name>` deletes the metric and detaches it from the experiments that use it, and prints `Deleted metric checkout_completed from web-app.`; `--json` prints `{ "deletedMetricId": "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "deletedEventName": "checkout_completed" }`. While an experiment that uses the metric has a run in progress, it is not deleted: the command exits with 2 and lists each experiment with the environments of its runs.
+
+`metrics update` and `metrics delete` take the event name while only one metric has it. When several metrics have it, they change nothing: they list the metrics with their IDs and exit with 2, and `--id <metric id>` names one of them:
+
+```txt
+Error: 2 metrics in web-app have the event name "checkout_completed". Name one with --id:
+  1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f   checkout_completed
+  4f5a6b7c-8d9e-4f0a-9b1c-3d4e5f6a7b8c   checkout_completed · /plan is one of [team]
+```
+
+Versions of the CLI before 0.23.0 act on the first metric ConfigDirector lists for an event name, so once a project has several metrics on one event name, their `metrics update` and `metrics delete` can change or delete another metric than the one you mean. Upgrade every CLI that changes metrics before you create a second metric on an event name.
+
+None of them asks for confirmation. An event name or ID no metric has exits with 2 for `update` and `delete`, and so does a metric ConfigDirector refuses, such as one with the same event name, filter and value field as another. With `--json`, `create` and `update` print the metric as the Admin API returned it.
 
 `metrics create` needs `projects:read` and `metrics:create`, `metrics update` needs `projects:read`, `metrics:read` and `metrics:update`, and `metrics delete` needs `projects:read`, `metrics:read` and `metrics:delete`. Without `environments:read`, `metrics update` and `metrics delete` name environments by ID instead of by slug. The change shows in the audit log with the source CLI.
 
@@ -466,7 +499,7 @@ It asks for no confirmation and does not check whether the code still reads the 
 | `--project <slug>`            | `CONFIGDIRECTOR_PROJECT`      | Project slug. Without either, every command that reads a project uses the `project` in `configdirector.json`.                                                     |
 | `--json`                      |                               | Print JSON on stdout. Errors always go to stderr.                                                                                                                 |
 
-The command exits with 0 when it succeeds, 1 when `validate` found a problem or `configs create` found a config that already has the key, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or something the command names that does not exist, such as a config key, an environment, a saved context, a segment key, a tag or a scanned repository. `segments delete` also exits with 2 when the targeting rules of a config use the segment. A CI job can therefore tell a wrong config key from an outage.
+The command exits with 0 when it succeeds, 1 when `validate` found a problem or `configs create` found a config that already has the key, and 2 when it could not run: a usage mistake, a rejected token, a suspended service, an unreachable API, or something the command names that does not exist, such as a config key, an environment, a saved context, a segment key, a tag or a scanned repository. `segments delete` also exits with 2 when the targeting rules of a config use the segment. `metrics get`, `metrics update` and `metrics delete` also exit with 2 when several metrics have the event name they are given. A CI job can therefore tell a wrong config key from an outage.
 
 ## License
 

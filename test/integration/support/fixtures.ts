@@ -63,9 +63,10 @@ export const createExperiment = async (cli: CliUnderTest, extraOptions: string[]
 
 type MetricUnderTest = { id: string; eventName: string };
 
-export const createConversionMetric = async (cli: CliUnderTest): Promise<MetricUnderTest> => {
-  const eventName = uniqueKey();
-
+export const createConversionMetric = async (
+  cli: CliUnderTest,
+  eventName: string = uniqueKey(),
+): Promise<MetricUnderTest> => {
   const result = await cli.run([
     "metrics",
     "create",
@@ -78,6 +79,38 @@ export const createConversionMetric = async (cli: CliUnderTest): Promise<MetricU
     "--json",
   ]);
   requireSuccess(`metrics create --event-name ${eventName}`, result);
+
+  const { id } = JSON.parse(result.stdout) as { id: string };
+  removeWhenTestFinishes(cli.adminApi, `/v1/projects/${cli.project.id}/metrics/${id}`);
+  return { id, eventName };
+};
+
+export const teamPlanFilter = [
+  { field: "/plan", targetType: "text", operator: "is one of", targetValues: ["team"] },
+];
+
+export const createTeamPlanItemsMetric = async (
+  cli: CliUnderTest,
+  eventName: string,
+): Promise<MetricUnderTest> => {
+  await writeRepositoryFile(cli.sandbox.workingDirectory, "filter.json", JSON.stringify(teamPlanFilter));
+
+  const result = await cli.run([
+    "metrics",
+    "create",
+    "--event-name",
+    eventName,
+    "--filter",
+    "filter.json",
+    "--value-field",
+    "/items",
+    "--kind",
+    "value-per-context",
+    "--direction",
+    "higher-is-better",
+    "--json",
+  ]);
+  requireSuccess(`metrics create --event-name ${eventName} --filter filter.json`, result);
 
   const { id } = JSON.parse(result.stdout) as { id: string };
   removeWhenTestFinishes(cli.adminApi, `/v1/projects/${cli.project.id}/metrics/${id}`);

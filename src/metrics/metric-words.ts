@@ -10,8 +10,10 @@ export const METRIC_ROLES = ["primary", "secondary", "guardrail"] as const;
 
 type MetricRole = (typeof METRIC_ROLES)[number];
 
-const isOneOf = <Value extends string>(values: readonly Value[], candidate: string): candidate is Value =>
-  (values as readonly string[]).includes(candidate);
+export const isOneOf = <Value extends string>(
+  values: readonly Value[],
+  candidate: string,
+): candidate is Value => (values as readonly string[]).includes(candidate);
 
 export const isMetricKind = (kind: string): kind is MetricKind => isOneOf(METRIC_KINDS, kind);
 

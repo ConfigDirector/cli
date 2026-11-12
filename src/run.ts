@@ -49,6 +49,16 @@ const DEFAULT_BASE_URL = "https://api.configdirector.com";
 
 const NO_HEADERS_DESCRIPTION = "leave out the header row";
 
+const METRIC_EVENT_NAME_DESCRIPTION =
+  "the metric's event name, as the application passes it to track, while only one metric has it";
+
+const METRIC_ID_DESCRIPTION =
+  "the metric's id, which names one of several metrics with the same event name, in place of the event name";
+
+const SEVERAL_METRICS_HELP =
+  "When several metrics have the event name, the command lists them with their ids and exits with 2 " +
+  "without changing anything. Name one with --id.";
+
 const SEGMENT_FILE_DESCRIPTION =
   "a JSON file holding the segment as the Admin API takes it, or - to read it from stdin (required)";
 
@@ -551,16 +561,28 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
 
   metricsCommand
     .command("get")
-    .argument("<event name>", "the metric's event name, as the application passes it to track")
+    .argument("[event name]", METRIC_EVENT_NAME_DESCRIPTION)
+    .option("--id <metric id>", METRIC_ID_DESCRIPTION)
     .description("show a metric's kinds and direction, and the experiments that use it")
+    .addHelpText("after", `\n${SEVERAL_METRICS_HELP}`)
     .action(commandAction(getMetric));
 
   metricsCommand
     .command("create")
-    .description("create the project's metric for an event name the application passes to track")
+    .description("create a metric for an event name the application passes to track")
     .requiredOption(
       "--event-name <event name>",
       "the event name, exactly as the application passes it to track (required)",
+    )
+    .option(
+      "--filter <file>",
+      "a JSON file holding the conditions an event's details must match for the event to count, " +
+        "or - to read them from stdin",
+    )
+    .option(
+      "--value-field <pointer>",
+      "a JSON pointer, such as /items, to the field of the event's details holding the number " +
+        "that value per context sums in place of the event's value",
     )
     .addOption(
       repeatableChoiceOption(
@@ -577,11 +599,26 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
         .makeOptionMandatory(),
     )
     .option("--description <text>", "what the event means")
+    .addHelpText(
+      "after",
+      "\nThe --filter file holds a list of 1 to 5 conditions, all of which an event must match to count, like " +
+        "the filter that metrics get --json prints. For the checkouts on the Team plan: " +
+        '[{"field": "/plan", "targetType": "text", "operator": "is one of", "targetValues": ["team"]}]. ' +
+        "field is a JSON pointer into the details the application sends with the event. A text condition " +
+        'takes is one of or is NOT one of; a number condition =, !=, >, >=, < or <=, with its number as text, such as "2"; ' +
+        'and a boolean condition equals, with "true" or "false". A field an event lacks reads as empty text, ' +
+        "so is NOT one of and != count an event without it.\n" +
+        "\n--value-field /items sums the number each event's details hold at /items for value-per-context, in place " +
+        "of the event's value, and needs --kind value-per-context.\n" +
+        "\nA metric keeps its filter and value field for its whole life: for others, create another metric. " +
+        "A metric with a filter or a value field is counted from the moment it is attached to an experiment.",
+    )
     .action(commandAction(createMetric));
 
   metricsCommand
     .command("update")
-    .argument("<event name>", "the metric's event name")
+    .argument("[event name]", METRIC_EVENT_NAME_DESCRIPTION)
+    .option("--id <metric id>", METRIC_ID_DESCRIPTION)
     .description("change a metric's kinds, direction or description, leaving the others as they are")
     .addOption(
       repeatableChoiceOption(
@@ -598,21 +635,25 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .option("--description <text>", 'what the event means; --description "" removes it')
     .addHelpText(
       "after",
-      "\nA metric keeps its event name: for another event name, create another metric. Removing a kind that an " +
-        "experiment's primary metric decides on is refused, and the experiments are listed.",
+      "\nA metric keeps its event name, filter and value field: for others, create another metric. Removing a kind " +
+        "that an experiment's primary metric decides on is refused, and the experiments are listed.\n\n" +
+        SEVERAL_METRICS_HELP,
     )
     .action(commandAction(updateMetric));
 
   metricsCommand
     .command("delete")
-    .argument("<event name>", "the metric's event name")
+    .argument("[event name]", METRIC_EVENT_NAME_DESCRIPTION)
+    .option("--id <metric id>", METRIC_ID_DESCRIPTION)
     .description("delete a metric and detach it from the experiments that use it")
     .addHelpText(
       "after",
       "\nThe metric is deleted with no confirmation. While an experiment that uses it has a run in progress, " +
         "the deletion is refused and the experiments are listed with the environments of their runs. " +
-        "Events with its name keep being counted, so a metric created again for the name and attached again " +
-        "shows their history.",
+        "Events with its name keep being counted, so a metric created again for the name without a filter or a " +
+        "value field and attached again shows their history, while one with a filter or a value field is counted " +
+        "from the moment it is attached.\n\n" +
+        SEVERAL_METRICS_HELP,
     )
     .action(commandAction(deleteMetric));
 

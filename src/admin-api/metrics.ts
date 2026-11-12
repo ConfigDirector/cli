@@ -13,9 +13,22 @@ const MetricUsageSchema = v.object({
 
 export type MetricUsage = v.InferOutput<typeof MetricUsageSchema>;
 
+const MetricFilterConditionSchema = v.object({
+  field: v.string(),
+  targetType: v.string(),
+  operator: v.string(),
+  targetValues: v.array(v.string()),
+});
+
+export type MetricFilterCondition = v.InferOutput<typeof MetricFilterConditionSchema>;
+
+export const MetricFilterSchema = v.nullable(v.array(MetricFilterConditionSchema));
+
 export const MetricSchema = v.object({
   id: v.string(),
   eventName: v.string(),
+  filter: MetricFilterSchema,
+  valueField: v.nullable(v.string()),
   description: v.nullable(v.string()),
   direction: v.string(),
   kinds: v.array(v.string()),
@@ -26,6 +39,8 @@ export type Metric = v.InferOutput<typeof MetricSchema>;
 
 export type CreateMetricRequest = {
   eventName: string;
+  filter?: unknown[];
+  valueField?: string;
   kinds: string[];
   direction: string;
   description?: string;

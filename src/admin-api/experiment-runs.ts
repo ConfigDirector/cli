@@ -1,4 +1,5 @@
 import * as v from "valibot";
+import { MetricFilterSchema } from "./metrics.js";
 
 const TimestampSchema = v.pipe(v.string(), v.isoTimestamp());
 
@@ -48,8 +49,17 @@ const MetricKindResultSchema = v.object({
 
 export type MetricKindResult = v.InferOutput<typeof MetricKindResultSchema>;
 
+const CountingSchema = v.variant("kind", [
+  v.object({ kind: v.literal("whole-run") }),
+  v.object({ kind: v.literal("since"), since: TimestampSchema }),
+  v.object({ kind: v.literal("not-counted") }),
+]);
+
 const MetricResultSchema = v.object({
   eventName: v.string(),
+  filter: MetricFilterSchema,
+  valueField: v.nullable(v.string()),
+  counting: CountingSchema,
   direction: v.string(),
   kinds: v.array(MetricKindResultSchema),
 });
