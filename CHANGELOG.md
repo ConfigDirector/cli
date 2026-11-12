@@ -4,6 +4,8 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-12
+
 ### Added
 
 - `configdirector metrics create` takes `--filter <file>`, or `--filter -` for stdin, a JSON file holding the conditions on an event's details that the event must match to count for the metric, such as only the checkouts on the Team plan, in the shape `metrics get --json` prints a metric's `filter` in. It also takes `--value-field <pointer>`, the field of the event's details whose number value per context sums in place of the event's value, with `--kind value-per-context`. A metric keeps both for its whole life, and a run counts it from the moment it is attached to the experiment.
