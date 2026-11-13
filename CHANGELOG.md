@@ -4,6 +4,10 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+### Fixed
+
+- `configdirector scan` and `validate` find configs read through `evaluate` in Python, Java, .NET, Go and Swift code, `EvaluateJson<T>` in .NET included, as they already did in JavaScript, Flutter and Android code. A call such as `client.evaluate("checkout-banner", False)` is reported with its in-code default value when the call writes it as a literal, so `validate` fails on a wrong key there too, and on a literal in-code default value of the wrong type. Earlier versions left a config read only through `evaluate` out of the scan: `validate` did not check its key, and an uploaded scan showed no code reference for it.
+
 ## [0.23.0] - 2026-11-12
 
 ### Added

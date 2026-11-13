@@ -1947,6 +1947,31 @@ describe("scan local imports", () => {
     expect(output.references).toEqual([]);
     expect(output.dynamicReferences).toEqual([]);
   });
+
+  it("skips a Go SDK Evaluate look-alike in another directory that does not import the package declaring the client", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "go.mod", "module example.com/shop\n\ngo 1.24\n");
+    await writeRepositoryFile(sandbox.workingDirectory, "shop/shop.go", goPackageDeclaringClient);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "shop/maintenance/settings.go",
+      [
+        "package maintenance",
+        "",
+        'import "example.com/app/settings"',
+        "",
+        'var maintenanceBanner, _ = settings.Store.Evaluate("maintenance-banner", false, nil)',
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
 });
 
 describe("scan Go calls", () => {
@@ -1989,6 +2014,44 @@ describe("scan Go calls", () => {
       ["theme", 13, "go"],
       ["banner-text", 14, "openfeature-go"],
     ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("tells the Go SDK's Evaluate from another type's two-argument Evaluate by its three arguments", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "main.go",
+      [
+        "package main",
+        "",
+        'import "github.com/ConfigDirector/go-sdks/configdirector"',
+        "",
+        "type discountRules struct{}",
+        "",
+        "func (discountRules) Evaluate(name string, total float64) bool {",
+        '\treturn name == "checkout-discount" && total > 100',
+        "}",
+        "",
+        "func checkout(client *configdirector.Client, rules discountRules, user configdirector.UserContext, total float64) {",
+        '\tbanner, _ := client.Evaluate("checkout-banner", false, user)',
+        '\tdiscounted := rules.Evaluate("checkout-discount", total)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(
+      output.references.map((reference: { key: string; line: number; sdk: string }) => [
+        reference.key,
+        reference.line,
+        reference.sdk,
+      ]),
+    ).toEqual([["checkout-banner", 12, "go"]]);
     expect(output.dynamicReferences).toEqual([]);
   });
 });

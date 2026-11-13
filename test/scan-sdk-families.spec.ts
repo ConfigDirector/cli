@@ -598,7 +598,7 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the Swift SDK's labelled reads and streams and its test client calls", async () => {
+  it("finds the Swift SDK's labeled reads and streams, its evaluations whose key has no label, and its test client calls", async () => {
     const reference = directReferenceFor("swift");
 
     const { exitCode, output, schemaErrors } = await scanFixture("swift");
@@ -606,6 +606,14 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "checkout-banner",
+        file: "Sources/App/CheckoutView.swift",
+        line: 12,
+        call: "evaluate",
+        default: falseDefault,
+      }),
+      reference({ key: "theme", file: "Sources/App/CheckoutView.swift", line: 13, call: "evaluate" }),
       reference({
         key: "my-config-key",
         file: "Sources/App/ContentView.swift",
@@ -653,7 +661,7 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the OpenFeature Swift SDK's labelled typed getters", async () => {
+  it("finds the OpenFeature Swift SDK's labeled typed getters", async () => {
     const reference = directReferenceFor("openfeature-swift");
 
     const { exitCode, output, schemaErrors } = await scanFixture("openfeature-swift");
@@ -804,8 +812,9 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the Java server SDK's typed getters, watches, test client calls and test annotations", async () => {
+  it("finds the Java server SDK's typed getters, evaluations, watches, test client calls and test annotations", async () => {
     const reference = directReferenceFor("java");
+    const checkoutBanner = "src/main/java/com/example/checkout/CheckoutBanner.java";
     const main = "src/main/java/com/example/checkout/Main.java";
     const test = "src/test/java/com/example/checkout/CheckoutTest.java";
 
@@ -814,6 +823,20 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "checkout-banner",
+        file: checkoutBanner,
+        line: 9,
+        call: "evaluate",
+        default: falseDefault,
+      }),
+      reference({
+        key: "page-size",
+        file: checkoutBanner,
+        line: 14,
+        call: "evaluate",
+        default: { type: "integer", value: 20 },
+      }),
       reference({
         key: "max-retries",
         file: main,
@@ -894,8 +917,9 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the Python SDK's reads with positional and keyword arguments and watches through a local setup module, and its test client calls", async () => {
+  it("finds the Python SDK's reads, evaluations and watches, with positional and keyword arguments, through a local setup module, and its test client calls", async () => {
     const reference = directReferenceFor("python");
+    const evaluation = "app/evaluation.py";
     const main = "app/main.py";
     const test = "tests/test_checkout.py";
 
@@ -904,6 +928,20 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "checkout-banner",
+        file: evaluation,
+        line: 3,
+        call: "evaluate",
+        default: falseDefault,
+      }),
+      reference({
+        key: "checkout-discount",
+        file: evaluation,
+        line: 6,
+        call: "evaluate",
+        default: { type: "float", value: 0.1 },
+      }),
       reference({
         key: "max-retries",
         file: main,
@@ -982,7 +1020,7 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the .NET SDK's reads, watches and test client calls", async () => {
+  it("finds the .NET SDK's reads, evaluations, watches and test client calls", async () => {
     const reference = directReferenceFor("dotnet");
 
     const { exitCode, output, schemaErrors } = await scanFixture("dotnet");
@@ -990,6 +1028,21 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "checkout-banner",
+        file: "Checkout.cs",
+        line: 9,
+        call: "Evaluate",
+        default: falseDefault,
+      }),
+      reference({
+        key: "page-size",
+        file: "Checkout.cs",
+        line: 11,
+        call: "Evaluate",
+        default: { type: "integer", value: 20 },
+      }),
+      reference({ key: "theme", file: "Checkout.cs", line: 13, call: "EvaluateJson", getterType: "json" }),
       reference({
         key: "max-retries",
         file: "Program.cs",
@@ -1067,7 +1120,7 @@ describe("scan SDK families", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
-  it("finds the Go SDK's typed reads, JSON reads, watches and test client calls", async () => {
+  it("finds the Go SDK's typed reads, JSON reads, evaluations, watches and test client calls", async () => {
     const reference = directReferenceFor("go");
 
     const { exitCode, output, schemaErrors } = await scanFixture("go");
@@ -1075,6 +1128,13 @@ describe("scan SDK families", () => {
     expect(exitCode).toEqual(0);
     expect(schemaErrors).toEqual(null);
     expect(output.references).toEqual([
+      reference({
+        key: "checkout-banner",
+        file: "checkout.go",
+        line: 6,
+        call: "Evaluate",
+        default: falseDefault,
+      }),
       reference({
         key: "max-retries",
         file: "main.go",

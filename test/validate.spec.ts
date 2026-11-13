@@ -45,6 +45,25 @@ describe("validate", () => {
     ]);
   });
 
+  it("reports an unknown key read through evaluate in Python code and exits 1", async () => {
+    const { exitCode, output } = await validateRepositoryJson(
+      {
+        "app/checkout.py": [
+          "from configdirector import create_client",
+          "",
+          'client = create_client("YOUR-SERVER-SDK-KEY")',
+          'evaluation = client.evaluate("checkout-banner", False)',
+        ],
+      },
+      [projectConfig("new-checkout")],
+    );
+
+    expect(exitCode).toEqual(1);
+    expect(output.findings).toEqual([
+      { kind: "unknown-key", key: "checkout-banner", file: "app/checkout.py", line: 4 },
+    ]);
+  });
+
   it("reports a deprecated key as a deprecated key naming the config's current key and exits 1", async () => {
     const { exitCode, output } = await validateRepositoryJson(
       { "src/checkout.ts": [...serverSdkSetup, 'client.getValue("checkout-v2", false);'] },

@@ -169,6 +169,8 @@ const openFeatureCsharpLabels = {
   inCodeDefault: { position: 1, label: "defaultValue" },
 };
 
+const goReadArguments = { argumentCount: { minimum: 3, maximum: 3 } };
+
 const openFeatureGoArguments = {
   key: { position: 1 },
   inCodeDefault: { position: 2 },
@@ -287,6 +289,7 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
     providerPackagesContainingMarkers: ["ConfigDirectorOpenFeatureProvider"],
     calls: [
       read("value", swiftLabels),
+      read("evaluate", { key: { position: 0 }, inCodeDefault: swiftLabels.inCodeDefault }),
       read("values", swiftLabels),
       testMap("makeTestClient", "function", { label: "values" }),
       testMethod("setValue", { label: "for" }),
@@ -377,6 +380,7 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
         json: ["getJsonObject", "getJsonArray", "watchJsonObject", "watchJsonArray"],
       }),
       read("getValue"),
+      read("evaluate"),
       read("watch"),
       keyOnly("unwatch"),
       testMap("createTestClient", "function"),
@@ -410,6 +414,7 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
     providerPackagesContainingMarkers: ["configdirector_openfeature"],
     calls: [
       read("get_value", pythonLabels),
+      read("evaluate", pythonLabels),
       read("watch", pythonLabels),
       keyOnly("unwatch", pythonLabels.key),
       testMap("create_test_client", "function", { position: 0, label: "values" }),
@@ -460,8 +465,9 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
     providerPackagesContainingMarkers: ["ConfigDirector.OpenFeature"],
     calls: [
       read("GetValue", csharpLabels),
+      read("Evaluate", csharpLabels),
       read("Watch", csharpLabels),
-      ...typedReads({ json: ["GetJsonValue", "WatchJson"] }, csharpLabels),
+      ...typedReads({ json: ["GetJsonValue", "EvaluateJson", "WatchJson"] }, csharpLabels),
       keyOnly("Unwatch", csharpLabels.key),
       testMap("CreateTestClient", "function", { position: 0, label: "values" }),
       testMethod("SetValue", { position: 0, label: "key" }),
@@ -498,8 +504,9 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
           float: ["FloatValue", "FloatValueDetails"],
           json: ["JSONValue", "JSONValueDetails"],
         },
-        { argumentCount: { minimum: 3, maximum: 3 } },
+        goReadArguments,
       ),
+      read("Evaluate", goReadArguments),
       ...typedReads(
         {
           boolean: ["WatchBool"],
