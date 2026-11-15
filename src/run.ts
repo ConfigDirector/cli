@@ -43,17 +43,19 @@ import {
   TIMESPAN_UNITS,
   typeConstraintHelpGroup,
 } from "./configs/new-config.js";
-import { METRIC_DIRECTIONS, METRIC_KINDS } from "./metrics/metric-words.js";
+import { METRIC_DIRECTIONS, ONE_EVENT_METRIC_KINDS } from "./metrics/metric-words.js";
 
 const DEFAULT_BASE_URL = "https://api.configdirector.com";
 
 const NO_HEADERS_DESCRIPTION = "leave out the header row";
 
 const METRIC_EVENT_NAME_DESCRIPTION =
-  "the metric's event name, as the application passes it to track, while only one metric has it";
+  "the metric's event name, as the application passes it to track, while only one metric has it; " +
+  "a ratio, funnel or retention metric has none";
 
 const METRIC_ID_DESCRIPTION =
-  "the metric's id, which names one of several metrics with the same event name, in place of the event name";
+  "the metric's id, which metrics list shows, in place of the event name: it names a ratio, funnel or retention " +
+  "metric, or one of several metrics with the same event name";
 
 const SEVERAL_METRICS_HELP =
   "When several metrics have the event name, the command lists them with their ids and exits with 2 " +
@@ -569,36 +571,47 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
 
   metricsCommand
     .command("create")
-    .description("create a metric for an event name the application passes to track")
-    .requiredOption(
+    .description(
+      "create a metric of an event name the application passes to track, or a ratio, a funnel or a retention metric",
+    )
+    .option(
       "--event-name <event name>",
-      "the event name, exactly as the application passes it to track (required)",
+      "the event name, exactly as the application passes it to track, for a metric of one event name",
+    )
+    .option(
+      "--ratio <file>",
+      "a JSON file holding a ratio metric's numerator and denominator, or - to read it from stdin",
+    )
+    .option("--funnel <file>", "a JSON file holding a funnel metric's steps, or - to read them from stdin")
+    .option(
+      "--retention <file>",
+      "a JSON file holding a retention metric's event name and days, or - to read them from stdin",
     )
     .option(
       "--filter <file>",
       "a JSON file holding the conditions an event's details must match for the event to count, " +
-        "or - to read them from stdin",
+        "or - to read them from stdin, for a metric of one event name",
     )
     .option(
       "--value-field <pointer>",
       "a JSON pointer, such as /items, to the field of the event's details holding the number " +
-        "that value per context sums in place of the event's value",
+        "that value per context sums in place of the event's value, for a metric of one event name",
     )
     .addOption(
       repeatableChoiceOption(
         "--kind <kind>",
-        "a number the metric reports: conversion, the share of exposed contexts that sent the event; " +
+        "a number a metric of one event name reports: conversion, the share of exposed contexts that sent the event; " +
           "count-per-context, how many times each sent it on average; value-per-context, the value sent with it " +
-          "per context on average; repeatable (required)",
-        METRIC_KINDS,
-      ).makeOptionMandatory(),
+          "per context on average; repeatable, and required with --event-name",
+        ONE_EVENT_METRIC_KINDS,
+      ),
     )
     .addOption(
       new Option("--direction <direction>", "whether a higher or a lower number is better (required)")
         .choices(METRIC_DIRECTIONS)
         .makeOptionMandatory(),
     )
-    .option("--description <text>", "what the event means")
+    .option("--description <text>", "what the metric means")
     .addHelpText(
       "after",
       "\nThe --filter file holds a list of 1 to 5 conditions, all of which an event must match to count, like " +
@@ -610,8 +623,24 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
         "so is NOT one of and != count an event without it.\n" +
         "\n--value-field /items sums the number each event's details hold at /items for value-per-context, in place " +
         "of the event's value, and needs --kind value-per-context.\n" +
-        "\nA metric keeps its filter and value field for its whole life: for others, create another metric. " +
-        "A metric with a filter or a value field is counted from the moment it is attached to an experiment.",
+        "\n--ratio, --funnel and --retention each take a file holding the whole definition, like the field of the " +
+        "same name that metrics get --json prints, and the metric reports that one kind.\n" +
+        "\nA ratio divides one total by another. For revenue per order: " +
+        '{"numerator": {"eventName": "order_completed", "adds": "value"}, ' +
+        '"denominator": {"eventName": "order_completed", "adds": "events"}}. Each side adds up its events, ' +
+        "or its value: the value sent with each event, or the number in the side's valueField, a JSON pointer " +
+        "into the event's details. Each side can take a filter.\n" +
+        "\nA funnel gives the share of exposed contexts that reached the last of 2 to 5 steps, in order. " +
+        'For getting from the cart to a purchase: {"steps": [{"eventName": "cart_viewed"}, ' +
+        '{"eventName": "checkout_started"}, {"eventName": "checkout_completed"}]}. Each step can take a filter.\n' +
+        "\nA retention metric gives the share of contexts that sent an event between a first and a last day after " +
+        "their first exposure, day 0 being the first 24 hours, among the contexts whose last day has ended. " +
+        "For coming back in the second week: " +
+        '{"eventName": "app_opened", "firstDay": 7, "lastDay": 13}. The days go from 1 to 90, and it can take ' +
+        "a filter.\n" +
+        "\nA metric keeps its definition for its whole life: its event name, filter and value field, or its " +
+        "ratio, funnel or retention. For another, create another metric. A metric with a filter or a value field, " +
+        "and every ratio, funnel and retention metric, is counted from the moment it is attached to an experiment.",
     )
     .action(commandAction(createMetric));
 
@@ -624,7 +653,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
       repeatableChoiceOption(
         "--kind <kind>",
         "a number the metric reports; repeatable, and the kinds given replace the metric's",
-        METRIC_KINDS,
+        ONE_EVENT_METRIC_KINDS,
       ),
     )
     .addOption(
@@ -632,11 +661,13 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
         METRIC_DIRECTIONS,
       ),
     )
-    .option("--description <text>", 'what the event means; --description "" removes it')
+    .option("--description <text>", 'what the metric means; --description "" removes it')
     .addHelpText(
       "after",
-      "\nA metric keeps its event name, filter and value field: for others, create another metric. Removing a kind " +
-        "that an experiment's primary metric decides on is refused, and the experiments are listed.\n\n" +
+      "\nA metric keeps its definition: its event name, filter and value field, or its ratio, funnel or retention. " +
+        "For another, create another metric. A ratio, funnel or retention metric also keeps its one kind, so --kind " +
+        "does not apply to it. Removing a kind that an experiment's primary metric decides on is refused, and the " +
+        "experiments are listed.\n\n" +
         SEVERAL_METRICS_HELP,
     )
     .action(commandAction(updateMetric));

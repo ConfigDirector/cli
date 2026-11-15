@@ -33,6 +33,9 @@ const checkoutCompleted = {
   eventName: "checkout_completed",
   filter: null,
   valueField: null,
+  ratio: null,
+  funnel: null,
+  retention: null,
   description: null,
   direction: "higher-is-better",
   kinds: ["conversion"],
@@ -113,6 +116,31 @@ describe("metrics delete", () => {
       deletedMetricId: checkoutCompletedId,
       deletedEventName: "checkout_completed",
     });
+  });
+
+  it("prints the deleted retention metric's id and no event name, and nothing else, with --json", async () => {
+    const secondWeekReturnsId = "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f";
+    const secondWeekReturns = {
+      ...checkoutCompleted,
+      id: secondWeekReturnsId,
+      eventName: null,
+      retention: { eventName: "app_opened", filter: null, firstDay: 7, lastDay: 13 },
+      kinds: ["retention"],
+    };
+    const adminApi = await startBrowseAdminApi({
+      [`/metrics/${secondWeekReturnsId}`]: (request) =>
+        request.method === "GET" ? { status: 200, body: secondWeekReturns } : { status: 204 },
+    });
+
+    const { exitCode, stdout, stderr } = await deleteMetric(adminApi.baseUrl, [
+      "--id",
+      secondWeekReturnsId,
+      "--json",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(JSON.parse(stdout)).toEqual({ deletedMetricId: secondWeekReturnsId, deletedEventName: null });
   });
 
   it("exits 2 listing each metric with the event name by its id and its name, with no DELETE, when several share it", async () => {
@@ -221,7 +249,10 @@ describe("metrics delete", () => {
 
     expect(exitCode).toEqual(2);
     expect(stdout).toEqual("");
-    expect(stderr).toEqual('Error: No metric in web-app has the event name "checkout_complete".\n');
+    expect(stderr).toEqual(
+      'Error: No metric in web-app has the event name "checkout_complete". ' +
+        "A ratio, funnel or retention metric is named by its id, which metrics list shows.\n",
+    );
     expect(requestLinesOf(adminApi)).toEqual([
       "GET /v1/projects",
       `GET ${projectPath("/metrics?eventName=checkout_complete")}`,

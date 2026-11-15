@@ -22,6 +22,7 @@ import { runsText, shippedVariationText, stoppedRunText } from "../configs/run-t
 import { findVariationToShip } from "../configs/variation-selection.js";
 import { findEnvironmentBySlug } from "../environment-selection.js";
 import { ExitCode } from "../ExitCode.js";
+import { listedWithAnd } from "../listed-with-and.js";
 import { plural } from "../plural.js";
 import { connectToLinkedProject, projectWithSlug } from "../project-selection.js";
 import { valueWithVariationName, type SegmentsById } from "../rule-sentences.js";
@@ -291,12 +292,7 @@ const unassignedTagsNoticeOf = (createdTags: Tag[], ending: CreationEnding): Una
 
 const quotedTagName = (tag: Tag): string => `"${tag.name}"`;
 
-const quotedTagNames = ([firstTag, ...laterTags]: [Tag, ...Tag[]]): string => {
-  const lastTag = laterTags.at(-1);
-  return lastTag === undefined
-    ? quotedTagName(firstTag)
-    : `${[firstTag, ...laterTags.slice(0, -1)].map(quotedTagName).join(", ")} and ${quotedTagName(lastTag)}`;
-};
+const quotedTagNames = (tags: Tag[]): string => listedWithAnd(tags.map(quotedTagName));
 
 const unassignedTagsText = (project: Project, tags: [Tag, ...Tag[]]): string => {
   const count = tags.length;

@@ -1,4 +1,10 @@
-export const METRIC_KINDS = ["conversion", "count-per-context", "value-per-context"] as const;
+export const ONE_EVENT_METRIC_KINDS = ["conversion", "count-per-context", "value-per-context"] as const;
+
+export const KINDS_WITH_A_METRIC_OF_THEIR_OWN = ["ratio", "funnel", "retention"] as const;
+
+export type KindWithAMetricOfItsOwn = (typeof KINDS_WITH_A_METRIC_OF_THEIR_OWN)[number];
+
+const METRIC_KINDS = [...ONE_EVENT_METRIC_KINDS, ...KINDS_WITH_A_METRIC_OF_THEIR_OWN] as const;
 
 export type MetricKind = (typeof METRIC_KINDS)[number];
 
@@ -21,6 +27,9 @@ const KIND_WORDS: { [Kind in MetricKind]: string } = {
   conversion: "conversion",
   "count-per-context": "count per context",
   "value-per-context": "value per context",
+  ratio: "ratio",
+  funnel: "funnel",
+  retention: "retention",
 };
 
 const DIRECTION_WORDS: { [Direction in MetricDirection]: string } = {

@@ -33,6 +33,12 @@ export const noSelectedMetric = (project: Project, selection: MetricSelection): 
   }
 };
 
+const noMetricOfOneEventNameWith = (project: Project, eventName: string): CliError =>
+  new CliError(
+    `No metric in ${project.slug} has the event name "${eventName}". ` +
+      "A ratio, funnel or retention metric is named by its id, which metrics list shows.",
+  );
+
 const severalMetricsWithEventName = (project: Project, eventName: string, metrics: Metric[]): CliError =>
   new CliError(
     [
@@ -48,7 +54,7 @@ const onlyMetricWithEventName = (
 ): ParsedResponse<Metric> => {
   const [onlyMetric, ...otherMetrics] = metricsWithEventName;
   if (onlyMetric === undefined) {
-    throw noSelectedMetric(project, selection);
+    throw noMetricOfOneEventNameWith(project, selection.eventName);
   }
   if (otherMetrics.length > 0) {
     throw severalMetricsWithEventName(

@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import { MetricFilterSchema } from "./metrics.js";
+import { MetricDefinitionEntries, withItsDefinition } from "./metrics.js";
 
 const TimestampSchema = v.pipe(v.string(), v.isoTimestamp());
 
@@ -15,7 +15,13 @@ export type RolloutExposures = v.InferOutput<typeof RolloutExposuresSchema>;
 
 const VariationResultSchema = v.object({
   variationId: v.string(),
-  value: v.number(),
+  exposures: v.number(),
+  analyzedExposures: v.optional(v.number()),
+  converters: v.optional(v.number()),
+  numeratorTotal: v.optional(v.number()),
+  denominatorTotal: v.optional(v.number()),
+  contextsThatReachedEachStep: v.optional(v.array(v.number())),
+  value: v.optional(v.number()),
   lift: v.optional(v.number()),
   interval: v.optional(v.object({ low: v.number(), high: v.number() })),
   chanceToBeatControl: v.optional(v.number()),
@@ -41,6 +47,7 @@ const MetricKindResultSchema = v.object({
   rollouts: v.array(
     v.object({
       ruleId: v.string(),
+      state: v.optional(v.string()),
       variations: v.array(VariationResultSchema),
       runLengthEstimate: v.optional(RunLengthEstimateSchema),
     }),
@@ -55,14 +62,17 @@ const CountingSchema = v.variant("kind", [
   v.object({ kind: v.literal("not-counted") }),
 ]);
 
-const MetricResultSchema = v.object({
-  eventName: v.string(),
-  filter: MetricFilterSchema,
-  valueField: v.nullable(v.string()),
-  counting: CountingSchema,
-  direction: v.string(),
-  kinds: v.array(MetricKindResultSchema),
-});
+export type Counting = v.InferOutput<typeof CountingSchema>;
+
+const MetricResultSchema = v.pipe(
+  v.object({
+    ...MetricDefinitionEntries,
+    counting: CountingSchema,
+    direction: v.string(),
+    kinds: v.array(MetricKindResultSchema),
+  }),
+  withItsDefinition(),
+);
 
 export type MetricResult = v.InferOutput<typeof MetricResultSchema>;
 

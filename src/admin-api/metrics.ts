@@ -1,4 +1,5 @@
 import * as v from "valibot";
+import type { JsonObject } from "../file-contents.js";
 
 const OpenRunsSchema = v.array(v.object({ environmentId: v.string() }));
 
@@ -22,29 +23,105 @@ const MetricFilterConditionSchema = v.object({
 
 export type MetricFilterCondition = v.InferOutput<typeof MetricFilterConditionSchema>;
 
-export const MetricFilterSchema = v.nullable(v.array(MetricFilterConditionSchema));
+const MetricFilterSchema = v.nullable(v.array(MetricFilterConditionSchema));
 
-export const MetricSchema = v.object({
-  id: v.string(),
+type MetricFilter = v.InferOutput<typeof MetricFilterSchema>;
+
+const RatioSideSchema = v.object({
   eventName: v.string(),
+  adds: v.string(),
   filter: MetricFilterSchema,
   valueField: v.nullable(v.string()),
-  description: v.nullable(v.string()),
-  direction: v.string(),
-  kinds: v.array(v.string()),
-  usages: v.array(MetricUsageSchema),
 });
+
+export type RatioSide = v.InferOutput<typeof RatioSideSchema>;
+
+const RatioSchema = v.object({ numerator: RatioSideSchema, denominator: RatioSideSchema });
+
+const FunnelStepSchema = v.object({ eventName: v.string(), filter: MetricFilterSchema });
+
+const FunnelSchema = v.object({ steps: v.array(FunnelStepSchema) });
+
+const RetentionSchema = v.object({
+  eventName: v.string(),
+  filter: MetricFilterSchema,
+  firstDay: v.number(),
+  lastDay: v.number(),
+});
+
+export type Retention = v.InferOutput<typeof RetentionSchema>;
+
+export const MetricDefinitionEntries = {
+  eventName: v.nullable(v.string()),
+  filter: MetricFilterSchema,
+  valueField: v.nullable(v.string()),
+  ratio: v.nullable(RatioSchema),
+  funnel: v.nullable(FunnelSchema),
+  retention: v.nullable(RetentionSchema),
+};
+
+type MetricDefinitionFields = v.InferOutput<v.ObjectSchema<typeof MetricDefinitionEntries, undefined>>;
+
+export type MetricDefinition =
+  | { definedBy: "event-name"; eventName: string; filter: MetricFilter; valueField: string | null }
+  | { definedBy: "ratio"; ratio: v.InferOutput<typeof RatioSchema> }
+  | { definedBy: "funnel"; funnel: v.InferOutput<typeof FunnelSchema> }
+  | { definedBy: "retention"; retention: Retention };
+
+const metricDefinitionOf = ({
+  eventName,
+  filter,
+  valueField,
+  ratio,
+  funnel,
+  retention,
+}: MetricDefinitionFields): MetricDefinition | undefined => {
+  if (ratio !== null) {
+    return { definedBy: "ratio", ratio };
+  }
+  if (funnel !== null) {
+    return { definedBy: "funnel", funnel };
+  }
+  if (retention !== null) {
+    return { definedBy: "retention", retention };
+  }
+  if (eventName !== null) {
+    return { definedBy: "event-name", eventName, filter, valueField };
+  }
+  return undefined;
+};
+
+export const withItsDefinition = <Fields extends MetricDefinitionFields>() =>
+  v.rawTransform<Fields, Fields & { definition: MetricDefinition }>(({ dataset, addIssue, NEVER }) => {
+    const definition = metricDefinitionOf(dataset.value);
+    if (definition === undefined) {
+      addIssue({ message: "A metric has an event name, a ratio, a funnel or a retention" });
+      return NEVER;
+    }
+    return { ...dataset.value, definition };
+  });
+
+export const MetricSchema = v.pipe(
+  v.object({
+    id: v.string(),
+    ...MetricDefinitionEntries,
+    description: v.nullable(v.string()),
+    direction: v.string(),
+    kinds: v.array(v.string()),
+    usages: v.array(MetricUsageSchema),
+  }),
+  withItsDefinition(),
+);
 
 export type Metric = v.InferOutput<typeof MetricSchema>;
 
-export type CreateMetricRequest = {
-  eventName: string;
-  filter?: unknown[];
-  valueField?: string;
-  kinds: string[];
-  direction: string;
-  description?: string;
-};
+export type MetricDefinitionRequest =
+  | { eventName: string; filter?: unknown[]; valueField?: string; kinds: string[] }
+  | { ratio: JsonObject; kinds: ["ratio"] }
+  | { funnel: JsonObject; kinds: ["funnel"] }
+  | { retention: JsonObject; kinds: ["retention"] };
+
+export type CreateMetricRequest = MetricDefinitionRequest & { direction: string; description?: string };
 
 export type UpdateMetricRequest = {
   kinds?: string[];

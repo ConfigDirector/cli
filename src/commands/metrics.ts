@@ -6,6 +6,7 @@ import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { environmentSlugsById } from "../environment-selection.js";
 import { ExitCode } from "../ExitCode.js";
 import { metricChangesOf, type UpdateMetricOptions } from "../metrics/metric-changes.js";
+import { kindReportedAloneBy } from "../metrics/metric-definition.js";
 import { metricLabel } from "../metrics/metric-label.js";
 import {
   findSelectedMetric,
@@ -22,7 +23,7 @@ import { connectToLinkedProject } from "../project-selection.js";
 const usageDescription = (metric: Metric): string =>
   `used by ${metric.usages.length} ${plural(metric.usages.length, "experiment", "experiments")}`;
 
-const METRIC_HEADER_ROW = ["METRIC", "KINDS", "DIRECTION", "USED BY"];
+const METRIC_HEADER_ROW = ["METRIC", "KINDS", "DIRECTION", "USED BY", "ID"];
 
 const metricLines = (projectSlug: string, metrics: Metric[], options: ListingOptions): string[] =>
   metrics.length === 0
@@ -34,6 +35,7 @@ const metricLines = (projectSlug: string, metrics: Metric[], options: ListingOpt
           metric.kinds.map(kindWords).join(", "),
           directionWords(metric.direction),
           usageDescription(metric),
+          metric.id,
         ]),
         options,
       );
@@ -118,6 +120,13 @@ export const updateMetric = async (
   const changes = metricChangesOf(options);
   const { client, project } = await connectToLinkedProject(context);
   const { parsedBody: currentMetric } = await findSelectedMetric(client, project, selection);
+  const kindReportedAlone = kindReportedAloneBy(currentMetric);
+  if (changes.kinds !== undefined && kindReportedAlone !== undefined) {
+    throw new CliError(
+      `${metricLabel(currentMetric)} reports the ${kindWords(kindReportedAlone)} kind alone, ` +
+        "so --kind does not apply to it.",
+    );
+  }
   const update = await client.updateMetric(project.id, currentMetric.id, changes);
   switch (update.outcome) {
     case "not-found":

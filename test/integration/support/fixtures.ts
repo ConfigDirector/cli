@@ -117,6 +117,31 @@ export const createTeamPlanItemsMetric = async (
   return { id, eventName };
 };
 
+type KindOfAMetricOfItsOwn = "ratio" | "funnel" | "retention";
+
+export const createMetricOfItsOwn = async (
+  cli: CliUnderTest,
+  kind: KindOfAMetricOfItsOwn,
+  definition: object,
+): Promise<{ id: string }> => {
+  await writeRepositoryFile(cli.sandbox.workingDirectory, `${kind}.json`, JSON.stringify(definition));
+
+  const result = await cli.run([
+    "metrics",
+    "create",
+    `--${kind}`,
+    `${kind}.json`,
+    "--direction",
+    "higher-is-better",
+    "--json",
+  ]);
+  requireSuccess(`metrics create --${kind} ${kind}.json`, result);
+
+  const { id } = JSON.parse(result.stdout) as { id: string };
+  removeWhenTestFinishes(cli.adminApi, `/v1/projects/${cli.project.id}/metrics/${id}`);
+  return { id };
+};
+
 export const emailCondition = {
   kind: "attribute",
   attribute: "traits",

@@ -30,6 +30,9 @@ const metricOf = (overrides: object) => ({
   eventName: "checkout_completed",
   filter: null,
   valueField: null,
+  ratio: null,
+  funnel: null,
+  retention: null,
   description: null,
   direction: "higher-is-better",
   kinds: ["conversion"],
@@ -65,6 +68,36 @@ const searchUsed = metricOf({
   eventName: "search_used",
 });
 
+const revenuePerOrder = metricOf({
+  id: "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+  eventName: null,
+  ratio: {
+    numerator: { eventName: "order_completed", adds: "value", filter: null, valueField: null },
+    denominator: { eventName: "order_completed", adds: "events", filter: null, valueField: null },
+  },
+  kinds: ["ratio"],
+});
+
+const cartToPurchase = metricOf({
+  id: "6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e",
+  eventName: null,
+  funnel: {
+    steps: [
+      { eventName: "cart_viewed", filter: null },
+      { eventName: "checkout_started", filter: null },
+      { eventName: "checkout_completed", filter: null },
+    ],
+  },
+  kinds: ["funnel"],
+});
+
+const secondWeekReturns = metricOf({
+  id: "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+  eventName: null,
+  retention: { eventName: "app_opened", filter: null, firstDay: 7, lastDay: 13 },
+  kinds: ["retention"],
+});
+
 const listedMetricNamesOf = async (metrics: object[]): Promise<string[]> => {
   const adminApi = await startBrowseAdminApi({ "/metrics": { status: 200, body: metrics } });
 
@@ -87,13 +120,118 @@ describe("metrics list", () => {
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
     expect(stdout.split("\n")).toEqual([
-      "METRIC                  KINDS                           DIRECTION          USED BY",
-      "checkout_completed      conversion, value per context   higher is better   used by 2 experiments",
-      "search_used             conversion                      higher is better   used by 0 experiments",
-      "support_ticket_opened   count per context               lower is better    used by 1 experiment",
+      "METRIC                  KINDS                           DIRECTION          USED BY                 ID",
+      "checkout_completed      conversion, value per context   higher is better   used by 2 experiments   1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+      "search_used             conversion                      higher is better   used by 0 experiments   3e4f5a6b-7c8d-4e9f-8a0b-2c3d4e5f6a7b",
+      "support_ticket_opened   count per context               lower is better    used by 1 experiment    2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a",
       "",
     ]);
     expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `GET ${projectPath("/metrics")}`]);
+  });
+
+  it("lists a project holding a metric of every kind, naming a ratio, a funnel and a retention metric kind first, each with its id", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/metrics": {
+        status: 200,
+        body: [checkoutCompleted, revenuePerOrder, cartToPurchase, secondWeekReturns],
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await runMetricsCommand(adminApi.baseUrl, ["list"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "METRIC                                                        KINDS                           DIRECTION          USED BY                 ID",
+      "checkout_completed                                            conversion, value per context   higher is better   used by 2 experiments   1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+      "Ratio: order_completed value ÷ order_completed events         ratio                           higher is better   used by 0 experiments   5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+      "Funnel: cart_viewed → checkout_started → checkout_completed   funnel                          higher is better   used by 0 experiments   6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e",
+      "Retention: app_opened · days 7 to 13                          retention                       higher is better   used by 0 experiments   7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+      "",
+    ]);
+  });
+
+  it("names a ratio side that adds a value field by value from the field, and a side's filter after its event name", async () => {
+    const lines = await listedMetricNamesOf([
+      metricOf({
+        eventName: null,
+        ratio: {
+          numerator: { eventName: "checkout_completed", adds: "value", filter: null, valueField: "/items" },
+          denominator: {
+            eventName: "checkout_completed",
+            adds: "events",
+            filter: [{ field: "/plan", targetType: "text", operator: "is one of", targetValues: ["team"] }],
+            valueField: null,
+          },
+        },
+        kinds: ["ratio"],
+      }),
+    ]);
+
+    expect(lines).toEqual([
+      "Ratio: checkout_completed value from /items ÷ checkout_completed · /plan is one of [team] events",
+    ]);
+  });
+
+  it("names each step of a funnel by its event name and its filter, in the funnel's order", async () => {
+    const lines = await listedMetricNamesOf([
+      metricOf({
+        eventName: null,
+        funnel: {
+          steps: [
+            { eventName: "cart_viewed", filter: null },
+            {
+              eventName: "checkout_completed",
+              filter: [{ field: "/items", targetType: "number", operator: ">=", targetValues: ["2"] }],
+            },
+          ],
+        },
+        kinds: ["funnel"],
+      }),
+    ]);
+
+    expect(lines).toEqual(["Funnel: cart_viewed → checkout_completed · /items >= 2"]);
+  });
+
+  it("names a retention metric by its event name, its filter and its days", async () => {
+    const lines = await listedMetricNamesOf([
+      metricOf({
+        eventName: null,
+        retention: {
+          eventName: "app_opened",
+          filter: [{ field: "/beta", targetType: "boolean", operator: "equals", targetValues: ["true"] }],
+          firstDay: 7,
+          lastDay: 13,
+        },
+        kinds: ["retention"],
+      }),
+    ]);
+
+    expect(lines).toEqual(["Retention: app_opened · /beta is true · days 7 to 13"]);
+  });
+
+  it("names the days of a retention metric whose first day is its last as that one day", async () => {
+    const lines = await listedMetricNamesOf([
+      metricOf({
+        eventName: null,
+        retention: { eventName: "app_opened", filter: null, firstDay: 1, lastDay: 1 },
+        kinds: ["retention"],
+      }),
+    ]);
+
+    expect(lines).toEqual(["Retention: app_opened · day 1"]);
+  });
+
+  it("exits 2 saying the Admin API answered with a metric the CLI cannot read when a metric has no event name and no definition the CLI knows", async () => {
+    const adminApi = await startBrowseAdminApi({
+      "/metrics": { status: 200, body: [metricOf({ eventName: null, kinds: ["median"] })] },
+    });
+
+    const { exitCode, stdout, stderr } = await runMetricsCommand(adminApi.baseUrl, ["list"]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toContain("response the CLI cannot read");
   });
 
   it("names a metric with a text condition by its event name, then the condition's field, operator and target values in brackets", async () => {
@@ -173,8 +311,8 @@ describe("metrics list", () => {
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("");
     expect(stdout.split("\n")).toEqual([
-      "checkout_completed   conversion, value per context   higher is better   used by 2 experiments",
-      "search_used          conversion                      higher is better   used by 0 experiments",
+      "checkout_completed   conversion, value per context   higher is better   used by 2 experiments   1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+      "search_used          conversion                      higher is better   used by 0 experiments   3e4f5a6b-7c8d-4e9f-8a0b-2c3d4e5f6a7b",
       "",
     ]);
   });
@@ -191,13 +329,13 @@ describe("metrics list", () => {
 
   it("writes a kind and a direction the CLI does not know by their names", async () => {
     const adminApi = await startBrowseAdminApi({
-      "/metrics": { status: 200, body: [metricOf({ kinds: ["ratio"], direction: "closer-to-target" })] },
+      "/metrics": { status: 200, body: [metricOf({ kinds: ["median"], direction: "closer-to-target" })] },
     });
 
     const { stdout } = await runMetricsCommand(adminApi.baseUrl, ["list", "--no-headers"]);
 
     expect(stdout.split("\n")[0]).toEqual(
-      "checkout_completed   ratio   closer-to-target   used by 0 experiments",
+      "checkout_completed   median   closer-to-target   used by 0 experiments   1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
     );
   });
 
@@ -372,7 +510,10 @@ describe("metrics get", () => {
 
     expect(exitCode).toEqual(2);
     expect(stdout).toEqual("");
-    expect(stderr).toEqual('Error: No metric in web-app has the event name "checkout_complete".\n');
+    expect(stderr).toEqual(
+      'Error: No metric in web-app has the event name "checkout_complete". ' +
+        "A ratio, funnel or retention metric is named by its id, which metrics list shows.\n",
+    );
   });
 
   it("exits 2 saying no metric in the project has the event name when the API lists another event name", async () => {
@@ -387,7 +528,10 @@ describe("metrics get", () => {
 
     expect(exitCode).toEqual(2);
     expect(stdout).toEqual("");
-    expect(stderr).toEqual('Error: No metric in web-app has the event name "checkout_completed".\n');
+    expect(stderr).toEqual(
+      'Error: No metric in web-app has the event name "checkout_completed". ' +
+        "A ratio, funnel or retention metric is named by its id, which metrics list shows.\n",
+    );
   });
 
   it("exits 2 listing each metric with the event name by its id and its name when several share it", async () => {
@@ -438,6 +582,33 @@ describe("metrics get", () => {
     expect(requestLinesOf(adminApi)).toEqual([
       "GET /v1/projects",
       `GET ${projectPath(`/metrics/${teamCheckoutCompleted.id}`)}`,
+    ]);
+  });
+
+  it("shows a ratio metric --id names, naming it kind first on its first line", async () => {
+    const adminApi = await startBrowseAdminApi({
+      [`/metrics/${revenuePerOrder.id}`]: {
+        status: 200,
+        body: { ...revenuePerOrder, description: "Revenue per order." },
+      },
+    });
+
+    const { exitCode, stdout, stderr } = await runMetricsCommand(adminApi.baseUrl, [
+      "get",
+      "--id",
+      revenuePerOrder.id,
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")).toEqual([
+      "Ratio: order_completed value ÷ order_completed events",
+      "  Description: Revenue per order.",
+      "  Kinds: ratio",
+      "  Direction: higher is better",
+      "",
+      "No experiment uses it.",
+      "",
     ]);
   });
 

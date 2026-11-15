@@ -33,6 +33,9 @@ const checkoutCompleted = {
   eventName: "checkout_completed",
   filter: null,
   valueField: null,
+  ratio: null,
+  funnel: null,
+  retention: null,
   description: "Orders paid for.",
   direction: "higher-is-better",
   kinds: ["conversion"],
@@ -53,6 +56,23 @@ const teamCheckoutCompleted = {
 };
 
 const teamMetricPath = `/metrics/${teamCheckoutCompletedId}`;
+
+const cartToPurchaseId = "6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e";
+
+const cartToPurchase = {
+  ...checkoutCompleted,
+  id: cartToPurchaseId,
+  eventName: null,
+  funnel: {
+    steps: [
+      { eventName: "cart_viewed", filter: null },
+      { eventName: "checkout_completed", filter: null },
+    ],
+  },
+  kinds: ["funnel"],
+};
+
+const cartToPurchasePath = `/metrics/${cartToPurchaseId}`;
 
 describe("metrics update", () => {
   it("sends only the fields given to the metric the event name names, and prints a line saying so, then the metric as metrics get prints it", async () => {
@@ -207,7 +227,10 @@ describe("metrics update", () => {
 
     expect(exitCode).toEqual(2);
     expect(stdout).toEqual("");
-    expect(stderr).toEqual('Error: No metric in web-app has the event name "checkout_complete".\n');
+    expect(stderr).toEqual(
+      'Error: No metric in web-app has the event name "checkout_complete". ' +
+        "A ratio, funnel or retention metric is named by its id, which metrics list shows.\n",
+    );
     expect(requestLinesOf(adminApi)).toEqual([
       "GET /v1/projects",
       `GET ${projectPath("/metrics?eventName=checkout_complete")}`,
@@ -286,6 +309,50 @@ describe("metrics update", () => {
       `PATCH ${projectPath(teamMetricPath)}`,
     ]);
     expect(adminApi.receivedRequests[2]?.body).toEqual({ direction: "lower-is-better" });
+  });
+
+  it("changes the direction of a funnel metric --id names, naming it kind first", async () => {
+    const adminApi = await startBrowseAdminApi({
+      [cartToPurchasePath]: (request) =>
+        request.method === "GET"
+          ? { status: 200, body: cartToPurchase }
+          : { status: 200, body: { ...cartToPurchase, direction: "lower-is-better" } },
+    });
+
+    const { exitCode, stdout, stderr } = await updateMetric(adminApi.baseUrl, [
+      "--id",
+      cartToPurchaseId,
+      "--direction",
+      "lower-is-better",
+    ]);
+
+    expect(exitCode).toEqual(0);
+    expect(stderr).toEqual("");
+    expect(stdout.split("\n")[0]).toEqual(
+      "Updated metric Funnel: cart_viewed → checkout_completed in web-app.",
+    );
+    expect(adminApi.receivedRequests[2]?.body).toEqual({ direction: "lower-is-better" });
+  });
+
+  it("exits 2 without a PATCH saying --kind does not apply to a funnel metric, which reports the funnel kind alone", async () => {
+    const adminApi = await startBrowseAdminApi({
+      [cartToPurchasePath]: { status: 200, body: cartToPurchase },
+    });
+
+    const { exitCode, stdout, stderr } = await updateMetric(adminApi.baseUrl, [
+      "--id",
+      cartToPurchaseId,
+      "--kind",
+      "conversion",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual(
+      "Error: Funnel: cart_viewed → checkout_completed reports the funnel kind alone, " +
+        "so --kind does not apply to it.\n",
+    );
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", `GET ${projectPath(cartToPurchasePath)}`]);
   });
 
   it("exits 2 saying no metric in the project has the id, with no PATCH, when --id names none", async () => {

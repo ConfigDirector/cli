@@ -7,9 +7,13 @@ import type {
   RunLengthEstimate,
   VariationResult,
 } from "../admin-api/experiment-runs.js";
+import type { MetricDefinition, Retention } from "../admin-api/metrics.js";
 import type { Variation } from "../admin-api/variations.js";
 import { alignedColumns } from "../aligned-columns.js";
-import { metricLabel } from "../metrics/metric-label.js";
+import { capitalized } from "../capitalized.js";
+import { formatCount } from "../format-count.js";
+import { eventNamesCountedBy, kindReportedAloneBy } from "../metrics/metric-definition.js";
+import { metricLabel, retentionDaysWords } from "../metrics/metric-label.js";
 import {
   directionWords,
   isMetricKind,
@@ -21,6 +25,13 @@ import {
 import { plural } from "../plural.js";
 import { describeVariationOrNoLongerListed } from "../rule-sentences.js";
 import { utcMinute } from "../utc-minute.js";
+import {
+  daysAContextWaitsToBeMeasured,
+  retentionMeasurementOf,
+  type RetentionOfTheRollout,
+  type RunTimes,
+} from "./retention-result-text.js";
+import { comparisonOf, type RolloutComparison } from "./rollout-comparison.js";
 
 const VERDICT_WORDS: Readonly<Record<string, string>> = {
   "likely-better": "likely better",
@@ -31,14 +42,23 @@ const VERDICT_WORDS: Readonly<Record<string, string>> = {
 const formatAverage = (value: number): string =>
   value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const formatShare = (value: number): string => `${(value * 100).toFixed(1)}%`;
+
 const VALUE_FORMATS: { [Kind in MetricKind]: (value: number) => string } = {
-  conversion: (value) => `${(value * 100).toFixed(1)}%`,
+  conversion: formatShare,
   "count-per-context": formatAverage,
   "value-per-context": formatAverage,
+  ratio: formatAverage,
+  funnel: formatShare,
+  retention: formatShare,
 };
 
-const formatResultValue = (kind: string, value: number): string =>
-  isMetricKind(kind) ? VALUE_FORMATS[kind](value) : formatAverage(value);
+const formatResultValue = (kind: string, value: number | undefined): string => {
+  if (value === undefined) {
+    return "-";
+  }
+  return isMetricKind(kind) ? VALUE_FORMATS[kind](value) : formatAverage(value);
+};
 
 const formatLift = (lift: number): string => {
   const wholePercent = Math.round(lift * 100);
@@ -75,11 +95,6 @@ const liftCell = (variation: VariationResult): string => {
 const chanceCell = (chance: number | undefined, description: string): string =>
   chance === undefined ? "" : `${formatChance(chance)} ${description}`;
 
-type RolloutComparison = "variations-compared" | "needs-more-exposures";
-
-const comparisonOf = (rollout: RolloutResults): RolloutComparison =>
-  rollout.state === "needs-more-exposures" ? "needs-more-exposures" : "variations-compared";
-
 type ResultTable = {
   kind: string;
   controlVariationId: string;
@@ -88,57 +103,140 @@ type ResultTable = {
   showsChanceToBeBest: boolean;
 };
 
-type ResultRowForm = "control" | "value-alone" | "compared";
+type CountsOfAVariation = { countsCells: string[]; hasNothingInItsDenominator: boolean };
 
-const resultRowFormOf = (variation: VariationResult, table: ResultTable): ResultRowForm => {
+const NO_COUNTS: CountsOfAVariation = { countsCells: [], hasNothingInItsDenominator: false };
+
+const COUNTS_OF_A_VARIATION: { [Kind in MetricKind]: (variation: VariationResult) => CountsOfAVariation } = {
+  conversion: () => NO_COUNTS,
+  "count-per-context": () => NO_COUNTS,
+  "value-per-context": () => NO_COUNTS,
+  ratio: ({ numeratorTotal = 0, denominatorTotal = 0 }) => ({
+    countsCells: [`${formatCount(numeratorTotal)} ÷ ${formatCount(denominatorTotal)}`],
+    hasNothingInItsDenominator: denominatorTotal === 0,
+  }),
+  funnel: ({ contextsThatReachedEachStep = [] }) => ({
+    countsCells: [`steps ${contextsThatReachedEachStep.map(formatCount).join(" → ")}`],
+    hasNothingInItsDenominator: false,
+  }),
+  retention: ({ converters = 0, exposures }) => ({
+    countsCells: [`${formatCount(converters)} of ${formatCount(exposures)} came back`],
+    hasNothingInItsDenominator: false,
+  }),
+};
+
+const countsOf = (kind: string, variation: VariationResult): CountsOfAVariation =>
+  isMetricKind(kind) ? COUNTS_OF_A_VARIATION[kind](variation) : NO_COUNTS;
+
+type ResultRowForm = "control" | "value-alone" | "compared" | "nothing-in-its-denominator";
+
+const resultRowFormOf = (
+  variation: VariationResult,
+  counts: CountsOfAVariation,
+  table: ResultTable,
+): ResultRowForm => {
+  if (table.comparison === "variations-compared" && counts.hasNothingInItsDenominator) {
+    return "nothing-in-its-denominator";
+  }
   if (variation.variationId === table.controlVariationId) {
     return "control";
   }
   return table.comparison === "needs-more-exposures" ? "value-alone" : "compared";
 };
 
-const resultRow = (variation: VariationResult, table: ResultTable): string[] => {
-  const nameAndValue = [
+type ResultRow = { alignedCells: string[]; followedBy: string };
+
+const NOTHING_IN_ITS_DENOMINATOR = "nothing added to its denominator yet, so it has no ratio to compare";
+
+const resultRow = (variation: VariationResult, table: ResultTable): ResultRow => {
+  const counts = countsOf(table.kind, variation);
+  const nameValueAndCounts = [
     describeVariationOrNoLongerListed(variation.variationId, table.variations),
     formatResultValue(table.kind, variation.value),
+    ...counts.countsCells,
   ];
   const chanceToBeBestCells = table.showsChanceToBeBest
     ? [chanceCell(variation.chanceToBeBest, "chance to be best")]
     : [];
-  switch (resultRowFormOf(variation, table)) {
+  switch (resultRowFormOf(variation, counts, table)) {
     case "control":
-      return [...nameAndValue, "control", "", ...chanceToBeBestCells];
+      return { alignedCells: [...nameValueAndCounts, "control", "", ...chanceToBeBestCells], followedBy: "" };
     case "value-alone":
-      return nameAndValue;
+      return { alignedCells: nameValueAndCounts, followedBy: "" };
+    case "nothing-in-its-denominator":
+      return { alignedCells: [...nameValueAndCounts, ""], followedBy: NOTHING_IN_ITS_DENOMINATOR };
     case "compared":
-      return [
-        ...nameAndValue,
-        liftCell(variation),
-        chanceCell(variation.chanceToBeatControl, "chance to beat control"),
-        ...chanceToBeBestCells,
-        variation.verdict === undefined ? "" : (VERDICT_WORDS[variation.verdict] ?? variation.verdict),
-      ];
+      return {
+        alignedCells: [
+          ...nameValueAndCounts,
+          liftCell(variation),
+          chanceCell(variation.chanceToBeatControl, "chance to beat control"),
+          ...chanceToBeBestCells,
+          variation.verdict === undefined ? "" : (VERDICT_WORDS[variation.verdict] ?? variation.verdict),
+        ],
+        followedBy: "",
+      };
   }
 };
 
-const capitalized = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+const resultRowLines = (rows: ResultRow[]): string[] =>
+  alignedColumns(rows.map((row) => row.alignedCells)).map((line, index) =>
+    `  ${line}${rows[index]?.followedBy ?? ""}`.trimEnd(),
+  );
 
 const DAYS_IN_A_YEAR = 365;
 
-const formatCount = (count: number): string => count.toLocaleString("en-US");
+type ContextMeasurement =
+  { measured: "as-their-events-arrive" } | { measured: "once-their-days-have-passed"; retention: Retention };
+
+const contextMeasurementOf = (definition: MetricDefinition): ContextMeasurement => {
+  switch (definition.definedBy) {
+    case "event-name":
+    case "ratio":
+    case "funnel":
+      return { measured: "as-their-events-arrive" };
+    case "retention":
+      return { measured: "once-their-days-have-passed", retention: definition.retention };
+  }
+};
 
 type LiftRowForm =
   | { form: "days-remaining"; days: number }
+  | { form: "waiting-to-be-measured"; days: number }
   | { form: "more-than-a-year" }
   | { form: "enough-exposures" }
+  | { form: "enough-contexts-measured" }
   | { form: "no-pace" };
 
-const liftRowFormOf = (daysRemaining: number | undefined): LiftRowForm => {
+const isOnlyTheWaitToBeMeasured = (
+  daysRemaining: number,
+  contextMeasurement: ContextMeasurement,
+): boolean => {
+  switch (contextMeasurement.measured) {
+    case "as-their-events-arrive":
+      return false;
+    case "once-their-days-have-passed":
+      return daysRemaining === daysAContextWaitsToBeMeasured(contextMeasurement.retention);
+  }
+};
+
+const ENOUGH_FORM: { [Measured in ContextMeasurement["measured"]]: LiftRowForm } = {
+  "as-their-events-arrive": { form: "enough-exposures" },
+  "once-their-days-have-passed": { form: "enough-contexts-measured" },
+};
+
+const liftRowFormOf = (
+  daysRemaining: number | undefined,
+  contextMeasurement: ContextMeasurement,
+): LiftRowForm => {
   if (daysRemaining === undefined) {
     return { form: "no-pace" };
   }
   if (daysRemaining === 0) {
-    return { form: "enough-exposures" };
+    return ENOUGH_FORM[contextMeasurement.measured];
+  }
+  if (isOnlyTheWaitToBeMeasured(daysRemaining, contextMeasurement)) {
+    return { form: "waiting-to-be-measured", days: daysRemaining };
   }
   return daysRemaining > DAYS_IN_A_YEAR
     ? { form: "more-than-a-year" }
@@ -149,12 +247,31 @@ const daysRemainingCells = (liftRow: LiftRowForm): string[] => {
   switch (liftRow.form) {
     case "days-remaining":
       return [`about ${formatCount(liftRow.days)} ${plural(liftRow.days, "day", "days")} remaining`];
+    case "waiting-to-be-measured":
+      return [`up to ${formatCount(liftRow.days)} days remaining`];
     case "more-than-a-year":
       return ["more than a year remaining"];
     case "enough-exposures":
       return ["enough exposures"];
+    case "enough-contexts-measured":
+      return ["enough contexts measured"];
     case "no-pace":
       return [];
+  }
+};
+
+const daysTheEstimateIncludesLines = (contextMeasurement: ContextMeasurement): string[] => {
+  switch (contextMeasurement.measured) {
+    case "as-their-events-arrive":
+      return [];
+    case "once-their-days-have-passed": {
+      const { retention } = contextMeasurement;
+      return [
+        `Every number of days includes ${daysAContextWaitsToBeMeasured(retention)} days for the last contexts exposed ` +
+          `to have their ${retentionDaysWords(retention)}, since a context is measured only once its day ` +
+          `${retention.lastDay} has ended.`,
+      ];
+    }
   }
 };
 
@@ -176,7 +293,10 @@ const paceLine = (estimate: RunLengthEstimate): string => {
   }
 };
 
-const runLengthEstimateLines = (estimate: RunLengthEstimate | undefined): string[] => {
+const runLengthEstimateLines = (
+  estimate: RunLengthEstimate | undefined,
+  contextMeasurement: ContextMeasurement,
+): string[] => {
   if (estimate === undefined) {
     return [];
   }
@@ -186,10 +306,11 @@ const runLengthEstimateLines = (estimate: RunLengthEstimate | undefined): string
       estimate.lifts.map((liftEstimate) => [
         `For a real lift of ${formatLift(liftEstimate.lift)}`,
         `${formatCount(estimate.analyzedExposures)} of about ${formatCount(liftEstimate.exposuresNeeded)} exposures`,
-        ...daysRemainingCells(liftRowFormOf(liftEstimate.daysRemaining)),
+        ...daysRemainingCells(liftRowFormOf(liftEstimate.daysRemaining, contextMeasurement)),
       ]),
     ).map((line) => `  ${line}`),
     "A row's lift is one a variation might really have over the control, not the lift measured so far: the smaller it is, the longer the run.",
+    ...daysTheEstimateIncludesLines(contextMeasurement),
     "Whatever the estimate says, a run should cover at least one full week, so every day of the week is in the result.",
   ];
 };
@@ -197,12 +318,41 @@ const runLengthEstimateLines = (estimate: RunLengthEstimate | undefined): string
 const roleAndMetric = (role: string, metric: MetricResult): string =>
   `${capitalized(roleWords(role))}: ${metricLabel(metric)}`;
 
+const kindHeading = (role: string, metric: MetricResult, kind: string): string =>
+  kindReportedAloneBy(metric) === undefined
+    ? `${roleAndMetric(role, metric)}, ${kindWords(kind)}, ${directionWords(metric.direction)}`
+    : `${roleAndMetric(role, metric)}, ${directionWords(metric.direction)}`;
+
+type MeasurementLines = { lines: string[]; showsTheNumbers: boolean };
+
+const measurementLinesOf = (
+  contextMeasurement: ContextMeasurement,
+  retentionOfTheRollout: RetentionOfTheRollout,
+): MeasurementLines => {
+  switch (contextMeasurement.measured) {
+    case "as-their-events-arrive":
+      return { lines: [], showsTheNumbers: true };
+    case "once-their-days-have-passed": {
+      const { line, showsTheNumbers } = retentionMeasurementOf(
+        contextMeasurement.retention,
+        retentionOfTheRollout,
+      );
+      return { lines: [`  ${line}`], showsTheNumbers };
+    }
+  }
+};
+
+type MetricOfTheRollout = {
+  role: string;
+  metric: MetricResult;
+  rollout: RolloutResults;
+  variations: Variation[];
+  runTimes: RunTimes;
+};
+
 const kindResultLines = (
-  role: string,
-  metric: MetricResult,
+  { role, metric, rollout, variations, runTimes }: MetricOfTheRollout,
   kindResult: MetricKindResult,
-  rollout: RolloutResults,
-  variations: Variation[],
   countingLines: string[],
 ): string[] => {
   const kindResultOfRollout = kindResult.rollouts.find((candidate) => candidate.ruleId === rollout.ruleId);
@@ -210,49 +360,69 @@ const kindResultLines = (
     return [];
   }
   const variationResults = kindResultOfRollout.variations;
+  const comparison = comparisonOf(kindResultOfRollout.state ?? rollout.state);
   const table: ResultTable = {
     kind: kindResult.kind,
     controlVariationId: rollout.controlVariationId,
-    comparison: comparisonOf(rollout),
+    comparison,
     variations,
     showsChanceToBeBest: variationResults.some((variation) => variation.chanceToBeBest !== undefined),
   };
+  const contextMeasurement = contextMeasurementOf(metric.definition);
+  const measurement = measurementLinesOf(contextMeasurement, {
+    counting: metric.counting,
+    runTimes,
+    variations: variationResults,
+    comparison,
+  });
   return [
-    `${roleAndMetric(role, metric)}, ${kindWords(kindResult.kind)}, ${directionWords(metric.direction)}`,
+    kindHeading(role, metric, kindResult.kind),
     ...countingLines,
-    ...alignedColumns(variationResults.map((variation) => resultRow(variation, table))).map((line) =>
-      `  ${line}`.trimEnd(),
-    ),
-    ...runLengthEstimateLines(kindResultOfRollout.runLengthEstimate),
+    ...measurement.lines,
+    ...(measurement.showsTheNumbers
+      ? resultRowLines(variationResults.map((variation) => resultRow(variation, table)))
+      : []),
+    ...runLengthEstimateLines(kindResultOfRollout.runLengthEstimate, contextMeasurement),
   ];
 };
 
-const NOT_COUNTED_LINE =
-  "  This run did not count this metric: a metric with a filter or a value field is counted from the moment " +
-  "it is attached to an experiment, and this one was not attached while the run was open.";
+const METRIC_COUNTED_FROM_ITS_ATTACHMENT: { [DefinedBy in MetricDefinition["definedBy"]]: string } = {
+  "event-name": "a metric with a filter or a value field",
+  ratio: "a ratio",
+  funnel: "a funnel",
+  retention: "a retention metric",
+};
 
-const countedSinceLine = (since: string): string =>
-  `  Counted since ${utcMinute(since)}, when this metric was attached to the experiment. ` +
-  "Events reported before then are not in these numbers.";
+const notCountedLine = (metric: MetricResult): string =>
+  `  This run did not count this metric: ${METRIC_COUNTED_FROM_ITS_ATTACHMENT[metric.definition.definedBy]} ` +
+  "is counted from the moment it is attached to an experiment, and this one was not attached while the run was open.";
 
-const metricResultLines = (
-  role: string,
-  metric: MetricResult,
-  rollout: RolloutResults,
-  variations: Variation[],
-): string[] => {
+const countedSinceLine = (metric: MetricResult, since: string): string => {
+  const attachedSince = `  Counted since ${utcMinute(since)}, when this metric was attached to the experiment.`;
+  const contextMeasurement = contextMeasurementOf(metric.definition);
+  switch (contextMeasurement.measured) {
+    case "as-their-events-arrive":
+      return `${attachedSince} Events reported before then are not in these numbers.`;
+    case "once-their-days-have-passed":
+      return (
+        `${attachedSince} Only the contexts whose day ${contextMeasurement.retention.firstDay} ` +
+        "started after then are measured."
+      );
+  }
+};
+
+const metricResultLines = (metricOfTheRollout: MetricOfTheRollout): string[] => {
+  const { role, metric } = metricOfTheRollout;
   const kindResultsWith = (countingLines: string[]): string[] =>
-    metric.kinds.flatMap((kindResult) =>
-      kindResultLines(role, metric, kindResult, rollout, variations, countingLines),
-    );
+    metric.kinds.flatMap((kindResult) => kindResultLines(metricOfTheRollout, kindResult, countingLines));
   const { counting } = metric;
   switch (counting.kind) {
     case "whole-run":
       return kindResultsWith([]);
     case "since":
-      return kindResultsWith([countedSinceLine(counting.since)]);
+      return kindResultsWith([countedSinceLine(metric, counting.since)]);
     case "not-counted":
-      return [`${roleAndMetric(role, metric)}, ${directionWords(metric.direction)}`, NOT_COUNTED_LINE];
+      return [`${roleAndMetric(role, metric)}, ${directionWords(metric.direction)}`, notCountedLine(metric)];
   }
 };
 
@@ -276,11 +446,11 @@ const comparisonLines = (comparison: RolloutComparison): string[] => {
   }
 };
 
-export type RunResults = { form: "no-metrics" } | { form: "measured"; results: Results };
+export type RunResults = { form: "no-metrics" } | { form: "measured"; results: Results; runTimes: RunTimes };
 
 export const runResultsOf = (run: ExperimentRun): RunResults =>
   METRIC_ROLES.some((role) => run.results[role].length > 0)
-    ? { form: "measured", results: run.results }
+    ? { form: "measured", results: run.results, runTimes: { startedAt: run.startedAt, endedAt: run.endedAt } }
     : { form: "no-metrics" };
 
 export const rolloutResultLines = (
@@ -292,16 +462,18 @@ export const rolloutResultLines = (
     case "no-metrics":
       return [];
     case "measured": {
-      const { results } = runResults;
+      const { results, runTimes } = runResults;
       const rollout = results.rollouts.find((candidate) => candidate.ruleId === ruleId);
       if (rollout === undefined) {
         return [];
       }
       return [
-        ...comparisonLines(comparisonOf(rollout)),
+        ...comparisonLines(comparisonOf(rollout.state)),
         ...crossoverLines(rollout.crossovers),
         ...METRIC_ROLES.flatMap((role) =>
-          results[role].flatMap((metric) => metricResultLines(role, metric, rollout, variations)),
+          results[role].flatMap((metric) =>
+            metricResultLines({ role, metric, rollout, variations, runTimes }),
+          ),
         ),
       ];
     }
@@ -313,9 +485,7 @@ const measuredEventNamesOf = (runResults: RunResults): ReadonlySet<string> => {
     case "no-metrics":
       return new Set();
     case "measured":
-      return new Set(
-        METRIC_ROLES.flatMap((role) => runResults.results[role].map((metric) => metric.eventName)),
-      );
+      return new Set(METRIC_ROLES.flatMap((role) => runResults.results[role].flatMap(eventNamesCountedBy)));
   }
 };
 

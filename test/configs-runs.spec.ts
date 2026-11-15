@@ -419,6 +419,9 @@ const conversionResultOf = (variations: object[], rolloutFields: object = {}) =>
   eventName: "checkout_completed",
   filter: null,
   valueField: null,
+  ratio: null,
+  funnel: null,
+  retention: null,
   counting: { kind: "whole-run" },
   direction: "higher-is-better",
   primaryKind: "conversion",
@@ -443,6 +446,9 @@ const supportTicketsGuardrail = {
   eventName: "support_ticket_opened",
   filter: null,
   valueField: null,
+  ratio: null,
+  funnel: null,
+  retention: null,
   counting: { kind: "whole-run" },
   direction: "lower-is-better",
   primaryKind: null,
@@ -820,7 +826,7 @@ describe("configs runs results", () => {
             ]),
             kinds: [
               {
-                kind: "ratio",
+                kind: "median",
                 rollouts: [
                   {
                     ruleId: rolloutRuleId,
@@ -835,7 +841,7 @@ describe("configs runs results", () => {
     ]);
 
     expect(lines.slice(7, 10)).toEqual([
-      "    Primary metric: checkout_completed, ratio, higher is better",
+      "    Primary metric: checkout_completed, median, higher is better",
       "      control (Start free trial)              0.03   control",
       "      treatment-a (Try it free for 14 days)   0.05   +55% (+12% to +98%)   >99% chance to beat control   likely-equivalent",
     ]);
@@ -928,6 +934,524 @@ describe("configs runs results", () => {
     ]);
 
     expect(lines.slice(-2)).toEqual(["  Events with no metric: checkout_completed (30 contexts)", ""]);
+  });
+});
+
+const metricOfItsOwnResultOf = (
+  definition: object,
+  kind: string,
+  variations: object[],
+  rolloutFields: object = {},
+) => ({
+  metricId: "0c000000-0000-4000-8000-000000000003",
+  eventName: null,
+  filter: null,
+  valueField: null,
+  ratio: null,
+  funnel: null,
+  retention: null,
+  ...definition,
+  counting: { kind: "whole-run" },
+  direction: "higher-is-better",
+  primaryKind: kind,
+  kinds: [{ kind, rollouts: [{ ruleId: rolloutRuleId, variations, ...rolloutFields }] }],
+});
+
+const revenuePerOrder = {
+  ratio: {
+    numerator: { eventName: "order_completed", adds: "value", filter: null, valueField: null },
+    denominator: { eventName: "order_completed", adds: "events", filter: null, valueField: null },
+  },
+};
+
+const controlRevenuePerOrder = {
+  variationId: controlId,
+  exposures: 412,
+  numeratorTotal: 4976.86,
+  denominatorTotal: 133,
+  value: 37.42,
+};
+
+const cartToPurchase = {
+  funnel: {
+    steps: [
+      { eventName: "cart_viewed", filter: null },
+      { eventName: "checkout_started", filter: null },
+      { eventName: "checkout_completed", filter: null },
+    ],
+  },
+};
+
+const secondWeekReturns = { retention: { eventName: "app_opened", filter: null, firstDay: 7, lastDay: 13 } };
+
+const retentionResultOf = (variations: object[], state: string, fields: object = {}) => ({
+  ...metricOfItsOwnResultOf(secondWeekReturns, "retention", variations, { state }),
+  ...fields,
+});
+
+const controlRetention = {
+  variationId: controlId,
+  exposures: 206,
+  analyzedExposures: 240,
+  converters: 85,
+  value: 0.4126,
+};
+
+const treatmentRetention = {
+  variationId: treatmentId,
+  exposures: 206,
+  analyzedExposures: 233,
+  converters: 82,
+  value: 0.398,
+  lift: -0.04,
+  interval: { low: -0.21, high: 0.18 },
+  chanceToBeatControl: 0.38,
+  verdict: "no-clear-difference",
+};
+
+const unmeasuredRetention = [
+  { variationId: controlId, exposures: 0, analyzedExposures: 240, converters: 0 },
+  { variationId: treatmentId, exposures: 0, analyzedExposures: 233, converters: 0 },
+];
+
+const endedRunWithResults = (results: object) =>
+  runWithResults(results, { endedAt: "2026-11-30T12:00:00.000Z", outcome: "stopped" });
+
+describe("configs runs results of a ratio, a funnel and a retention metric", () => {
+  it("names a ratio kind first in its heading, with no kind after it, and prints each variation's ratio beside its numerator and denominator totals", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        primary: [
+          metricOfItsOwnResultOf(revenuePerOrder, "ratio", [
+            controlRevenuePerOrder,
+            {
+              variationId: treatmentId,
+              exposures: 398,
+              numeratorTotal: 5630.7,
+              denominatorTotal: 137,
+              value: 41.1,
+              lift: 0.098,
+              interval: { low: -0.03, high: 0.24 },
+              chanceToBeatControl: 0.86,
+              verdict: "no-clear-difference",
+            },
+          ]),
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(7, 11)).toEqual([
+      "    Primary metric: Ratio: order_completed value ÷ order_completed events, higher is better",
+      "      control (Start free trial)              37.42   4,976.86 ÷ 133   control",
+      "      treatment-a (Try it free for 14 days)   41.10   5,630.7 ÷ 137    +10% (-3% to +24%)   86% chance to beat control   no clear difference",
+      "  Results can be up to 25 minutes behind.",
+    ]);
+  });
+
+  it("says a variation with nothing added to its ratio's denominator has no ratio to compare, in place of its lift, chances and verdict", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        primary: [
+          metricOfItsOwnResultOf(revenuePerOrder, "ratio", [
+            controlRevenuePerOrder,
+            { variationId: treatmentId, exposures: 398, numeratorTotal: 0, denominatorTotal: 0 },
+          ]),
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(8, 10)).toEqual([
+      "      control (Start free trial)              37.42   4,976.86 ÷ 133   control",
+      "      treatment-a (Try it free for 14 days)   -       0 ÷ 0            nothing added to its denominator yet, so it has no ratio to compare",
+    ]);
+  });
+
+  it("prints each variation's share of a funnel beside how many contexts reached each step", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        secondary: [
+          {
+            ...metricOfItsOwnResultOf(cartToPurchase, "funnel", [
+              {
+                variationId: controlId,
+                exposures: 412,
+                contextsThatReachedEachStep: [300, 180, 103],
+                converters: 103,
+                value: 0.25,
+              },
+              {
+                variationId: treatmentId,
+                exposures: 398,
+                contextsThatReachedEachStep: [310, 200, 117],
+                converters: 117,
+                value: 0.294,
+                lift: 0.176,
+                interval: { low: -0.02, high: 0.39 },
+                chanceToBeatControl: 0.91,
+                verdict: "no-clear-difference",
+              },
+            ]),
+            primaryKind: null,
+          },
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(7, 10)).toEqual([
+      "    Secondary metric: Funnel: cart_viewed → checkout_started → checkout_completed, higher is better",
+      "      control (Start free trial)              25.0%   steps 300 → 180 → 103   control",
+      "      treatment-a (Try it free for 14 days)   29.4%   steps 310 → 200 → 117   +18% (-2% to +39%)   91% chance to beat control   no clear difference",
+    ]);
+  });
+
+  it("says over how many measured contexts a retention is read and how many more were exposed, then each variation's share of the measured contexts that came back", async () => {
+    const lines = await runLinesOf([
+      runWithResults({ guardrail: [retentionResultOf([controlRetention, treatmentRetention], "ready")] }),
+    ]);
+
+    expect(lines.slice(7, 11)).toEqual([
+      "    Guardrail: Retention: app_opened · days 7 to 13, higher is better",
+      "      Measured over the 412 contexts whose days 7 to 13 have passed. 61 more have been exposed and are measured once their day 13 ends.",
+      "      control (Start free trial)              41.3%   85 of 206 came back   control",
+      "      treatment-a (Try it free for 14 days)   39.8%   82 of 206 came back   -4% (-21% to +18%)   38% chance to beat control   no clear difference",
+    ]);
+  });
+
+  it("writes one more context exposed and not yet measured in the singular", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        guardrail: [
+          retentionResultOf(
+            [
+              { ...controlRetention, analyzedExposures: 207 },
+              { ...treatmentRetention, analyzedExposures: 206 },
+            ],
+            "ready",
+          ),
+        ],
+      }),
+    ]);
+
+    expect(lines[8]).toEqual(
+      "      Measured over the 412 contexts whose days 7 to 13 have passed. 1 more has been exposed and is measured once its day 13 ends.",
+    );
+  });
+
+  it("says when the first contexts of a retention no context has had its days for yet are measured, with no numbers", async () => {
+    const lines = await runLinesOf([
+      runWithResults({ guardrail: [retentionResultOf(unmeasuredRetention, "needs-more-exposures")] }),
+    ]);
+
+    expect(lines.slice(7, 10)).toEqual([
+      "    Guardrail: Retention: app_opened · days 7 to 13, higher is better",
+      "      No context has had its days 7 to 13 yet. A context is measured once its day 13 has ended, 14 days after its exposure. The first ones finish on 2026-11-17 12:00 UTC, and the numbers show from then on; a lift shows once enough contexts of every variation are measured. 473 contexts have been exposed so far.",
+      "  Results can be up to 25 minutes behind.",
+    ]);
+  });
+
+  it("words a retention of one day as that day", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        guardrail: [
+          retentionResultOf(unmeasuredRetention, "needs-more-exposures", {
+            retention: { eventName: "app_opened", filter: null, firstDay: 1, lastDay: 1 },
+          }),
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(7, 9)).toEqual([
+      "    Guardrail: Retention: app_opened · day 1, higher is better",
+      "      No context has had its day 1 yet. A context is measured once its day 1 has ended, 2 days after its exposure. The first ones finish on 2026-11-05 12:00 UTC, and the numbers show from then on; a lift shows once enough contexts of every variation are measured. 473 contexts have been exposed so far.",
+    ]);
+  });
+
+  it("dates the first measured contexts of a retention counted since a moment from the first exposure whose first day starts after that moment", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        guardrail: [
+          retentionResultOf(unmeasuredRetention, "needs-more-exposures", {
+            counting: { kind: "since", since: "2026-11-12T09:30:00.000Z" },
+          }),
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(8, 10)).toEqual([
+      "      Counted since 2026-11-12 09:30 UTC, when this metric was attached to the experiment. Only the contexts whose day 7 started after then are measured.",
+      "      No context has had its days 7 to 13 yet. A context is measured once its day 13 has ended, 14 days after its exposure. The first ones finish on 2026-11-19 09:30 UTC, and the numbers show from then on; a lift shows once enough contexts of every variation are measured. 473 contexts have been exposed so far.",
+    ]);
+  });
+
+  it("says over how many measured contexts a retention counted since a moment is read, with no count of the contexts exposed before then, which are never measured", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        guardrail: [
+          retentionResultOf([controlRetention, treatmentRetention], "ready", {
+            counting: { kind: "since", since: "2026-11-05T09:30:00.000Z" },
+          }),
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(8, 11)).toEqual([
+      "      Counted since 2026-11-05 09:30 UTC, when this metric was attached to the experiment. Only the contexts whose day 7 started after then are measured.",
+      "      Measured over the 412 contexts whose days 7 to 13 have passed.",
+      "      control (Start free trial)              41.3%   85 of 206 came back   control",
+    ]);
+  });
+
+  it("says a retention needs more measured contexts while its own state does, and prints the values alone, while the rollout is ready", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        guardrail: [
+          retentionResultOf(
+            [
+              { variationId: controlId, exposures: 20, analyzedExposures: 240, converters: 9, value: 0.45 },
+              { variationId: treatmentId, exposures: 20, analyzedExposures: 233, converters: 8, value: 0.4 },
+            ],
+            "needs-more-exposures",
+          ),
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(8, 11)).toEqual([
+      "      Retention needs more contexts that have had their days 7 to 13 before the variations can be compared. 40 of the 473 contexts exposed have so far.",
+      "      control (Start free trial)              45.0%   9 of 20 came back   control",
+      "      treatment-a (Try it free for 14 days)   40.0%   8 of 20 came back",
+    ]);
+  });
+
+  it("says over how many contexts an ended run measured a retention and how many it never will", async () => {
+    const lines = await runLinesOf([
+      endedRunWithResults({
+        guardrail: [retentionResultOf([controlRetention, treatmentRetention], "ready")],
+      }),
+    ]);
+
+    expect(lines.slice(8, 10)).toEqual([
+      "      Measured over the 412 contexts whose days 7 to 13 had passed when the run ended. The 61 contexts exposed in the run's last 14 days were never measured, since nothing after a run's end counts.",
+      "      control (Start free trial)              41.3%   85 of 206 came back   control",
+    ]);
+  });
+
+  it("says no context's days had passed when an ended run measured none for a retention, and how many it never will, with no numbers", async () => {
+    const lines = await runLinesOf([
+      endedRunWithResults({ guardrail: [retentionResultOf(unmeasuredRetention, "needs-more-exposures")] }),
+    ]);
+
+    expect(lines.slice(7)).toEqual([
+      "    Guardrail: Retention: app_opened · days 7 to 13, higher is better",
+      "      No context's days 7 to 13 had passed when the run ended. The 473 contexts exposed in the run's last 14 days were never measured, since nothing after a run's end counts.",
+      "",
+    ]);
+  });
+
+  it("writes one context an ended run never measured in the singular", async () => {
+    const lines = await runLinesOf([
+      endedRunWithResults({
+        guardrail: [
+          retentionResultOf(
+            [
+              { ...controlRetention, analyzedExposures: 207 },
+              { ...treatmentRetention, analyzedExposures: 206 },
+            ],
+            "ready",
+          ),
+        ],
+      }),
+    ]);
+
+    expect(lines[8]).toEqual(
+      "      Measured over the 412 contexts whose days 7 to 13 had passed when the run ended. The 1 context exposed in the run's last 14 days was never measured, since nothing after a run's end counts.",
+    );
+  });
+
+  it("says over how many contexts a retention of one day is read once that day has passed", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        guardrail: [
+          retentionResultOf([controlRetention, treatmentRetention], "ready", {
+            retention: { eventName: "app_opened", filter: null, firstDay: 1, lastDay: 1 },
+          }),
+        ],
+      }),
+    ]);
+
+    expect(lines[8]).toEqual(
+      "      Measured over the 412 contexts whose day 1 has passed. 61 more have been exposed and are measured once their day 1 ends.",
+    );
+  });
+
+  it("writes one context exposed so far in the singular while none has been measured", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        guardrail: [
+          retentionResultOf(
+            [
+              { variationId: controlId, exposures: 0, analyzedExposures: 1, converters: 0 },
+              { variationId: treatmentId, exposures: 0, analyzedExposures: 0, converters: 0 },
+            ],
+            "needs-more-exposures",
+          ),
+        ],
+      }),
+    ]);
+
+    expect(lines[8]).toEqual(
+      "      No context has had its days 7 to 13 yet. A context is measured once its day 13 has ended, 14 days after its exposure. The first ones finish on 2026-11-17 12:00 UTC, and the numbers show from then on; a lift shows once enough contexts of every variation are measured. 1 context has been exposed so far.",
+    );
+  });
+
+  it("writes one measured context in the singular while a retention needs more", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        guardrail: [
+          retentionResultOf(
+            [
+              { variationId: controlId, exposures: 1, analyzedExposures: 240, converters: 1, value: 1 },
+              { variationId: treatmentId, exposures: 0, analyzedExposures: 233, converters: 0 },
+            ],
+            "needs-more-exposures",
+          ),
+        ],
+      }),
+    ]);
+
+    expect(lines[8]).toEqual(
+      "      Retention needs more contexts that have had their days 7 to 13 before the variations can be compared. 1 of the 473 contexts exposed has so far.",
+    );
+  });
+
+  it("says a ratio the run did not count is counted from the moment it is attached, with no numbers", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        secondary: [
+          {
+            ...metricOfItsOwnResultOf(revenuePerOrder, "ratio", []),
+            counting: { kind: "not-counted" },
+            kinds: [],
+          },
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(7, 9)).toEqual([
+      "    Secondary metric: Ratio: order_completed value ÷ order_completed events, higher is better",
+      "      This run did not count this metric: a ratio is counted from the moment it is attached to an experiment, and this one was not attached while the run was open.",
+    ]);
+  });
+
+  it("says a funnel the run did not count is counted from the moment it is attached, with no numbers", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        secondary: [
+          {
+            ...metricOfItsOwnResultOf(cartToPurchase, "funnel", []),
+            counting: { kind: "not-counted" },
+            kinds: [],
+          },
+        ],
+      }),
+    ]);
+
+    expect(lines[8]).toEqual(
+      "      This run did not count this metric: a funnel is counted from the moment it is attached to an experiment, and this one was not attached while the run was open.",
+    );
+  });
+
+  it("says a retention metric the run did not count is counted from the moment it is attached, with no numbers", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        secondary: [{ ...retentionResultOf([], "ready"), counting: { kind: "not-counted" }, kinds: [] }],
+      }),
+    ]);
+
+    expect(lines[8]).toEqual(
+      "      This run did not count this metric: a retention metric is counted from the moment it is attached to an experiment, and this one was not attached while the run was open.",
+    );
+  });
+
+  it("leaves the events a funnel's steps count out of the events with no metric", async () => {
+    const lines = await runLinesOf([
+      runWithResults(
+        {
+          secondary: [
+            {
+              ...metricOfItsOwnResultOf(cartToPurchase, "funnel", []),
+              counting: { kind: "not-counted" },
+              kinds: [],
+            },
+          ],
+        },
+        {
+          trackedEvents: {
+            events: [
+              { name: "add_to_cart", contexts: 340, variations: [] },
+              { name: "cart_viewed", contexts: 200, variations: [] },
+              { name: "checkout_started", contexts: 90, variations: [] },
+            ],
+          },
+        },
+      ),
+    ]);
+
+    expect(lines.slice(-3)).toEqual([
+      "  Events with no metric: add_to_cart (340 contexts)",
+      "  Results can be up to 25 minutes behind.",
+      "",
+    ]);
+  });
+
+  it("says how long a retention primary's run needs, with the days a lift whose exposures are all in still waits for its contexts to be measured", async () => {
+    const lines = await runLinesOf([
+      runWithResults({
+        primary: [
+          retentionResultOf(
+            [controlRetention, { ...treatmentRetention, lift: 0.03, chanceToBeatControl: 0.64 }],
+            "ready",
+            {
+              kinds: [
+                {
+                  kind: "retention",
+                  rollouts: [
+                    {
+                      ruleId: rolloutRuleId,
+                      state: "ready",
+                      variations: [
+                        controlRetention,
+                        { ...treatmentRetention, lift: 0.03, chanceToBeatControl: 0.64 },
+                      ],
+                      runLengthEstimate: {
+                        analyzedExposures: 473,
+                        exposuresPerDay: 40.2,
+                        paceMeasuredSince: "2026-11-04T00:00:00.000Z",
+                        lifts: [
+                          { lift: 0.2, exposuresNeeded: 2100, daysRemaining: 55 },
+                          { lift: 0.5, exposuresNeeded: 420, daysRemaining: 14 },
+                          { lift: 1, exposuresNeeded: 180, daysRemaining: 0 },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ),
+        ],
+      }),
+    ]);
+
+    expect(lines.slice(11, 18)).toEqual([
+      "    How long to run, at the pace since 2026-11-04 00:00 UTC: about 40 new exposures a day",
+      "      For a real lift of +20%    473 of about 2,100 exposures   about 55 days remaining",
+      "      For a real lift of +50%    473 of about 420 exposures     up to 14 days remaining",
+      "      For a real lift of +100%   473 of about 180 exposures     enough contexts measured",
+      "    A row's lift is one a variation might really have over the control, not the lift measured so far: the smaller it is, the longer the run.",
+      "    Every number of days includes 14 days for the last contexts exposed to have their days 7 to 13, since a context is measured only once its day 13 has ended.",
+      "    Whatever the estimate says, a run should cover at least one full week, so every day of the week is in the result.",
+    ]);
   });
 });
 

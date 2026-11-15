@@ -4,8 +4,21 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- `configdirector metrics create` creates a ratio, a funnel or a retention metric with `--ratio <file>`, `--funnel <file>` or `--retention <file>`, or `-` to read from stdin: a JSON file holding the definition as `metrics get --json` prints the field of the same name, such as `{"eventName": "app_opened", "firstDay": 7, "lastDay": 13}` for coming back in the second week. The CLI sends the metric's one kind for you. A metric keeps its definition for its whole life, and a run counts a ratio, funnel or retention metric from the moment it is attached to the experiment. `--help` gives an example of each.
+- `configdirector metrics list` shows each metric's ID in a last column, `ID`, which `metrics get`, `metrics update` and `metrics delete` take with `--id`.
+
+### Changed
+
+- `configdirector metrics list`, `metrics get`, `metrics create`, `metrics update`, `metrics delete` and `configs runs` name a ratio, a funnel or a retention metric kind first, as in `Ratio: order_completed value ÷ order_completed events`, `Funnel: cart_viewed → checkout_started → checkout_completed` and `Retention: app_opened · days 7 to 13`.
+- `configdirector configs runs` shows each variation's ratio beside its numerator and denominator totals, and says when a variation has nothing in its denominator yet; each variation's share of a funnel beside how many contexts reached each step; and for a retention metric, how many contexts have had their days so far, with a line in place of the numbers until the first have, saying when that is, and on an ended run how many contexts it measured and how many it never will. For a retention primary, `How long to run` says every number of days includes the wait for the last contexts exposed to be measured. Events that a ratio, a funnel or a retention metric counts are no longer listed as events with no metric.
+- `configdirector metrics get`, `metrics update` and `metrics delete` add, when no metric of one event name has the event name you give, that a ratio, funnel or retention metric is named by its ID, which `metrics list` shows. `metrics update --kind` refuses a ratio, funnel or retention metric, which reports its one kind alone, and `metrics delete --json` prints `deletedEventName` as `null` for one.
+- `configdirector metrics create` needs one of `--event-name`, `--ratio`, `--funnel` and `--retention`, and takes `--kind`, `--filter` and `--value-field` only with `--event-name`, where `--kind` stays required.
+
 ### Fixed
 
+- `configdirector metrics list` reads a project that holds a ratio, a funnel or a retention metric, which has no event name of its own, `metrics get`, `metrics update` and `metrics delete` read one named with `--id`, and `configs runs` reads the runs of an experiment that measures one. Versions before 0.24.0 fail on all of these, so upgrade every CLI used with a project that has such a metric.
 - `configdirector scan` and `validate` find configs read through `evaluate` in Python, Java, .NET, Go and Swift code, `EvaluateJson<T>` in .NET included, as they already did in JavaScript, Flutter and Android code. A call such as `client.evaluate("checkout-banner", False)` is reported with its in-code default value when the call writes it as a literal, so `validate` fails on a wrong key there too, and on a literal in-code default value of the wrong type. Earlier versions left a config read only through `evaluate` out of the scan: `validate` did not check its key, and an uploaded scan showed no code reference for it.
 
 ## [0.23.0] - 2026-11-12

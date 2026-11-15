@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { adminApiUnderTest } from "./support/admin-api-under-test.js";
 import { jsonOf, startCliUnderTest, uniqueKey } from "./support/built-cli.js";
-import { createConversionMetric, createTeamPlanItemsMetric, teamPlanFilter } from "./support/fixtures.js";
+import {
+  createConversionMetric,
+  createMetricOfItsOwn,
+  createTeamPlanItemsMetric,
+  teamPlanFilter,
+} from "./support/fixtures.js";
 
 type ListedMetric = { id: string; eventName: string; kinds: string[]; direction: string; usages: unknown[] };
 
@@ -53,7 +58,8 @@ describe.skipIf(adminApiUnderTest() === undefined)("metrics against the Admin AP
     expect(result.exitCode).toEqual(2);
     expect(result.stdout).toEqual("");
     expect(result.stderr).toEqual(
-      `Error: No metric in ${cli.project.slug} has the event name "${eventName}".\n`,
+      `Error: No metric in ${cli.project.slug} has the event name "${eventName}". ` +
+        "A ratio, funnel or retention metric is named by its id, which metrics list shows.\n",
     );
   });
 
@@ -93,7 +99,8 @@ describe.skipIf(adminApiUnderTest() === undefined)("metrics against the Admin AP
     expect(result.exitCode).toEqual(2);
     expect(result.stdout).toEqual("");
     expect(result.stderr).toEqual(
-      `Error: No metric in ${cli.project.slug} has the event name "${eventName}".\n`,
+      `Error: No metric in ${cli.project.slug} has the event name "${eventName}". ` +
+        "A ratio, funnel or retention metric is named by its id, which metrics list shows.\n",
     );
   });
 
@@ -106,7 +113,8 @@ describe.skipIf(adminApiUnderTest() === undefined)("metrics against the Admin AP
     expect(result.exitCode).toEqual(2);
     expect(result.stdout).toEqual("");
     expect(result.stderr).toEqual(
-      `Error: No metric in ${cli.project.slug} has the event name "${eventName}".\n`,
+      `Error: No metric in ${cli.project.slug} has the event name "${eventName}". ` +
+        "A ratio, funnel or retention metric is named by its id, which metrics list shows.\n",
     );
   });
 
@@ -285,5 +293,97 @@ describe.skipIf(adminApiUnderTest() === undefined)("metrics against the Admin AP
     const remainingIds = listedMetricIds(jsonOf(await cli.run(["metrics", "list", "--json"])));
     expect(remainingIds).toContain(everyCheckout.id);
     expect(remainingIds).not.toContain(teamCheckout.id);
+  });
+
+  it("creates a ratio metric from a --ratio file, which ConfigDirector stores and metrics get --id shows kind first", async () => {
+    const cli = await startCliUnderTest();
+    const eventName = uniqueKey();
+
+    const metric = await createMetricOfItsOwn(cli, "ratio", {
+      numerator: { eventName, adds: "value" },
+      denominator: { eventName, adds: "events" },
+    });
+
+    expect(jsonOf(await cli.run(["metrics", "get", "--id", metric.id, "--json"]))).toEqual(
+      expect.objectContaining({
+        eventName: null,
+        ratio: {
+          numerator: { eventName, adds: "value", filter: null, valueField: null },
+          denominator: { eventName, adds: "events", filter: null, valueField: null },
+        },
+        kinds: ["ratio"],
+      }),
+    );
+    expect((await cli.run(["metrics", "get", "--id", metric.id])).stdout.split("\n")[0]).toEqual(
+      `Ratio: ${eventName} value ÷ ${eventName} events`,
+    );
+  });
+
+  it("creates a funnel metric from a --funnel file, which ConfigDirector stores and metrics get --id shows kind first", async () => {
+    const cli = await startCliUnderTest();
+    const firstStep = uniqueKey();
+    const lastStep = uniqueKey();
+
+    const metric = await createMetricOfItsOwn(cli, "funnel", {
+      steps: [{ eventName: firstStep }, { eventName: lastStep, filter: teamPlanFilter }],
+    });
+
+    expect(jsonOf(await cli.run(["metrics", "get", "--id", metric.id, "--json"]))).toEqual(
+      expect.objectContaining({
+        eventName: null,
+        funnel: {
+          steps: [
+            { eventName: firstStep, filter: null },
+            { eventName: lastStep, filter: teamPlanFilter },
+          ],
+        },
+        kinds: ["funnel"],
+      }),
+    );
+    expect((await cli.run(["metrics", "get", "--id", metric.id])).stdout.split("\n")[0]).toEqual(
+      `Funnel: ${firstStep} → ${lastStep} · /plan is one of [team]`,
+    );
+  });
+
+  it("creates a retention metric from a --retention file, which ConfigDirector stores and metrics get --id shows kind first", async () => {
+    const cli = await startCliUnderTest();
+    const eventName = uniqueKey();
+
+    const metric = await createMetricOfItsOwn(cli, "retention", { eventName, firstDay: 7, lastDay: 13 });
+
+    expect(jsonOf(await cli.run(["metrics", "get", "--id", metric.id, "--json"]))).toEqual(
+      expect.objectContaining({
+        eventName: null,
+        retention: { eventName, filter: null, firstDay: 7, lastDay: 13 },
+        kinds: ["retention"],
+      }),
+    );
+    expect((await cli.run(["metrics", "get", "--id", metric.id])).stdout.split("\n")[0]).toEqual(
+      `Retention: ${eventName} · days 7 to 13`,
+    );
+  });
+
+  it("lists a project holding a metric of every kind, naming each ratio, funnel and retention metric kind first beside its id", async () => {
+    const cli = await startCliUnderTest();
+    const eventName = uniqueKey();
+    const oneEventName = await createConversionMetric(cli, eventName);
+    const ratio = await createMetricOfItsOwn(cli, "ratio", {
+      numerator: { eventName, adds: "value" },
+      denominator: { eventName, adds: "events" },
+    });
+    const firstStep = uniqueKey();
+    const funnel = await createMetricOfItsOwn(cli, "funnel", {
+      steps: [{ eventName: firstStep }, { eventName }],
+    });
+    const retention = await createMetricOfItsOwn(cli, "retention", { eventName, firstDay: 1, lastDay: 1 });
+
+    const result = await cli.run(["metrics", "list"]);
+
+    expect(result.exitCode).toEqual(0);
+    const lineOf = (id: string) => result.stdout.split("\n").find((line) => line.endsWith(id));
+    expect(lineOf(oneEventName.id)).toMatch(new RegExp(`^${eventName} `));
+    expect(lineOf(ratio.id)).toMatch(new RegExp(`^Ratio: ${eventName} value ÷ ${eventName} events `));
+    expect(lineOf(funnel.id)).toMatch(new RegExp(`^Funnel: ${firstStep} → ${eventName} `));
+    expect(lineOf(retention.id)).toMatch(new RegExp(`^Retention: ${eventName} · day 1 `));
   });
 });

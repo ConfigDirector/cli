@@ -193,7 +193,7 @@ configdirector metrics get --id <metric id>
 - `configs get <key>` shows the config's settings, including its type's constraints, then each environment's targeting rules in order, written as `evaluate` writes them, with the default targeting rule value last. An old key works, and the output then starts with a line naming the current key.
 - `configs activity <key>` shows when SDKs last evaluated the config, one line per environment, SDK key kind, SDK name and SDK version, with the time in UTC.
 - `segments list` lists the segments with how many configs use each, and `segments get <key>` shows a segment's condition groups and its environment overrides.
-- `metrics list` lists the metrics with their kinds, their direction and how many experiments use each, and `metrics get <event name>` shows a metric's kinds and direction, and each experiment that uses it, with its role and the environments of its runs in progress. Both name a metric by its event name, then its filter's conditions, then its value field, as in `checkout_completed · /plan is one of [team] · value from /items`. When several metrics have the event name, `metrics get` lists them with their IDs and exits with 2, and `metrics get --id <metric id>` shows one of them.
+- `metrics list` lists the metrics with their kinds, their direction, how many experiments use each, and their IDs, and `metrics get <event name>` shows a metric's kinds and direction, and each experiment that uses it, with its role and the environments of its runs in progress. Both name a metric of one event name by its event name, then its filter's conditions, then its value field, as in `checkout_completed · /plan is one of [team] · value from /items`, and a ratio, a funnel or a retention metric kind first, as in `Retention: app_opened · days 7 to 13`. An event name finds only a metric of one event name, so `metrics get --id <metric id>` shows a ratio, a funnel or a retention metric. When several metrics have the event name, `metrics get` lists them with their IDs and exits with 2, and `metrics get --id <metric id>` shows one of them.
 
 ```txt
 new-checkout
@@ -361,7 +361,7 @@ Running since 2026-11-03 12:00 UTC
 
 Each kind a metric reports gets a line with the metric's role, its name, the kind and its direction, then one row per variation, the control first: its value, and for every other variation the lift against the control with the range it is likely in, the chance to beat control and the verdict, `likely better`, `likely worse` or `no clear difference`. With three or more variations, each row also shows the variation's chance to be best. Until every variation has enough exposures, the rollout says the run needs more exposures and shows the values alone. While a run is going, `How long to run` follows the primary metric's results: for a real lift of 2%, 5%, 10%, 20% and 50%, in the metric's better direction, the exposures so far against those needed before a variation with that lift has a good chance of reading likely better, and about how many days remain at the pace of new exposures since the time it names. An ended run's last line says when its final results were taken, once they are in. A run also shows its hypothesis and the note it ended with, and lists the events sent with `track` during the run that no metric measures.
 
-A run counts a metric with a filter or a value field from the moment it is attached to the experiment. When that was during the run, a line under each of the metric's kinds says since when, and that events reported before then are not in its numbers. When the metric was not attached while the run was open, the run shows the metric's line and says it did not count it, with no numbers:
+A run counts a metric with a filter or a value field from the moment it is attached to the experiment. When that was during the run, a line under each of the metric's kinds says since when, and that events reported before then are not in its numbers. A ratio, a funnel and a retention metric are always counted from the moment they are attached. When the metric was not attached while the run was open, the run shows the metric's line and says it did not count it, with no numbers:
 
 ```txt
     Secondary metric: checkout_completed · /plan is one of [team], conversion, higher is better
@@ -370,6 +370,18 @@ A run counts a metric with a filter or a value field from the moment it is attac
       treatment-a (Try it free for 14 days)   3.0%   +43% (-5% to +110%)   91% chance to beat control   no clear difference
     Guardrail: checkout_completed · value from /refunded, lower is better
       This run did not count this metric: a metric with a filter or a value field is counted from the moment it is attached to an experiment, and this one was not attached while the run was open.
+```
+
+A ratio, a funnel or a retention metric reports one kind, so its line names it kind first and leaves the kind out after it. A ratio's rows show each variation's ratio beside its numerator and denominator totals, and a funnel's rows the share of exposed contexts that reached the last step beside how many reached each step. A retention metric counts a context only once its last day has ended: a line above its rows says over how many contexts it is measured so far, each row shows how many of the variation's measured contexts came back, and until the first context's last day has ended, the line says when that will be, in place of the numbers. For a retention primary, every number of days in `How long to run` includes the days the last contexts exposed wait to be measured.
+
+```txt
+    Primary metric: Ratio: order_completed value ÷ order_completed events, higher is better
+      control (Start free trial)              37.42   4,976.86 ÷ 133   control
+      treatment-a (Try it free for 14 days)   41.10   5,630.7 ÷ 137    +10% (-3% to +24%)   86% chance to beat control   no clear difference
+    Guardrail: Retention: app_opened · days 7 to 13, higher is better
+      Measured over the 412 contexts whose days 7 to 13 have passed. 61 more have been exposed and are measured once their day 13 ends.
+      control (Start free trial)              41.3%   85 of 206 came back   control
+      treatment-a (Try it free for 14 days)   39.8%   82 of 206 came back   -4% (-21% to +18%)   38% chance to beat control   no clear difference
 ```
 
 - `configs ship` serves one variation to everyone in the environment and ends the run. `--variation` takes its name or its ID. The default targeting rule value becomes the variation's value, every percentage rollout is removed, including one a conditional rule serves, and a conditional rule serving a single value stays.
@@ -439,13 +451,16 @@ configdirector segments delete beta-testers
 ```bash
 configdirector metrics create --event-name checkout_completed --kind conversion --kind value-per-context --direction higher-is-better
 configdirector metrics create --event-name checkout_completed --filter team-plan.json --value-field /items --kind value-per-context --direction higher-is-better
+configdirector metrics create --retention second-week.json --direction higher-is-better
 configdirector metrics update checkout_completed --direction lower-is-better
 configdirector metrics delete --id 4f5a6b7c-8d9e-4f0a-9b1c-3d4e5f6a7b8c
 ```
 
-A metric is what an experiment measures: the events with one name the application sends with the SDK's `track` call, all of them or only those whose details match the metric's filter, the numbers it reports and whether a higher or a lower number is better. A project can have several metrics on one event name, told apart by their filter and value field, and the commands name a metric by its event name, then its filter's conditions, then its value field, as in `checkout_completed · /plan is one of [team] · value from /items`. Attaching metrics to an experiment happens on its Settings tab in the dashboard, or through the Admin API or the MCP server.
+A metric is what an experiment measures, from the events the application sends with the SDK's `track` call: the numbers it reports and whether a higher or a lower number is better. A metric of one event name counts the events with that name, all of them or only those whose details match the metric's filter, and a project can have several metrics on one event name, told apart by their filter and value field. A ratio divides one total by another, a funnel gives the share of exposed contexts that reached the last of its steps, and a retention metric gives the share of contexts that sent an event between a first and a last day after their first exposure, among the contexts whose last day has ended. The commands name a metric of one event name by its event name, then its filter's conditions, then its value field, as in `checkout_completed · /plan is one of [team] · value from /items`, and a ratio, a funnel or a retention metric kind first, as in `Funnel: cart_viewed → checkout_started → checkout_completed`. Attaching metrics to an experiment happens on its Settings tab in the dashboard, or through the Admin API or the MCP server.
 
-- `metrics create` needs `--event-name`, exactly as the application passes it to `track`; `--kind`, repeatable: `conversion`, `count-per-context` or `value-per-context`; and `--direction`: `higher-is-better` or `lower-is-better`. `--description <text>` is optional. It prints `Created metric checkout_completed in web-app.`, then the metric as `metrics get` shows it.
+- `metrics create` needs one of `--event-name`, `--ratio`, `--funnel` and `--retention`, and `--direction`: `higher-is-better` or `lower-is-better`. `--description <text>` is optional. It prints `Created metric checkout_completed in web-app.`, then the metric as `metrics get` shows it.
+- `--event-name`, exactly as the application passes it to `track`, makes a metric of one event name and needs `--kind`, repeatable: `conversion`, `count-per-context` or `value-per-context`. `--kind`, `--filter` and `--value-field` are taken only with it.
+- `--ratio <file>`, `--funnel <file>` and `--retention <file>`, or `-` for stdin, take a JSON file holding the whole definition, in the shape `metrics get --json` prints the field of the same name in, and the metric reports that one kind. For coming back in the second week, `--retention` takes `{"eventName": "app_opened", "firstDay": 7, "lastDay": 13}`; `metrics create --help` gives an example of each.
 - `metrics create --filter <file>`, or `--filter -` for stdin, counts only the events whose details match every condition in the file, 1 to 5 of them, in the shape `metrics get --json` prints a metric's `filter` in:
 
   ```json
@@ -455,11 +470,11 @@ A metric is what an experiment measures: the events with one name the applicatio
   `field` is a JSON pointer into the details the application sends with the event. A `text` condition takes `is one of` or `is NOT one of`; a `number` condition takes `=`, `!=`, `>`, `>=`, `<` or `<=`, with its number as text, such as `"2"`; and a `boolean` condition takes `equals`, with `"true"` or `"false"`. A condition means what it means in a targeting rule, so a field an event lacks reads as empty text, and `is NOT one of` and `!=` count an event without it.
 
 - `metrics create --value-field <pointer>` sums the number at that field of the event's details for value per context, in place of the event's value, and needs `--kind value-per-context`.
-- A metric keeps its filter and value field for its whole life: for others, create another metric. A run counts a metric with a filter or a value field from the moment it is attached to the experiment.
-- `metrics update <event name>` changes what its options name: `--kind`, repeated, replaces the kinds, and `--direction` and `--description` replace theirs; `--description ""` removes the description. A metric keeps its event name, filter and value field. Removing a kind an experiment's primary metric decides on is refused, and the command exits with 2 listing those experiments.
-- `metrics delete <event name>` deletes the metric and detaches it from the experiments that use it, and prints `Deleted metric checkout_completed from web-app.`; `--json` prints `{ "deletedMetricId": "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "deletedEventName": "checkout_completed" }`. While an experiment that uses the metric has a run in progress, it is not deleted: the command exits with 2 and lists each experiment with the environments of its runs.
+- A metric keeps its definition for its whole life: its event name, filter and value field, or its ratio, funnel or retention. For another, create another metric. A run counts a metric with a filter or a value field, and every ratio, funnel and retention metric, from the moment it is attached to the experiment.
+- `metrics update <event name>` changes what its options name: `--kind`, repeated, replaces the kinds, and `--direction` and `--description` replace theirs; `--description ""` removes the description. A metric keeps its definition, and a ratio, a funnel or a retention metric also keeps its one kind, so `--kind` exits with 2 for one. Removing a kind an experiment's primary metric decides on is refused, and the command exits with 2 listing those experiments.
+- `metrics delete <event name>` deletes the metric and detaches it from the experiments that use it, and prints `Deleted metric checkout_completed from web-app.`; `--json` prints `{ "deletedMetricId": "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "deletedEventName": "checkout_completed" }`, with `null` as the event name of a ratio, a funnel or a retention metric. While an experiment that uses the metric has a run in progress, it is not deleted: the command exits with 2 and lists each experiment with the environments of its runs.
 
-`metrics update` and `metrics delete` take the event name while only one metric has it. When several metrics have it, they change nothing: they list the metrics with their IDs and exit with 2, and `--id <metric id>` names one of them:
+`metrics update` and `metrics delete` take the event name of a metric of one event name while only one metric has it, and `--id <metric id>` for a ratio, a funnel or a retention metric. When no metric of one event name has the event name, the error says a ratio, funnel or retention metric is named by its ID. When several metrics have it, they change nothing: they list the metrics with their IDs and exit with 2, and `--id <metric id>` names one of them:
 
 ```txt
 Error: 2 metrics in web-app have the event name "checkout_completed". Name one with --id:
@@ -467,9 +482,11 @@ Error: 2 metrics in web-app have the event name "checkout_completed". Name one w
   4f5a6b7c-8d9e-4f0a-9b1c-3d4e5f6a7b8c   checkout_completed · /plan is one of [team]
 ```
 
+Versions of the CLI before 0.24.0 fail `metrics list` in a project that has a ratio, a funnel or a retention metric, `metrics get`, `metrics update` and `metrics delete --id` on one, and `configs runs` on an experiment that measures one, so upgrade every CLI used with such a project.
+
 Versions of the CLI before 0.23.0 act on the first metric ConfigDirector lists for an event name, so once a project has several metrics on one event name, their `metrics update` and `metrics delete` can change or delete another metric than the one you mean. Upgrade every CLI that changes metrics before you create a second metric on an event name.
 
-None of them asks for confirmation. An event name or ID no metric has exits with 2 for `update` and `delete`, and so does a metric ConfigDirector refuses, such as one with the same event name, filter and value field as another. With `--json`, `create` and `update` print the metric as the Admin API returned it.
+None of them asks for confirmation. An event name or ID no metric has exits with 2 for `update` and `delete`, and so does a metric ConfigDirector refuses, such as one with the same definition as another. With `--json`, `create` and `update` print the metric as the Admin API returned it.
 
 `metrics create` needs `projects:read` and `metrics:create`, `metrics update` needs `projects:read`, `metrics:read` and `metrics:update`, and `metrics delete` needs `projects:read`, `metrics:read` and `metrics:delete`. Without `environments:read`, `metrics update` and `metrics delete` name environments by ID instead of by slug. The change shows in the audit log with the source CLI.
 
