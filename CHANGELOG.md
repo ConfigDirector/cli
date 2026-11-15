@@ -4,6 +4,8 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-14
+
 ### Added
 
 - `configdirector metrics create` creates a ratio, a funnel or a retention metric with `--ratio <file>`, `--funnel <file>` or `--retention <file>`, or `-` to read from stdin: a JSON file holding the definition as `metrics get --json` prints the field of the same name, such as `{"eventName": "app_opened", "firstDay": 7, "lastDay": 13}` for coming back in the second week. The CLI sends the metric's one kind for you. A metric keeps its definition for its whole life, and a run counts a ratio, funnel or retention metric from the moment it is attached to the experiment. `--help` gives an example of each.
