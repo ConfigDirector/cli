@@ -97,7 +97,9 @@
         "dotnet",
         "openfeature-dotnet",
         "go",
-        "openfeature-go"
+        "openfeature-go",
+        "php",
+        "openfeature-php"
       ]
     },
     "call": {
@@ -219,7 +221,8 @@
             "java",
             "python",
             "csharp",
-            "go"
+            "go",
+            "php"
           ]
         },
         "truncatedLines": {

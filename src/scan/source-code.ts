@@ -9,6 +9,9 @@ export type TokenRange = { first: number; last: number };
 const closerOfOpener: Readonly<Record<string, string>> = { "(": ")", "[": "]", "{": "}" };
 const closers = new Set(Object.values(closerOfOpener));
 const quotes = new Set(['"', "'", "`"]);
+const ATTRIBUTE_OPENER = "#[";
+const HEREDOC_OPENER = "<<<";
+const HEREDOC_LABEL_QUOTES = new Set(['"', "'"]);
 const OPENERS_SEARCHED_FOR_A_CLOSER = 8;
 
 export const isAsciiLetter = (character: string) =>
@@ -29,8 +32,12 @@ const endOfLine = (source: string, start: number): number => {
   return newline === -1 ? source.length : newline;
 };
 
+const opensLineComment = (source: string, start: number, syntax: LanguageSyntax): boolean =>
+  syntax.lineComments.some((marker) => source.startsWith(marker, start)) &&
+  !(syntax.hashBracketOpensAttribute && source.startsWith(ATTRIBUTE_OPENER, start));
+
 const endOfComment = (source: string, start: number, syntax: LanguageSyntax): number | undefined => {
-  if (source.startsWith(syntax.lineComment, start)) {
+  if (opensLineComment(source, start, syntax)) {
     return endOfLine(source, start);
   }
   if (syntax.blockComments && source.startsWith("/*", start)) {
@@ -71,6 +78,51 @@ const endOfCharactersWhere = (source: string, start: number, belongs: (index: nu
   return index;
 };
 
+const isHeredocLabelStart = (character: string) =>
+  isAsciiLetter(character) || character === "_" || character > "\u007f";
+
+const isHeredocLabelPart = (character: string) => isHeredocLabelStart(character) || isDigit(character);
+
+const isSpaceOrTab = (character: string) => character === " " || character === "\t";
+
+const startsLineBreak = (source: string, index: number) =>
+  source.charAt(index) === "\n" || source.startsWith("\r\n", index);
+
+const heredocLabelOpenedAt = (source: string, start: number): string | undefined => {
+  if (!source.startsWith(HEREDOC_OPENER, start)) {
+    return undefined;
+  }
+  const labelOrQuote = endOfCharactersWhere(source, start + HEREDOC_OPENER.length, (index) =>
+    isSpaceOrTab(source.charAt(index)),
+  );
+  const isQuoted = HEREDOC_LABEL_QUOTES.has(source.charAt(labelOrQuote));
+  const labelStart = isQuoted ? labelOrQuote + 1 : labelOrQuote;
+  const labelEnd = endOfCharactersWhere(source, labelStart, (index) =>
+    isHeredocLabelPart(source.charAt(index)),
+  );
+  const headerEnd = isQuoted ? labelEnd + 1 : labelEnd;
+  const opensHeredoc = isHeredocLabelStart(source.charAt(labelStart)) && startsLineBreak(source, headerEnd);
+  return opensHeredoc ? source.slice(labelStart, labelEnd) : undefined;
+};
+
+const endOfHeredocBody = (source: string, start: number, label: string): number => {
+  let lineStart = source.indexOf("\n", start) + 1;
+  while (lineStart > 0) {
+    const labelStart = endOfCharactersWhere(source, lineStart, (index) => isSpaceOrTab(source.charAt(index)));
+    const labelEnd = labelStart + label.length;
+    if (source.startsWith(label, labelStart) && !isHeredocLabelPart(source.charAt(labelEnd))) {
+      return labelEnd;
+    }
+    lineStart = source.indexOf("\n", lineStart) + 1;
+  }
+  return source.length;
+};
+
+const endOfHeredoc = (source: string, start: number, syntax: LanguageSyntax): number | undefined => {
+  const label = syntax.heredocs ? heredocLabelOpenedAt(source, start) : undefined;
+  return label === undefined ? undefined : endOfHeredocBody(source, start, label);
+};
+
 const endOfNumber = (source: string, start: number): number =>
   endOfCharactersWhere(
     source,
@@ -80,6 +132,11 @@ const endOfNumber = (source: string, start: number): number =>
       (source.charAt(index) === "." && isDigit(source.charAt(index + 1))),
   );
 
+const endOfPunctuation = (source: string, start: number, syntax: LanguageSyntax): number => {
+  const operator = syntax.operatorsReadAsOneToken.find((candidate) => source.startsWith(candidate, start));
+  return start + (operator?.length ?? 1);
+};
+
 const tokenize = (source: string, syntax: LanguageSyntax): SourceToken[] => {
   const tokens: SourceToken[] = [];
   const push = (kind: TokenKind, start: number, end: number) =>
@@ -88,11 +145,15 @@ const tokenize = (source: string, syntax: LanguageSyntax): SourceToken[] => {
   while (index < source.length) {
     const character = source.charAt(index);
     const commentEnd = endOfComment(source, index, syntax);
+    const heredocEnd = endOfHeredoc(source, index, syntax);
     let end: number;
     if (isWhitespace(character)) {
       end = index + 1;
     } else if (commentEnd !== undefined) {
       end = commentEnd;
+    } else if (heredocEnd !== undefined) {
+      end = heredocEnd;
+      push("string", index, end);
     } else if (quotes.has(character)) {
       end = endOfStringLiteral(source, index);
       push("string", index, end);
@@ -103,7 +164,7 @@ const tokenize = (source: string, syntax: LanguageSyntax): SourceToken[] => {
       end = endOfNumber(source, index);
       push("number", index, end);
     } else {
-      end = index + 1;
+      end = endOfPunctuation(source, index, syntax);
       push("punctuation", index, end);
     }
     index = end;

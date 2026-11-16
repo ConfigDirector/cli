@@ -115,4 +115,13 @@ export const mapLiteralEntries: { [L in SourceLanguage]: MapLiteralEntries } = {
   },
   csharp: (code, range) =>
     itemsOfGroup(code, code.openerOfLastToken(range, "}"))?.map((item) => csharpEntry(code, item)),
+  php: (code, range) =>
+    code.openerOfLastToken(range, "]") === range.first
+      ? itemsOfGroup(code, range.first)?.map((item) =>
+          splitAt(
+            item,
+            code.firstTopLevelIndex(item, (index) => code.isPunctuation(index, "=>")),
+          ),
+        )
+      : undefined,
 };

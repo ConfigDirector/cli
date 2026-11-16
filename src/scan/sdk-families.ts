@@ -26,7 +26,9 @@ export type SdkFamily =
   | "dotnet"
   | "openfeature-dotnet"
   | "go"
-  | "openfeature-go";
+  | "openfeature-go"
+  | "php"
+  | "openfeature-php";
 
 export const sdkTypes = ["client", "server"] as const;
 
@@ -175,6 +177,16 @@ const openFeatureGoArguments = {
   key: { position: 1 },
   inCodeDefault: { position: 2 },
   argumentCount: { minimum: 4 },
+};
+
+const phpLabels = {
+  key: { position: 0, label: "configKey" },
+  inCodeDefault: { position: 1, label: "defaultValue" },
+};
+
+const openFeaturePhpLabels = {
+  key: { position: 0, label: "flagKey" },
+  inCodeDefault: { position: 1, label: "defaultValue" },
 };
 
 const kotlinLabels = {
@@ -536,6 +548,37 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
         json: ["Object", "ObjectValue", "ObjectValueDetails"],
       },
       openFeatureGoArguments,
+    ),
+  },
+  php: {
+    sdkType: "server",
+    extensions: [".php"],
+    importMarkers: ["use ConfigDirector\\"],
+    providerPackagesContainingMarkers: ["ConfigDirector\\OpenFeature"],
+    calls: [
+      read("getValue", phpLabels),
+      read("evaluate", phpLabels),
+      read("watch", phpLabels),
+      keyOnly("unwatch", phpLabels.key),
+      testMap("createTestClient", "function", { position: 0, label: "values" }),
+      testMethod("setValue", { position: 0, label: "key" }),
+      testMethod("removeValue", { position: 0, label: "key" }),
+      testMap("replaceValues", "method", { position: 0, label: "values" }),
+    ],
+  },
+  "openfeature-php": {
+    sdkType: "server",
+    extensions: [".php"],
+    importMarkers: ["use OpenFeature\\"],
+    calls: typedReads(
+      {
+        boolean: ["getBooleanValue", "getBooleanDetails"],
+        string: ["getStringValue", "getStringDetails"],
+        integer: ["getIntegerValue", "getIntegerDetails"],
+        float: ["getFloatValue", "getFloatDetails"],
+        json: ["getObjectValue", "getObjectDetails"],
+      },
+      openFeaturePhpLabels,
     ),
   },
 };

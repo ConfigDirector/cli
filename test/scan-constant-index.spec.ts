@@ -271,6 +271,141 @@ describe("scan constants", () => {
     expect(referencedKeys(output)).toEqual([["new-checkout", "Flags.NewCheckout"]]);
   });
 
+  it("resolves a PHP class constant read through its class", async () => {
+    const { exitCode, output } = await scanRepositoryJson({
+      "src/Flags.php": [
+        "<?php",
+        "",
+        "namespace App;",
+        "",
+        "final class Flags",
+        "{",
+        "    public const string NEW_CHECKOUT = 'new-checkout';",
+        "}",
+      ],
+      "src/Checkout.php": [
+        "<?php",
+        "",
+        "namespace App;",
+        "",
+        "use ConfigDirector\\ConfigDirectorClient;",
+        "",
+        "function newCheckout(ConfigDirectorClient $client): bool",
+        "{",
+        "    return $client->getValue(Flags::NEW_CHECKOUT, false);",
+        "}",
+      ],
+    });
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([
+      {
+        key: "new-checkout",
+        argument: "Flags::NEW_CHECKOUT",
+        file: "src/Checkout.php",
+        line: 9,
+        kind: "direct",
+        sdk: "php",
+        call: "getValue",
+        default: { type: "boolean", value: false },
+        test: false,
+      },
+    ]);
+  });
+
+  it("resolves a PHP class constant read through its fully qualified class name", async () => {
+    const { exitCode, output } = await scanRepositoryJson({
+      "src/Flags.php": [
+        "<?php",
+        "",
+        "namespace App;",
+        "",
+        "final class Flags",
+        "{",
+        "    public const NEW_CHECKOUT = 'new-checkout';",
+        "}",
+      ],
+      "public/index.php": [
+        "<?php",
+        "",
+        "use ConfigDirector\\ConfigDirector;",
+        "",
+        "$client = ConfigDirector::createClient(serverSdkKey: 'YOUR-SERVER-SDK-KEY');",
+        "$newCheckout = $client->getValue(\\App\\Flags::NEW_CHECKOUT, false);",
+      ],
+    });
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeys(output)).toEqual([["new-checkout", "\\App\\Flags::NEW_CHECKOUT"]]);
+  });
+
+  it("resolves a PHP backed enum case read through value", async () => {
+    const { exitCode, output } = await scanRepositoryJson({
+      "src/Flag.php": [
+        "<?php",
+        "",
+        "namespace App;",
+        "",
+        "enum Flag: string",
+        "{",
+        "    case NewCheckout = 'new-checkout';",
+        "}",
+      ],
+      "src/Checkout.php": [
+        "<?php",
+        "",
+        "namespace App;",
+        "",
+        "use ConfigDirector\\ConfigDirectorClient;",
+        "",
+        "function newCheckout(ConfigDirectorClient $client): bool",
+        "{",
+        "    return $client->getValue(Flag::NewCheckout->value, false);",
+        "}",
+      ],
+    });
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeys(output)).toEqual([["new-checkout", "Flag::NewCheckout->value"]]);
+  });
+
+  it("resolves a PHP class constant used as a key of a test client's values", async () => {
+    const { exitCode, output } = await scanRepositoryJson({
+      "src/Flags.php": [
+        "<?php",
+        "",
+        "namespace App;",
+        "",
+        "final class Flags",
+        "{",
+        "    public const NEW_CHECKOUT = 'new-checkout';",
+        "}",
+      ],
+      "tests/CheckoutTest.php": [
+        "<?php",
+        "",
+        "use App\\Flags;",
+        "use ConfigDirector\\Testing\\ConfigDirectorTesting;",
+        "",
+        "$testClient = ConfigDirectorTesting::createTestClient(values: [Flags::NEW_CHECKOUT => true]);",
+      ],
+    });
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([
+      {
+        key: "new-checkout",
+        argument: "Flags::NEW_CHECKOUT",
+        file: "tests/CheckoutTest.php",
+        line: 6,
+        kind: "direct",
+        sdk: "php",
+        call: "createTestClient",
+        test: true,
+      },
+    ]);
+  });
+
   it("reports a call through an alias of a constant as dynamic", async () => {
     const { exitCode, output } = await scanRepositoryJson({
       "src/checkout.ts": [

@@ -406,6 +406,7 @@ export class LocalImports {
       case "kotlin":
       case "java":
       case "csharp":
+      case "php":
         return Promise.resolve([]);
     }
   }
@@ -422,6 +423,7 @@ export class LocalImports {
       case "kotlin":
       case "java":
       case "csharp":
+      case "php":
         return Promise.resolve([]);
     }
   }
@@ -438,6 +440,7 @@ export class LocalImports {
       case "dart":
       case "go":
       case "swift":
+      case "php":
         return Promise.resolve([]);
     }
   }
@@ -457,6 +460,7 @@ export class LocalImports {
       case "kotlin":
       case "java":
       case "csharp":
+      case "php":
         return Promise.resolve([]);
     }
   }

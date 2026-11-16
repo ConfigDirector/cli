@@ -385,6 +385,44 @@ describe("scan snippets", () => {
     ]);
   });
 
+  it("names the language of a .php file php", async () => {
+    const { exitCode, output } = await scanJsonOf({
+      "src/checkout.php": [
+        "<?php",
+        "",
+        "use ConfigDirector\\ConfigDirector;",
+        "",
+        "$client = ConfigDirector::createClient(serverSdkKey: 'YOUR-SERVER-SDK-KEY');",
+        "$newCheckout = $client->getValue('new-checkout', false);",
+        "",
+      ].join("\n"),
+    });
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([
+      {
+        key: "new-checkout",
+        file: "src/checkout.php",
+        line: 6,
+        kind: "direct",
+        sdk: "php",
+        call: "getValue",
+        default: { type: "boolean", value: false },
+        test: false,
+        snippet: {
+          firstLine: 4,
+          lines: [
+            "",
+            "$client = ConfigDirector::createClient(serverSdkKey: 'YOUR-SERVER-SDK-KEY');",
+            "$newCheckout = $client->getValue('new-checkout', false);",
+          ],
+          language: "php",
+          truncatedLines: [],
+        },
+      },
+    ]);
+  });
+
   it("includes a snippet around an indirect reference", async () => {
     const { exitCode, output } = await scanJsonOf({
       "src/cart.ts": [

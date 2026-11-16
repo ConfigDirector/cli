@@ -8,6 +8,7 @@ import {
 import { mapLiteralEntries } from "./map-literals.js";
 import type { ArgumentSlot, CallShape, GetterType, KeyArgument, SdkFamily } from "./sdk-families.js";
 import type { SourceCode, TokenRange } from "./source-code.js";
+import { languageSyntax, type LanguageSyntax } from "./source-languages.js";
 
 export type DirectReference = {
   key: string;
@@ -37,7 +38,7 @@ type CallArgument = { label: string | undefined; range: TokenRange };
 const LABEL_SEPARATORS = new Set([":", "="]);
 const CHARACTERS_EXTENDING_A_SEPARATOR = new Set([":", "=", ">"]);
 
-const labelledArgument = (code: SourceCode, item: TokenRange): CallArgument => {
+const labeledArgument = (code: SourceCode, item: TokenRange): CallArgument => {
   const labelToken = code.token(item.first);
   const separator = code.token(item.first + 1);
   const isLabel =
@@ -52,11 +53,9 @@ const labelledArgument = (code: SourceCode, item: TokenRange): CallArgument => {
 };
 
 const argumentInSlot = (callArguments: CallArgument[], slot: ArgumentSlot): CallArgument | undefined => {
-  const labelled = callArguments.find(
-    (argument) => slot.label !== undefined && argument.label === slot.label,
-  );
-  if (labelled !== undefined) {
-    return labelled;
+  const labeled = callArguments.find((argument) => slot.label !== undefined && argument.label === slot.label);
+  if (labeled !== undefined) {
+    return labeled;
   }
   const positional = slot.position === undefined ? undefined : callArguments[slot.position];
   return positional?.label === undefined ? positional : undefined;
@@ -65,7 +64,7 @@ const argumentInSlot = (callArguments: CallArgument[], slot: ArgumentSlot): Call
 const precedingTokenMatchesForm = (code: SourceCode, nameIndex: number, shape: CallShape) => {
   switch (shape.form) {
     case "method":
-      return code.isPunctuation(nameIndex - 1, ".");
+      return code.isPunctuation(nameIndex - 1, languageSyntax[code.language].memberAccessOperator);
     case "annotation":
       return code.isPunctuation(nameIndex - 1, "@");
     case "function":
@@ -80,15 +79,21 @@ export const dynamicReferenceOf = ({ line, sdk, call, argument }: NamedKeyRefere
   argument,
 });
 
-const RAW_VALUE_ACCESSOR = "rawValue";
-
 const rangeInsideBrackets = (code: SourceCode, range: TokenRange): TokenRange =>
   code.isPunctuation(range.first, "[") && code.closerOf(range.first) === range.last
     ? { first: range.first + 1, last: range.last - 1 }
     : range;
 
-const dottedPathSegments = (code: SourceCode, range: TokenRange): string[] | undefined => {
-  const path = rangeInsideBrackets(code, range);
+const separatesPathSegments = (code: SourceCode, index: number, syntax: LanguageSyntax): boolean => {
+  const token = code.token(index);
+  return token?.kind === "punctuation" && syntax.pathSeparators.includes(token.text);
+};
+
+const pathSegments = (code: SourceCode, range: TokenRange, syntax: LanguageSyntax): string[] | undefined => {
+  const startsAtGlobalNamespace =
+    syntax.globalNamespacePrefix !== undefined &&
+    code.isPunctuation(range.first, syntax.globalNamespacePrefix);
+  const path = startsAtGlobalNamespace ? { first: range.first + 1, last: range.last } : range;
   const tokenCount = path.last - path.first + 1;
   if (tokenCount < 1 || tokenCount % 2 === 0) {
     return undefined;
@@ -96,7 +101,10 @@ const dottedPathSegments = (code: SourceCode, range: TokenRange): string[] | und
   const segments: string[] = [];
   for (let index = path.first; index <= path.last; index += 2) {
     const segment = code.token(index);
-    if (segment?.kind !== "identifier" || (index < path.last && !code.isPunctuation(index + 1, "."))) {
+    if (
+      segment?.kind !== "identifier" ||
+      (index < path.last && !separatesPathSegments(code, index + 1, syntax))
+    ) {
       return undefined;
     }
     segments.push(segment.text);
@@ -105,12 +113,13 @@ const dottedPathSegments = (code: SourceCode, range: TokenRange): string[] | und
 };
 
 const nameReadForKey = (code: SourceCode, range: TokenRange): string | undefined => {
-  const segments = dottedPathSegments(code, range);
+  const syntax = languageSyntax[code.language];
+  const segments = pathSegments(code, rangeInsideBrackets(code, range), syntax);
   if (segments === undefined) {
     return undefined;
   }
-  const accessesRawValue = segments.length > 1 && segments[segments.length - 1] === RAW_VALUE_ACCESSOR;
-  return segments[segments.length - (accessesRawValue ? 2 : 1)];
+  const readsEnumValue = segments.length > 1 && segments[segments.length - 1] === syntax.enumValueAccessor;
+  return segments[segments.length - (readsEnumValue ? 2 : 1)];
 };
 
 const TOKENS_SEARCHED_FOR_THE_END_OF_TYPE_ARGUMENTS = 64;
@@ -184,7 +193,7 @@ const keyExpressionsOf = (
 const callArgumentsOf = (code: SourceCode, nameIndex: number): CallArgument[] | undefined => {
   const openingParenthesis = openingParenthesisAfterName(code, nameIndex);
   const items = openingParenthesis === undefined ? undefined : code.commaSeparatedItems(openingParenthesis);
-  return items?.map((item) => labelledArgument(code, item));
+  return items?.map((item) => labeledArgument(code, item));
 };
 
 const hasArgumentCountOf = (shape: CallShape, callArguments: CallArgument[]) =>

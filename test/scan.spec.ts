@@ -2056,6 +2056,252 @@ describe("scan Go calls", () => {
   });
 });
 
+describe("scan PHP calls", () => {
+  const referencedKeysAndLines = (output: { references: Array<{ key: string; line: number }> }) =>
+    output.references.map((reference) => [reference.key, reference.line]);
+
+  it("reports a PHP SDK call whose key is built at runtime as a dynamic reference with the argument as written", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "banner.php",
+      [
+        "<?php",
+        "",
+        "use ConfigDirector\\ConfigDirectorClient;",
+        "",
+        "function bannerShown(ConfigDirectorClient $client, string $region): bool",
+        "{",
+        '    return $client->getValue("banner-{$region}", false)',
+        "        || $client->getValue('banner-' . $region, false);",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([
+      { file: "banner.php", line: 7, sdk: "php", call: "getValue", argument: '"banner-{$region}"' },
+      { file: "banner.php", line: 8, sdk: "php", call: "getValue", argument: "'banner-' . $region" },
+    ]);
+  });
+
+  it("reports a PHP SDK call whose key joins two variables with a dot as a dynamic reference", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.php",
+      [
+        "<?php",
+        "",
+        "use ConfigDirector\\ConfigDirectorClient;",
+        "",
+        "function newCheckout(ConfigDirectorClient $client): bool",
+        "{",
+        "    $prefix = 'new-checkout';",
+        "    $suffix = 'checkout-v2';",
+        "",
+        "    return $client->getValue($prefix.$suffix, false);",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([
+      { file: "checkout.php", line: 10, sdk: "php", call: "getValue", argument: "$prefix.$suffix" },
+    ]);
+  });
+
+  it("does not report a getValue function joined to a string with PHP's dot", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "theme.php",
+      [
+        "<?php",
+        "",
+        "use ConfigDirector\\ConfigDirectorClient;",
+        "",
+        "function theme(ConfigDirectorClient $client): string",
+        "{",
+        "    return 'Theme: '.getValue('theme-name', 'light').$client->getValue('theme', 'light');",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["theme", 7]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reports nothing for PHP SDK calls inside #, // and /* */ comments", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.php",
+      [
+        "<?php",
+        "",
+        "use ConfigDirector\\ConfigDirectorClient;",
+        "",
+        "function newCheckout(ConfigDirectorClient $client): bool",
+        "{",
+        "    # $client->getValue('old-checkout', false);",
+        "    // $client->getValue('older-checkout', false);",
+        "    /* $client->getValue('oldest-checkout', false); */",
+        "    return $client->getValue('new-checkout', false);",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 10]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reads the PHP code after an attribute on the same line, which starts like a # comment", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "Checkout.php",
+      [
+        "<?php",
+        "",
+        "use ConfigDirector\\ConfigDirectorClient;",
+        "",
+        "final class Checkout",
+        "{",
+        "    public function __construct(private ConfigDirectorClient $client) {}",
+        "",
+        "    #[Pure] public function newCheckout(): bool { return $this->client->getValue('new-checkout', false); }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 9]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reports nothing for PHP SDK calls inside heredocs, and reads the code after each one", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "help.php",
+      [
+        "<?php",
+        "",
+        "use ConfigDirector\\ConfigDirectorClient;",
+        "",
+        "function help(ConfigDirectorClient $client): string",
+        "{",
+        "    $help = <<<HELP",
+        "        HELPFUL: read it with {$client->getValue('heredoc-checkout', false)}.",
+        "        HELP;",
+        "    $banner = $client->getValue('checkout-banner', false);",
+        '    $note = <<<"NOTE"',
+        "        Read it with {$client->getValue('quoted-heredoc-checkout', false)}.",
+        "        NOTE;",
+        "",
+        "    return $client->getValue('new-checkout', false) ? $help : $note;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([
+      ["checkout-banner", 10],
+      ["new-checkout", 15],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reports nothing for a PHP SDK call inside a nowdoc, and reads the code after it", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "help.php",
+      [
+        "<?php",
+        "",
+        "use ConfigDirector\\ConfigDirectorClient;",
+        "",
+        "function help(ConfigDirectorClient $client): string",
+        "{",
+        "    $help = <<<'HELP'",
+        "        Call $client->getValue('nowdoc-checkout', false) to read the flag.",
+        "        HELP;",
+        "",
+        "    return $client->getValue('new-checkout', false) ? $help : '';",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 11]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reports nothing for a PHP SDK call inside a heredoc of a file with Windows line endings", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "help.php",
+      [
+        "<?php",
+        "",
+        "use ConfigDirector\\ConfigDirectorClient;",
+        "",
+        "function help(ConfigDirectorClient $client): string",
+        "{",
+        "    $help = <<<HELP",
+        "        Read it with {$client->getValue('heredoc-checkout', false)}.",
+        "        HELP;",
+        "",
+        "    return $client->getValue('new-checkout', false) ? $help : '';",
+        "}",
+        "",
+      ].join("\r\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 11]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+});
+
 describe("scan Nuxt app and server", () => {
   const nuxtServerHandler = [
     "export default defineEventHandler(() => {",
@@ -2983,6 +3229,33 @@ describe("scan OpenFeature provider imports", () => {
 
     expect(exitCode).toEqual(0);
     expect(referencedKeysFilesAndSdks(output)).toEqual([["dark-mode", "flags.go", "openfeature-go"]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a PHP SDK look-alike call in a file that imports only the OpenFeature provider", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "flags.php",
+      [
+        "<?php",
+        "",
+        "use ConfigDirector\\OpenFeature\\ConfigDirectorProvider;",
+        "use OpenFeature\\OpenFeatureAPI;",
+        "",
+        "$api = OpenFeatureAPI::getInstance();",
+        "$api->setProvider(new ConfigDirectorProvider(serverSdkKey: 'YOUR-SERVER-SDK-KEY'));",
+        "$darkMode = $api->getClient()->getBooleanValue('dark-mode', false);",
+        "$theme = $settings->getValue('theme-name', 'light');",
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["dark-mode", "flags.php", "openfeature-php"]]);
     expect(output.dynamicReferences).toEqual([]);
   });
 

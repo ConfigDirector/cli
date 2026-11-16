@@ -4,6 +4,10 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- `configdirector scan` and `validate` read PHP code. They find the configs read through the PHP server SDK, such as `$client->getValue('new-checkout', false)`, `evaluate` and `watch`, the keys its test client sets with `createTestClient`, `setValue`, `removeValue` and `replaceValues`, and the configs read through the OpenFeature PHP SDK, such as `getBooleanValue`, with positional or named arguments. So `validate` now fails on a wrong key in PHP code, and on a literal in-code default value of the wrong type. A key held in a class constant or a backed enum case, read as `Flags::NEW_CHECKOUT`, `\App\Flags::NEW_CHECKOUT` or `Flag::NewCheckout->value`, is resolved to its key. A PHP file counts when a `use` statement names the SDK, such as `use ConfigDirector\ConfigDirectorClient;` in a controller that receives the client; a file that gets the client only from a file it includes or from a class of yours is not scanned. Calls inside `//` and `#` comments, heredocs and nowdocs are not reported, and an attribute such as `#[Route('/checkout')]` is read as code. The scan output schema lists the `php` and `openfeature-php` SDK families and the `php` snippet language.
+
 ## [0.24.0] - 2026-11-14
 
 ### Added

@@ -64,6 +64,36 @@ describe("validate", () => {
     ]);
   });
 
+  it("reports an unknown key read in PHP code and exits 1", async () => {
+    const { exitCode, output } = await validateRepositoryJson(
+      {
+        "src/CheckoutService.php": [
+          "<?php",
+          "",
+          "namespace App;",
+          "",
+          "use ConfigDirector\\ConfigDirectorClient;",
+          "",
+          "final readonly class CheckoutService",
+          "{",
+          "    public function __construct(private ConfigDirectorClient $client) {}",
+          "",
+          "    public function newCheckout(): bool",
+          "    {",
+          "        return $this->client->getValue('new-chekout', false);",
+          "    }",
+          "}",
+        ],
+      },
+      [projectConfig("new-checkout")],
+    );
+
+    expect(exitCode).toEqual(1);
+    expect(output.findings).toEqual([
+      { kind: "unknown-key", key: "new-chekout", file: "src/CheckoutService.php", line: 13 },
+    ]);
+  });
+
   it("reports a deprecated key as a deprecated key naming the config's current key and exits 1", async () => {
     const { exitCode, output } = await validateRepositoryJson(
       { "src/checkout.ts": [...serverSdkSetup, 'client.getValue("checkout-v2", false);'] },

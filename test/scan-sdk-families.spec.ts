@@ -1209,4 +1209,139 @@ describe("scan SDK families", () => {
     ]);
     expect(output.dynamicReferences).toEqual([]);
   });
+
+  it("finds the PHP SDK's reads, evaluations, watches and test client calls, with positional and named arguments", async () => {
+    const reference = directReferenceFor("php");
+
+    const { exitCode, output, schemaErrors } = await scanFixture("php");
+
+    expect(exitCode).toEqual(0);
+    expect(schemaErrors).toEqual(null);
+    expect(output.references).toEqual([
+      reference({
+        key: "max-items",
+        file: "index.php",
+        line: 21,
+        call: "watch",
+        default: { type: "integer", value: 20 },
+      }),
+      reference({
+        key: "new-checkout",
+        file: "index.php",
+        line: 32,
+        call: "getValue",
+        default: falseDefault,
+      }),
+      reference({
+        key: "theme",
+        file: "index.php",
+        line: 33,
+        call: "getValue",
+        default: { type: "string", value: "light" },
+      }),
+      reference({
+        key: "rate-limits",
+        file: "index.php",
+        line: 34,
+        call: "getValue",
+        default: { type: "json", value: "['per_minute' => 60]" },
+      }),
+      reference({
+        key: "checkout-button-color",
+        file: "index.php",
+        line: 35,
+        call: "evaluate",
+        default: { type: "string", value: "blue" },
+      }),
+      reference({ key: "max-items", file: "index.php", line: 38, call: "unwatch" }),
+      reference({
+        key: "new-checkout",
+        file: "src/CheckoutService.php",
+        line: 16,
+        call: "getValue",
+        default: falseDefault,
+      }),
+      reference({
+        key: "new-checkout",
+        file: "tests/CheckoutServiceTest.php",
+        line: 15,
+        call: "createTestClient",
+        test: true,
+      }),
+      reference({
+        key: "new-checkout",
+        file: "tests/CheckoutServiceTest.php",
+        line: 21,
+        call: "setValue",
+        test: true,
+      }),
+      reference({
+        key: "new-checkout",
+        file: "tests/CheckoutServiceTest.php",
+        line: 24,
+        call: "removeValue",
+        test: true,
+      }),
+      reference({
+        key: "max-items",
+        file: "tests/CheckoutServiceTest.php",
+        line: 25,
+        call: "replaceValues",
+        test: true,
+      }),
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("finds the OpenFeature PHP SDK's typed getters, with positional and named arguments", async () => {
+    const reference = directReferenceFor("openfeature-php");
+
+    const { exitCode, output, schemaErrors } = await scanFixture("openfeature-php");
+
+    expect(exitCode).toEqual(0);
+    expect(schemaErrors).toEqual(null);
+    expect(output.references).toEqual([
+      reference({
+        key: "new-checkout",
+        file: "index.php",
+        line: 23,
+        call: "getBooleanValue",
+        default: falseDefault,
+        getterType: "boolean",
+      }),
+      reference({
+        key: "theme",
+        file: "index.php",
+        line: 24,
+        call: "getStringValue",
+        default: { type: "string", value: "light" },
+        getterType: "string",
+      }),
+      reference({
+        key: "max-items",
+        file: "index.php",
+        line: 25,
+        call: "getIntegerDetails",
+        default: { type: "integer", value: 20 },
+        getterType: "integer",
+      }),
+      reference({
+        key: "checkout-discount",
+        file: "index.php",
+        line: 26,
+        call: "getFloatValue",
+        default: { type: "float", value: 0.1 },
+        getterType: "float",
+      }),
+      reference({
+        key: "rate-limits",
+        file: "index.php",
+        line: 27,
+        call: "getObjectValue",
+        default: { type: "json", value: "['per_minute' => 60]" },
+        getterType: "json",
+      }),
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
 });
