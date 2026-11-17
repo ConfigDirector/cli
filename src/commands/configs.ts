@@ -355,13 +355,13 @@ export const copyConfig = async (
 ): Promise<CommandOutput> => {
   const environmentMapping = environmentMappingOf(options.environment);
   const mode: CopyMode = options.dryRun ? "dry-run" : "copy";
-  const { client, project, organizationProjects } = await connectToLinkedProject(context);
+  const { client, project, reachableProjects } = await connectToLinkedProject(context);
   const copying: ConfigCopying = {
     sourceKey: configKey,
     sourceProject: project,
     copyKey: options.key,
     destinationProject:
-      options.to === undefined ? project : projectWithSlug(organizationProjects, options.to),
+      options.to === undefined ? project : await projectWithSlug(client, reachableProjects, options.to),
   };
   const receivedPlan = await client.copyConfig(project.id, configKey, {
     projectId: copying.destinationProject.id,

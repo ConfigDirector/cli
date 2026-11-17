@@ -71,10 +71,18 @@ const ProjectSchema = v.object({
 
 export type Project = v.InferOutput<typeof ProjectSchema>;
 
+const ProjectAccessSchema = v.variant("kind", [
+  v.object({ kind: v.literal("all") }),
+  v.object({ kind: v.literal("selected"), projectIds: v.array(v.string()) }),
+]);
+
+export type ProjectAccess = v.InferOutput<typeof ProjectAccessSchema>;
+
 const DescribedApiTokenSchema = v.object({
   name: v.string(),
   organization: v.object({ id: v.string(), name: v.string() }),
   permissions: v.array(v.string()),
+  projectAccess: v.optional(ProjectAccessSchema, { kind: "all" }),
   expiresAt: v.nullable(v.string()),
 });
 

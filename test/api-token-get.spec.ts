@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
 import { createSandbox, type Sandbox } from "./support/sandbox.js";
-import { acme, describedApiToken, logIn, startSignInAdminApi } from "./support/sign-in-admin-api.js";
+import {
+  acme,
+  acmeMobileApp,
+  acmeWebApp,
+  describedApiToken,
+  logIn,
+  startSignInAdminApi,
+} from "./support/sign-in-admin-api.js";
 import { startStubAdminApi } from "./support/stub-admin-api.js";
 
 const acmeAccount = {
@@ -43,6 +50,7 @@ describe("api-token get", () => {
       `Organization: Acme (${acme.id})`,
       "Name: Laptop",
       "Permissions: configs:read, projects:read",
+      "Project access: all projects",
       "Expires: 2027-01-31 09:30 UTC",
       "Source: the CLI sign-in for Acme",
       "",
@@ -68,10 +76,64 @@ describe("api-token get", () => {
       `Organization: Acme (${acme.id})`,
       "Name: CI",
       "Permissions: none",
+      "Project access: all projects",
       "Expires: never",
       "Source: CONFIGDIRECTOR_TOKEN",
       "",
     ]);
+  });
+
+  it("lists the ids of the selected projects of a token limited to them", async () => {
+    const adminApi = await startSignInAdminApi([
+      {
+        ...acmeAccount,
+        projectAccess: { kind: "selected", projectIds: [acmeWebApp.id, acmeMobileApp.id] },
+      },
+    ]);
+    const sandbox = await createSandbox();
+
+    const { exitCode, stdout } = await getApiToken(sandbox, adminApi.baseUrl, ["--token", "cd_acme_token"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stdout.split("\n")).toEqual([
+      `Organization: Acme (${acme.id})`,
+      "Name: Laptop",
+      "Permissions: configs:read, projects:read",
+      `Project access: selected projects (${acmeWebApp.id}, ${acmeMobileApp.id})`,
+      "Expires: 2027-01-31 09:30 UTC",
+      "Source: --token",
+      "",
+    ]);
+  });
+
+  it("says a token limited to selected projects reaches none when every selected project was deleted", async () => {
+    const adminApi = await startSignInAdminApi([
+      { ...acmeAccount, projectAccess: { kind: "selected", projectIds: [] } },
+    ]);
+    const sandbox = await createSandbox();
+
+    const { exitCode, stdout } = await getApiToken(sandbox, adminApi.baseUrl, ["--token", "cd_acme_token"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stdout).toContain("\nProject access: selected projects (none)\n");
+  });
+
+  it("says the token reaches all projects when the Admin API does not describe its project access", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/api-token": {
+          status: 200,
+          body: { name: "Laptop", organization: acme, permissions: ["projects:read"], expiresAt: null },
+        },
+      },
+    );
+    const sandbox = await createSandbox();
+
+    const { exitCode, stdout } = await getApiToken(sandbox, adminApi.baseUrl, ["--token", "cd_acme_token"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stdout).toContain("\nProject access: all projects\n");
   });
 
   it("says the token came from --token", async () => {

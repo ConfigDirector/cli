@@ -1,5 +1,6 @@
 import { productionEnvironment, testEnvironment } from "./evaluate-admin-api.js";
 import { webApp, type ListedProject } from "./scan-admin-api.js";
+import { acme, describedApiToken, type ProjectAccess } from "./sign-in-admin-api.js";
 import { startStubAdminApi, type StubReply, type StubReplyForRequest } from "./stub-admin-api.js";
 
 export const projectPath = (path: string) => `/v1/projects/${webApp.id}${path}`;
@@ -7,10 +8,15 @@ export const projectPath = (path: string) => `/v1/projects/${webApp.id}${path}`;
 export const startBrowseAdminApi = (
   repliesByProjectPath: Record<string, StubReplyForRequest> = {},
   projects: ListedProject[] = [webApp],
+  projectAccess: ProjectAccess = { kind: "all" },
 ) =>
   startStubAdminApi(
     { status: 404, body: {} },
     {
+      "/v1/api-token": {
+        status: 200,
+        body: describedApiToken({ token: "cd_flag_token", organization: acme, projectAccess }),
+      },
       "/v1/projects": { status: 200, body: projects },
       [projectPath("/environments")]: { status: 200, body: [testEnvironment, productionEnvironment] },
       ...Object.fromEntries(

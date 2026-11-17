@@ -1,4 +1,4 @@
-import { AdminApiClient, type Project } from "./admin-api/AdminApiClient.js";
+import { AdminApiClient, type Project, type ProjectAccess } from "./admin-api/AdminApiClient.js";
 import { CliError } from "./CliError.js";
 import type { CommandContext } from "./CommandContext.js";
 import {
@@ -26,10 +26,31 @@ const requireLinkedProjectSlug = (context: CommandContext, settings: ProjectSett
   return slug;
 };
 
-export const projectWithSlug = (projects: Project[], slug: string): Project => {
-  const project = projects.find((listedProject) => listedProject.slug === slug);
+const limitedToSelectedProjectsByKind: { [Kind in ProjectAccess["kind"]]: boolean } = {
+  all: false,
+  selected: true,
+};
+
+export const isLimitedToSelectedProjects = (projectAccess: ProjectAccess): boolean =>
+  limitedToSelectedProjectsByKind[projectAccess.kind];
+
+export const PROJECT_MAY_BE_OUTSIDE_PROJECT_ACCESS =
+  "The token is limited to selected projects, so the project may be outside its project access.";
+
+export const missingProjectMessage = (slug: string, limitedToSelectedProjects: boolean): string =>
+  limitedToSelectedProjects
+    ? `No project the API token can reach has the slug "${slug}". ${PROJECT_MAY_BE_OUTSIDE_PROJECT_ACCESS}`
+    : `No project in the API token's organization has the slug "${slug}".`;
+
+export const projectWithSlug = async (
+  client: AdminApiClient,
+  reachableProjects: Project[],
+  slug: string,
+): Promise<Project> => {
+  const project = reachableProjects.find((listedProject) => listedProject.slug === slug);
   if (project === undefined) {
-    throw new CliError(`No project in the API token's organization has the slug "${slug}".`);
+    const { parsedBody: apiToken } = await client.describeApiToken();
+    throw new CliError(missingProjectMessage(slug, isLimitedToSelectedProjects(apiToken.projectAccess)));
   }
   return project;
 };
@@ -74,7 +95,7 @@ const refuseProjectOfAnotherOrganization = (
 type LinkedProjectConnection = {
   client: AdminApiClient;
   project: Project;
-  organizationProjects: Project[];
+  reachableProjects: Project[];
   settings: ProjectSettings | undefined;
 };
 
@@ -83,8 +104,8 @@ export const connectToLinkedProject = async (context: CommandContext): Promise<L
   const projectSlug = requireLinkedProjectSlug(context, settings);
   const apiToken = await configuredApiToken(context);
   const client = new AdminApiClient({ baseUrl: context.baseUrl, token: apiToken.token });
-  const { parsedBody: organizationProjects } = await client.listProjects();
-  const project = projectWithSlug(organizationProjects, projectSlug);
+  const { parsedBody: reachableProjects } = await client.listProjects();
+  const project = await projectWithSlug(client, reachableProjects, projectSlug);
   refuseProjectOfAnotherOrganization(project, settings, apiToken);
-  return { client, project, organizationProjects, settings };
+  return { client, project, reachableProjects, settings };
 };

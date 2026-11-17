@@ -1,3 +1,4 @@
+import { acme, describedApiToken } from "./sign-in-admin-api.js";
 import { startStubAdminApi, type StubReply } from "./stub-admin-api.js";
 
 export const webAppFromOlderServer = {
@@ -63,6 +64,10 @@ export const startScanAdminApi = ({
   startStubAdminApi(
     { status: 200, body: projects },
     {
+      "/v1/api-token": {
+        status: 200,
+        body: describedApiToken({ token: "cd_flag_token", organization: acme }),
+      },
       ...Object.fromEntries(
         projects.map((project) => [`/v1/projects/${project.id}/configs`, { status: 200, body: configs }]),
       ),

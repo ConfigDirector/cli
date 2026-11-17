@@ -1,13 +1,25 @@
-import { AdminApiClient, type DescribedApiToken } from "../admin-api/AdminApiClient.js";
+import { AdminApiClient, type DescribedApiToken, type ProjectAccess } from "../admin-api/AdminApiClient.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { configuredApiToken, describeApiTokenSource, type ApiTokenSource } from "../configured-api-token.js";
 import { ExitCode } from "../ExitCode.js";
 import { utcMinute } from "../utc-minute.js";
 
+const listedOrNone = (values: string[]): string => (values.length === 0 ? "none" : values.join(", "));
+
+const describeProjectAccess = (projectAccess: ProjectAccess): string => {
+  switch (projectAccess.kind) {
+    case "all":
+      return "all projects";
+    case "selected":
+      return `selected projects (${listedOrNone(projectAccess.projectIds)})`;
+  }
+};
+
 const apiTokenLines = (apiToken: DescribedApiToken, source: ApiTokenSource): string[] => [
   `Organization: ${apiToken.organization.name} (${apiToken.organization.id})`,
   `Name: ${apiToken.name}`,
-  `Permissions: ${apiToken.permissions.length === 0 ? "none" : apiToken.permissions.join(", ")}`,
+  `Permissions: ${listedOrNone(apiToken.permissions)}`,
+  `Project access: ${describeProjectAccess(apiToken.projectAccess)}`,
   `Expires: ${apiToken.expiresAt === null ? "never" : utcMinute(apiToken.expiresAt)}`,
   `Source: ${describeApiTokenSource(source)}`,
 ];

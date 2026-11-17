@@ -6,6 +6,8 @@ export type ProjectUnderTest = { id: string; slug: string; organizationId: strin
 
 type EnvironmentUnderTest = { id: string; slug: string; name: string; live: boolean };
 
+type ProjectAccessUnderTest = { kind: "all" } | { kind: "selected"; projectIds: string[] };
+
 export const SKIPPED_WITHOUT_VARIABLES =
   "The integration suite is skipped: CONFIGDIRECTOR_BASE_URL and CONFIGDIRECTOR_TOKEN name the Admin API to test against, and at least one is unset.";
 
@@ -65,6 +67,16 @@ export const projectUnderTest = async (adminApi: AdminApiUnderTest): Promise<Pro
   const projects = body as ProjectUnderTest[];
   const slug = nonEmptyVariable("CONFIGDIRECTOR_PROJECT");
   return slug === undefined ? requireOnlyProject(projects) : requireProjectBySlug(projects, slug);
+};
+
+export const projectAccessUnderTest = async (
+  adminApi: AdminApiUnderTest,
+): Promise<ProjectAccessUnderTest> => {
+  const { status, body } = await requestAdminApi(adminApi, { method: "GET" }, "/v1/api-token");
+  if (status !== 200) {
+    throw new Error(`GET ${adminApi.baseUrl}/v1/api-token answered HTTP ${status}: ${JSON.stringify(body)}`);
+  }
+  return (body as { projectAccess: ProjectAccessUnderTest }).projectAccess;
 };
 
 export const environmentsOf = async (

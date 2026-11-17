@@ -32,13 +32,23 @@ export const projectOf = (
 
 export const acmeWebApp = projectOf(acme, "web-app", "Web App", "4f0c1d2e-8a51-4c3b-9b6e-2d7f8a9b0c1d");
 
+export const acmeMobileApp = projectOf(
+  acme,
+  "mobile-app",
+  "Mobile App",
+  "b3c4d5e6-f7a8-4b9c-8d0e-1f2a3b4c5d6e",
+);
+
 export const globexWebApp = projectOf(globex, "web-app", "Web App", "7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918");
+
+export type ProjectAccess = { kind: "all" } | { kind: "selected"; projectIds: string[] };
 
 type ApiTokenAccount = {
   token: string;
   name?: string;
   organization: Organization;
   permissions?: string[];
+  projectAccess?: ProjectAccess;
   expiresAt?: string | null;
   projects?: ListedProject[];
 };
@@ -58,6 +68,7 @@ export const describedApiToken = (account: ApiTokenAccount) => ({
   name: account.name ?? "Laptop",
   organization: account.organization,
   permissions: account.permissions ?? ["configs:read", "projects:read"],
+  projectAccess: account.projectAccess ?? { kind: "all" },
   expiresAt: account.expiresAt ?? null,
 });
 

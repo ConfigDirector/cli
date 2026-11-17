@@ -5,7 +5,12 @@ import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { apiTokensToSearch, type ConfiguredApiToken } from "../configured-api-token.js";
 import { ExitCode } from "../ExitCode.js";
 import { readFileIfPresent, type JsonObject } from "../file-contents.js";
-import { requireProjectSlug } from "../project-selection.js";
+import {
+  isLimitedToSelectedProjects,
+  missingProjectMessage,
+  PROJECT_MAY_BE_OUTSIDE_PROJECT_ACCESS,
+  requireProjectSlug,
+} from "../project-selection.js";
 import { projectSettingsFile, projectSettingsOf } from "../project-settings.js";
 import { describeSignIns } from "../sign-ins/chosen-sign-in.js";
 
@@ -77,27 +82,41 @@ const describeOrganizationOf = ({ apiToken, project }: ProjectFound): string =>
 const signInsSearched = (apiTokens: ConfiguredApiToken[]) =>
   apiTokens.flatMap((apiToken) => (apiToken.source.from === "sign-in" ? [apiToken.source.signIn] : []));
 
-const onlyProjectFound = (
-  slug: string,
-  apiTokens: ConfiguredApiToken[],
-  projectsFound: ProjectFound[],
-): ProjectFound => {
-  const [firstProjectFound] = projectsFound;
+const onlyProjectFound = (slug: string, projectsFound: ProjectFound[]): ProjectFound | undefined => {
   if (projectsFound.length > 1) {
     throw new CliError(
       `The organizations ${projectsFound.map(describeOrganizationOf).join(" and ")} both have a project with the slug ` +
         `"${slug}". Name one with --organization.`,
     );
   }
-  if (firstProjectFound === undefined) {
-    const signIns = signInsSearched(apiTokens);
-    throw new CliError(
-      signIns.length === 0
-        ? `No project in the API token's organization has the slug "${slug}".`
-        : `No project has the slug "${slug}" in the organizations signed in to: ${describeSignIns(signIns)}.`,
-    );
+  return projectsFound[0];
+};
+
+const anyLimitedToSelectedProjects = async (
+  context: CommandContext,
+  apiTokens: ConfiguredApiToken[],
+): Promise<boolean> => {
+  for (const apiToken of apiTokens) {
+    const client = new AdminApiClient({ baseUrl: context.baseUrl, token: apiToken.token });
+    const { parsedBody: describedApiToken } = await client.describeApiToken();
+    if (isLimitedToSelectedProjects(describedApiToken.projectAccess)) {
+      return true;
+    }
   }
-  return firstProjectFound;
+  return false;
+};
+
+const missingProjectAcrossOrganizationsMessage = (
+  slug: string,
+  apiTokens: ConfiguredApiToken[],
+  limitedToSelectedProjects: boolean,
+): string => {
+  const signIns = signInsSearched(apiTokens);
+  if (signIns.length === 0) {
+    return missingProjectMessage(slug, limitedToSelectedProjects);
+  }
+  const message = `No project has the slug "${slug}" in the organizations signed in to: ${describeSignIns(signIns)}.`;
+  return limitedToSelectedProjects ? `${message} ${PROJECT_MAY_BE_OUTSIDE_PROJECT_ACCESS}` : message;
 };
 
 const findProjectAcrossOrganizations = async (
@@ -112,7 +131,12 @@ const findProjectAcrossOrganizations = async (
       projectsFound.push(projectFound);
     }
   }
-  return onlyProjectFound(slug, apiTokens, projectsFound);
+  const projectFound = onlyProjectFound(slug, projectsFound);
+  if (projectFound === undefined) {
+    const limitedToSelectedProjects = await anyLimitedToSelectedProjects(context, apiTokens);
+    throw new CliError(missingProjectAcrossOrganizationsMessage(slug, apiTokens, limitedToSelectedProjects));
+  }
+  return projectFound;
 };
 
 export const init = async (context: CommandContext): Promise<CommandOutput> => {

@@ -6,6 +6,7 @@ import { run } from "../src/run.js";
 import { createSandbox, type Sandbox } from "./support/sandbox.js";
 import {
   acme,
+  acmeWebApp,
   globex,
   readSignInsFile,
   signInsFileExists,
@@ -93,6 +94,37 @@ describe("login", () => {
         { organization: globex, token: "cd_globex_token" },
       ],
     });
+  });
+
+  it("adds that the token reaches only its selected projects, which projects list shows, for a token limited to them", async () => {
+    const adminApi = await startSignInAdminApi([
+      { ...acmeAccount, projectAccess: { kind: "selected", projectIds: [acmeWebApp.id] } },
+    ]);
+    const sandbox = await createSandbox();
+
+    const { exitCode, stdout } = await logIn(sandbox, adminApi.baseUrl, "cd_acme_token");
+
+    const signInsFile = join(userConfigDirectoryOf(sandbox), "sign-ins.json");
+    expect(exitCode).toEqual(0);
+    expect(stdout).toEqual(
+      `Signed in to Acme. The CLI sign-in is saved in ${signInsFile}\n` +
+        "The token reaches only its selected projects, which configdirector projects list shows.\n",
+    );
+    expect(await readSignInsFile(sandbox)).toEqual({
+      signIns: [{ organization: acme, token: "cd_acme_token" }],
+    });
+  });
+
+  it("says nothing about project access for a token that reaches all projects", async () => {
+    const adminApi = await startSignInAdminApi([{ ...acmeAccount, projectAccess: { kind: "all" } }]);
+    const sandbox = await createSandbox();
+
+    const { exitCode, stdout } = await logIn(sandbox, adminApi.baseUrl, "cd_acme_token");
+
+    expect(exitCode).toEqual(0);
+    expect(stdout).toEqual(
+      `Signed in to Acme. The CLI sign-in is saved in ${join(userConfigDirectoryOf(sandbox), "sign-ins.json")}\n`,
+    );
   });
 
   it("exits 2 naming projects:read and saves nothing when the token lacks it, with no second request", async () => {
@@ -383,6 +415,28 @@ describe("login", () => {
     expect(JSON.parse(invocation.stdout.text())).toEqual({
       signInsFile: join(sandbox.homeDirectory, ".config", "configdirector", "sign-ins.json"),
       organization: acme,
+      projectAccess: { kind: "all" },
+    });
+  });
+
+  it("prints the selected projects of a token limited to them in the JSON with --json", async () => {
+    const adminApi = await startSignInAdminApi([
+      { ...acmeAccount, projectAccess: { kind: "selected", projectIds: [acmeWebApp.id] } },
+    ]);
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({
+      commandLineArguments: ["login", "--json"],
+      environmentVariables: { CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl },
+      stdin: Readable.from(["cd_acme_token\n"]),
+    });
+
+    const exitCode = await run(invocation);
+
+    expect(exitCode).toEqual(0);
+    expect(JSON.parse(invocation.stdout.text())).toEqual({
+      signInsFile: join(sandbox.homeDirectory, ".config", "configdirector", "sign-ins.json"),
+      organization: acme,
+      projectAccess: { kind: "selected", projectIds: [acmeWebApp.id] },
     });
   });
 

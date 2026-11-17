@@ -111,18 +111,49 @@ describe("init", () => {
   });
 
   it("exits 2 without writing a file when no project in the token's organization has the slug", async () => {
-    const adminApi = await startStubAdminApi({ status: 200, body: [mobileApp, webApp] });
+    const adminApi = await startSignInAdminApi([acmeAccount]);
     const sandbox = await createSandbox();
 
     const { exitCode, stderr } = await init(sandbox, adminApi.baseUrl, [
       "--project",
       "checkout-service",
       "--token",
-      "cd_flag_token",
+      "cd_acme_token",
     ]);
 
     expect(exitCode).toEqual(2);
-    expect(stderr).toContain("checkout-service");
+    expect(stderr).toEqual(
+      'Error: No project in the API token\'s organization has the slug "checkout-service".\n',
+    );
+    expect(adminApi.receivedRequests.map((request) => request.path)).toEqual([
+      "/v1/projects",
+      "/v1/api-token",
+    ]);
+    expect(await readdir(sandbox.workingDirectory)).toEqual([]);
+  });
+
+  it("exits 2 without writing a file, saying the project may be outside the token's project access, when no selected project has the slug", async () => {
+    const adminApi = await startSignInAdminApi([
+      {
+        ...acmeAccount,
+        projectAccess: { kind: "selected", projectIds: [acmeWebApp.id] },
+        projects: [acmeWebApp],
+      },
+    ]);
+    const sandbox = await createSandbox();
+
+    const { exitCode, stderr } = await init(sandbox, adminApi.baseUrl, [
+      "--project",
+      "mobile-app",
+      "--token",
+      "cd_acme_token",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stderr).toEqual(
+      'Error: No project the API token can reach has the slug "mobile-app". ' +
+        "The token is limited to selected projects, so the project may be outside its project access.\n",
+    );
     expect(await readdir(sandbox.workingDirectory)).toEqual([]);
   });
 
@@ -258,9 +289,27 @@ describe("init with CLI sign-ins", () => {
     const { exitCode, stderr } = await init(sandbox, adminApi.baseUrl, ["--project", "checkout-service"]);
 
     expect(exitCode).toEqual(2);
-    expect(stderr).toContain('"checkout-service"');
-    expect(stderr).toContain("Acme");
-    expect(stderr).toContain("Globex");
+    expect(stderr).toEqual(
+      `Error: No project has the slug "checkout-service" in the organizations signed in to: Acme (${acme.id}), Globex (${globex.id}).\n`,
+    );
+    expect(await readdir(sandbox.workingDirectory)).toEqual([]);
+  });
+
+  it("adds that the project may be outside a token's project access when a sign-in searched has selected projects", async () => {
+    const adminApi = await startSignInAdminApi([
+      acmeAccount,
+      { ...globexAccount, projectAccess: { kind: "selected", projectIds: [globexWebApp.id] } },
+    ]);
+    const sandbox = await createSandbox();
+    await signInToBoth(sandbox, adminApi.baseUrl);
+
+    const { exitCode, stderr } = await init(sandbox, adminApi.baseUrl, ["--project", "checkout-service"]);
+
+    expect(exitCode).toEqual(2);
+    expect(stderr).toEqual(
+      `Error: No project has the slug "checkout-service" in the organizations signed in to: Acme (${acme.id}), Globex (${globex.id}). ` +
+        "The token is limited to selected projects, so the project may be outside its project access.\n",
+    );
     expect(await readdir(sandbox.workingDirectory)).toEqual([]);
   });
 

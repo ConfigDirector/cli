@@ -1,11 +1,17 @@
-import { AdminApiClient } from "../admin-api/AdminApiClient.js";
+import { AdminApiClient, type ProjectAccess } from "../admin-api/AdminApiClient.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { ExitCode } from "../ExitCode.js";
+import { isLimitedToSelectedProjects } from "../project-selection.js";
 import { readPastedApiToken } from "../pasted-api-token.js";
 import { saveSignIn } from "../sign-ins/sign-ins.js";
 
 const PERMISSION_TO_FIND_PROJECTS = "projects:read";
+
+const projectAccessLines = (projectAccess: ProjectAccess): string[] =>
+  isLimitedToSelectedProjects(projectAccess)
+    ? ["The token reaches only its selected projects, which configdirector projects list shows."]
+    : [];
 
 export const login = async (context: CommandContext): Promise<CommandOutput> => {
   if (context.organizationOption !== undefined) {
@@ -27,8 +33,12 @@ export const login = async (context: CommandContext): Promise<CommandOutput> => 
   const file = await saveSignIn(context, { organization: apiToken.organization, token });
 
   return {
-    json: { signInsFile: file, organization: apiToken.organization },
-    text: `Signed in to ${apiToken.organization.name}. The CLI sign-in is saved in ${file}\n`,
+    json: { signInsFile: file, organization: apiToken.organization, projectAccess: apiToken.projectAccess },
+    text: [
+      `Signed in to ${apiToken.organization.name}. The CLI sign-in is saved in ${file}`,
+      ...projectAccessLines(apiToken.projectAccess),
+      "",
+    ].join("\n"),
     exitCode: ExitCode.success,
   };
 };

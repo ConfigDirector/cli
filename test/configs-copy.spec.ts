@@ -8,6 +8,7 @@ import {
 } from "./support/browse-admin-api.js";
 import { createSandbox } from "./support/sandbox.js";
 import { webApp } from "./support/scan-admin-api.js";
+import type { ProjectAccess } from "./support/sign-in-admin-api.js";
 import type { StubReply } from "./support/stub-admin-api.js";
 
 const mobileApp = {
@@ -19,8 +20,8 @@ const mobileApp = {
 
 const copyPath = projectPath("/configs/new-checkout/copy");
 
-const startCopyAdminApi = (copyReply: StubReply) =>
-  startBrowseAdminApi({ "/configs/new-checkout/copy": copyReply }, [webApp, mobileApp]);
+const startCopyAdminApi = (copyReply: StubReply, projectAccess: ProjectAccess = { kind: "all" }) =>
+  startBrowseAdminApi({ "/configs/new-checkout/copy": copyReply }, [webApp, mobileApp], projectAccess);
 
 const copyConfig = async (baseUrl: string, commandLineArguments: string[]) => {
   const invocation = (await createSandbox()).invocation({
@@ -473,7 +474,27 @@ describe("configs copy", () => {
     expect(stderr).toEqual(
       'Error: No project in the API token\'s organization has the slug "android-app".\n',
     );
-    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects"]);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", "GET /v1/api-token"]);
+  });
+
+  it("exits 2 without copying, saying the --to project may be outside the token's project access, when no selected project has the slug", async () => {
+    const adminApi = await startCopyAdminApi({ status: 500 }, { kind: "selected", projectIds: [webApp.id] });
+
+    const { exitCode, stdout, stderr } = await copyConfig(adminApi.baseUrl, [
+      "new-checkout",
+      "--key",
+      "new-checkout",
+      "--to",
+      "android-app",
+    ]);
+
+    expect(exitCode).toEqual(2);
+    expect(stdout).toEqual("");
+    expect(stderr).toEqual(
+      'Error: No project the API token can reach has the slug "android-app". ' +
+        "The token is limited to selected projects, so the project may be outside its project access.\n",
+    );
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", "GET /v1/api-token"]);
   });
 
   it("exits 2 without a request when --key is missing", async () => {

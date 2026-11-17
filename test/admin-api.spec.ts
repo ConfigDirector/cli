@@ -215,6 +215,34 @@ describe("Admin API failures", () => {
     expect(stdout).toEqual("");
   });
 
+  it("exit 2 showing the API's sentence and PROJECT_ACCESS_DENIED when the project is outside the token's project access", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/projects": { status: 200, body: [webApp] },
+        [`/v1/projects/${webApp.id}/configs`]: {
+          status: 403,
+          body: {
+            error: `The API token has no access to the project with id '${webApp.id}'.`,
+            code: "PROJECT_ACCESS_DENIED",
+          },
+        },
+      },
+    );
+    const invocation = (await createSandbox()).invocation({
+      commandLineArguments: ["configs", "list", "--project", "web-app", "--token", "cd_flag_token"],
+      environmentVariables: { CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl },
+    });
+
+    const exitCode = await run(invocation);
+
+    expect(exitCode).toEqual(2);
+    expect(invocation.stdout.text()).toEqual("");
+    expect(invocation.stderr.text()).toEqual(
+      `Error: The Admin API refused the request: The API token has no access to the project with id '${webApp.id}'. (PROJECT_ACCESS_DENIED)\n`,
+    );
+  });
+
   it("exit 2 showing API_TOKEN_EXPIRED when the token has expired", async () => {
     const adminApi = await startStubAdminApi({
       status: 403,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adminApiUnderTest } from "./support/admin-api-under-test.js";
+import { adminApiUnderTest, projectAccessUnderTest } from "./support/admin-api-under-test.js";
 import { jsonOf, startCliUnderTest } from "./support/built-cli.js";
 
 describe.skipIf(adminApiUnderTest() === undefined)("api-token get against the Admin API", () => {
@@ -15,5 +15,31 @@ describe.skipIf(adminApiUnderTest() === undefined)("api-token get against the Ad
         permissions: expect.arrayContaining(["projects:read"]),
       }),
     );
+  });
+
+  it("says a token with all projects reaches all projects", async ({ skip }) => {
+    const cli = await startCliUnderTest();
+    const projectAccess = await projectAccessUnderTest(cli.adminApi);
+    skip(projectAccess.kind !== "all", "The token is limited to selected projects.");
+
+    const result = await cli.run(["api-token", "get"]);
+
+    expect(result.exitCode).toEqual(0);
+    expect(result.stdout).toContain("\nProject access: all projects\n");
+  });
+
+  it("lists the selected projects of a token limited to them, the project under test among them", async ({
+    skip,
+  }) => {
+    const cli = await startCliUnderTest();
+    const projectAccess = await projectAccessUnderTest(cli.adminApi);
+    skip(projectAccess.kind !== "selected", "The token reaches every project.");
+
+    const result = await cli.run(["api-token", "get"]);
+
+    const projectAccessLine = result.stdout.split("\n").find((line) => line.startsWith("Project access: "));
+    expect(result.exitCode).toEqual(0);
+    expect(projectAccessLine).toEqual(expect.stringMatching(/^Project access: selected projects \(.+\)$/));
+    expect(projectAccessLine).toContain(cli.project.id);
   });
 });
