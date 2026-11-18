@@ -28,7 +28,9 @@ export type SdkFamily =
   | "go"
   | "openfeature-go"
   | "php"
-  | "openfeature-php";
+  | "openfeature-php"
+  | "ruby"
+  | "openfeature-ruby";
 
 export const sdkTypes = ["client", "server"] as const;
 
@@ -41,7 +43,9 @@ export type ArgumentSlot = { position?: number; label?: string };
 type CallForm = "method" | "function" | "annotation";
 
 export type KeyArgument =
-  { kind: "key"; slot: ArgumentSlot } | { kind: "mapKeys"; slot: ArgumentSlot; property?: string };
+  | { kind: "key"; slot: ArgumentSlot }
+  | { kind: "mapKeys"; slot: ArgumentSlot; property?: string }
+  | { kind: "hashKeysWithOptionalBraces" };
 
 type ArgumentCount = { minimum: number; maximum?: number };
 
@@ -128,6 +132,13 @@ const testMap = (
   property?: string,
 ): CallShape => ({ name, form, keyArgument: { kind: "mapKeys", slot, property }, test: true });
 
+const testHashWithOptionalBraces = (name: string): CallShape => ({
+  name,
+  form: "method",
+  keyArgument: { kind: "hashKeysWithOptionalBraces" },
+  test: true,
+});
+
 const testAnnotation = (name: string): CallShape => ({
   name,
   form: "annotation",
@@ -188,6 +199,8 @@ const openFeaturePhpLabels = {
   key: { position: 0, label: "flagKey" },
   inCodeDefault: { position: 1, label: "defaultValue" },
 };
+
+const openFeatureRubyLabels = { key: { label: "flag_key" }, inCodeDefault: { label: "default_value" } };
 
 const kotlinLabels = {
   key: { position: 0, label: "key" },
@@ -579,6 +592,47 @@ export const sdkFamilies: { [F in SdkFamily]: SdkFamilyRecord } = {
         json: ["getObjectValue", "getObjectDetails"],
       },
       openFeaturePhpLabels,
+    ),
+  },
+  ruby: {
+    sdkType: "server",
+    extensions: [".rb"],
+    importMarkers: [
+      'require "configdirector',
+      "require 'configdirector",
+      "ConfigDirector.",
+      "ConfigDirector::",
+    ],
+    providerPackagesContainingMarkers: [
+      "configdirector/openfeature",
+      "configdirector-openfeature-server-provider",
+      "ConfigDirector::OpenFeature",
+    ],
+    calls: [
+      read("get_value"),
+      read("evaluate"),
+      read("watch"),
+      keyOnly("unwatch"),
+      testMap("create_test_client", "function"),
+      testMethod("set_value"),
+      testMethod("remove_value"),
+      testHashWithOptionalBraces("replace_values"),
+    ],
+  },
+  "openfeature-ruby": {
+    sdkType: "server",
+    extensions: [".rb"],
+    importMarkers: ['require "open_feature/sdk', "require 'open_feature/sdk", "OpenFeature::SDK"],
+    calls: typedReads(
+      {
+        boolean: ["fetch_boolean_value", "fetch_boolean_details"],
+        string: ["fetch_string_value", "fetch_string_details"],
+        number: ["fetch_number_value", "fetch_number_details"],
+        integer: ["fetch_integer_value", "fetch_integer_details"],
+        float: ["fetch_float_value", "fetch_float_details"],
+        json: ["fetch_object_value", "fetch_object_details"],
+      },
+      openFeatureRubyLabels,
     ),
   },
 };

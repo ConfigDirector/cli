@@ -1494,6 +1494,68 @@ describe("scan local imports", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
+  it("follows a Ruby require_relative to the file it names", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "lib/flags.rb",
+      'require "configdirector"\n\nCLIENT = ConfigDirector.create_client(ENV.fetch("CONFIGDIRECTOR_SERVER_KEY"))\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "lib/checkout.rb",
+      'require_relative "flags"\n\nNEW_CHECKOUT = CLIENT.get_value("new-checkout", false)\n',
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "lib/checkout.rb", "ruby"]]);
+  });
+
+  it("follows a Ruby require_relative written with parentheses and the .rb extension to a file in another directory", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "config/flags.rb",
+      'require "configdirector"\n\nCLIENT = ConfigDirector.create_client(ENV.fetch("CONFIGDIRECTOR_SERVER_KEY"))\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "lib/checkout.rb",
+      'require_relative("../config/flags.rb")\n\nNEW_CHECKOUT = CLIENT.get_value("new-checkout", false)\n',
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["new-checkout", "lib/checkout.rb", "ruby"]]);
+  });
+
+  it("does not follow the require_relative of the file a Ruby require_relative names", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "lib/flags.rb",
+      'require "configdirector"\n\nCLIENT = ConfigDirector.create_client(ENV.fetch("CONFIGDIRECTOR_SERVER_KEY"))\n',
+    );
+    await writeRepositoryFile(sandbox.workingDirectory, "lib/services.rb", 'require_relative "flags"\n');
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "lib/checkout.rb",
+      'require_relative "services"\n\nNEW_CHECKOUT = CLIENT.get_value("new-checkout", false)\n',
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
   it("follows a Dart package import of the app's own package to its lib directory", async () => {
     const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
@@ -2302,6 +2364,436 @@ describe("scan PHP calls", () => {
   });
 });
 
+describe("scan Ruby calls", () => {
+  const referencedKeysAndLines = (output: { references: Array<{ key: string; line: number }> }) =>
+    output.references.map((reference) => [reference.key, reference.line]);
+
+  const referencedKeysLinesAndDefaults = (output: {
+    references: Array<{ key: string; line: number; default?: unknown }>;
+  }) => output.references.map((reference) => [reference.key, reference.line, reference.default]);
+
+  const rubySdkFile = (lines: string[]) =>
+    [
+      'require "configdirector"',
+      "",
+      'client = ConfigDirector.create_client(ENV.fetch("CONFIGDIRECTOR_SERVER_KEY"))',
+      ...lines,
+      "",
+    ].join("\n");
+
+  const scanRubyFile = async (contents: string) => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "checkout.rb", contents);
+    return scanJson(sandbox, adminApi.baseUrl);
+  };
+
+  it("reports a Ruby SDK call whose key is built at runtime as a dynamic reference with the argument as written", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile([
+        "def banner_shown?(client, regions, region)",
+        '  client.get_value("banner-#{regions.join(", ")}", false) ||',
+        '    client.get_value("banner-" + region, false)',
+        "end",
+      ]),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([
+      {
+        file: "checkout.rb",
+        line: 5,
+        sdk: "ruby",
+        call: "get_value",
+        argument: '"banner-#{regions.join(", ")}"',
+      },
+      { file: "checkout.rb", line: 6, sdk: "ruby", call: "get_value", argument: '"banner-" + region' },
+    ]);
+  });
+
+  it("reports nothing for Ruby SDK calls inside # comments and =begin blocks", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile([
+        '# client.get_value("old-checkout", false)',
+        "=begin",
+        'client.get_value("older-checkout", false)',
+        "=end",
+        'client.get_value("new-checkout", false)',
+      ]),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 8]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reports nothing for Ruby SDK calls inside heredocs, and reads the code after each opener and after each body", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile([
+        "help = <<~HELP",
+        '  Read it with client.get_value("squiggly-checkout", false).',
+        "HELP",
+        'note = <<-NOTE.strip + client.get_value("after-opener-checkout", "").to_s',
+        '  Read it with client.get_value("dash-checkout", false).',
+        "  NOTE",
+        "legacy = <<LEGACY",
+        'Read it with client.get_value("plain-checkout", false).',
+        "LEGACY",
+        "both = [<<~FIRST, <<~'SECOND']",
+        '  client.get_value("first-checkout", false)',
+        "FIRST",
+        '  client.get_value("second-checkout", false)',
+        "SECOND",
+        'client.get_value("new-checkout", false)',
+      ]),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([
+      ["after-opener-checkout", 7],
+      ["new-checkout", 18],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reports nothing for Ruby SDK calls inside two heredocs with the same label, and reads the code between them", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile([
+        "help = <<~TEXT",
+        '  Read it with client.get_value("first-heredoc-checkout", false).',
+        "TEXT",
+        'client.get_value("new-checkout", false)',
+        "note = <<~TEXT",
+        '  Read it with client.get_value("second-heredoc-checkout", false).',
+        "TEXT",
+      ]),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 7]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reports nothing for a Ruby SDK call inside a heredoc of a file with Windows line endings", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      [
+        'require "configdirector"',
+        "",
+        'client = ConfigDirector.create_client(ENV.fetch("CONFIGDIRECTOR_SERVER_KEY"))',
+        "help = <<~HELP",
+        '  Read it with client.get_value("heredoc-checkout", false).',
+        "HELP",
+        'client.get_value("new-checkout", false)',
+        "",
+      ].join("\r\n"),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 7]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reads a Ruby << as an append when no later line closes it as a heredoc", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(["keys = []", "keys <<DEFAULT_KEY", 'client.get_value("new-checkout", false)']),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 6]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reads a key written as a Ruby %q literal, and a %Q literal with interpolation as a dynamic reference", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile([
+        "client.get_value(%q(new-checkout), false)",
+        'client.get_value(%Q[theme-#{variant}], "light")',
+      ]),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 4]]);
+    expect(output.dynamicReferences).toEqual([
+      { file: "checkout.rb", line: 5, sdk: "ruby", call: "get_value", argument: "%Q[theme-#{variant}]" },
+    ]);
+  });
+
+  it("reads the Ruby code after a %r, %s or %x literal that holds a quote, whichever its delimiter", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile([
+        'pattern = %r|don\'t| && client.get_value("regex-checkout", false)',
+        'name = %s{don\'t} && client.get_value("symbol-checkout", false)',
+        'output = %x{echo don\'t} && client.get_value("command-checkout", false)',
+      ]),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([
+      ["regex-checkout", 4],
+      ["symbol-checkout", 5],
+      ["command-checkout", 6],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reads the Ruby code after a %q literal that holds a quote, nested parentheses and a #", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(['note = %q(don\'t (ever) #stop) + client.get_value("after-note-checkout", "").to_s']),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["after-note-checkout", 4]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reads a Ruby % right after a closing parenthesis as the remainder operator", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(["offset = (index + 1)%-columns", 'client.get_value("new-checkout", false)']),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 5]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reads a Ruby % right after a name as the remainder operator", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(["offset = index%-columns", 'client.get_value("new-checkout", false)']),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 5]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("finds the Ruby SDK calls of a file whose only mention of the SDK is a require in single quotes", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      [
+        "require 'configdirector'",
+        "",
+        "def new_checkout?(client) = client.get_value('new-checkout', false)",
+        "",
+      ].join("\n"),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 3]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("finds the Ruby SDK calls of a file whose only mention of the SDK is a ConfigDirector:: constant", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      [
+        "def new_checkout?(client, user)",
+        '  client.get_value("new-checkout", false, ConfigDirector::Context.new(id: user.id))',
+        "end",
+        "",
+      ].join("\n"),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 2]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("finds the OpenFeature Ruby calls of a file whose only mention of OpenFeature is its require", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      [
+        'require "open_feature/sdk"',
+        "",
+        "def dark_mode?(client)",
+        '  client.fetch_boolean_value(flag_key: "dark-mode", default_value: false)',
+        "end",
+        "",
+      ].join("\n"),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["dark-mode", 4]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reports an OpenFeature Ruby read whose key is passed as the shorthand flag_key: as a dynamic reference", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      [
+        'require "open_feature/sdk"',
+        "",
+        "def enabled?(client, flag_key) = client.fetch_boolean_value(flag_key:, default_value: false)",
+        "",
+      ].join("\n"),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([
+      {
+        file: "checkout.rb",
+        line: 3,
+        sdk: "openfeature-ruby",
+        call: "fetch_boolean_value",
+        argument: "flag_key",
+      },
+    ]);
+  });
+
+  it("reads a Symbol given to a Ruby test client call as the key it names", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "spec/checkout_spec.rb",
+      [
+        'require "configdirector/testing"',
+        "",
+        "test_client = ConfigDirector::Testing.create_test_client",
+        "test_client.set_value(:new_checkout, true)",
+        'test_client.remove_value :"dark-mode"',
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([
+      ["new_checkout", 4],
+      ["dark-mode", 5],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reads a Ruby call without parentheses whose key is an instance variable or a top-level constant", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile([
+        'NEW_CHECKOUT = "new-checkout"',
+        "client.get_value @checkout_key, false",
+        "client.get_value ::NEW_CHECKOUT, false",
+      ]),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysAndLines(output)).toEqual([["new-checkout", 6]]);
+    expect(output.dynamicReferences).toEqual([
+      { file: "checkout.rb", line: 5, sdk: "ruby", call: "get_value", argument: "@checkout_key" },
+    ]);
+  });
+
+  it("reads the arguments of a Ruby call without parentheses up to a modifier such as if", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(['client.get_value "new-checkout", false if enabled']),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysLinesAndDefaults(output)).toEqual([
+      ["new-checkout", 4, { type: "boolean", value: false }],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reads the arguments of a Ruby call without parentheses up to the do of its block", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(['client.watch "max-items", 20 do |max_items|', "  puts max_items", "end"]),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysLinesAndDefaults(output)).toEqual([
+      ["max-items", 4, { type: "integer", value: 20 }],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reads the arguments of a Ruby call without parentheses up to the end of its line", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(['theme = client.get_value "theme", "light"', 'fallback = "dark"']),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysLinesAndDefaults(output)).toEqual([
+      ["theme", 4, { type: "string", value: "light" }],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reads the arguments of a Ruby call without parentheses onto the next line after a trailing comma", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(['client.get_value "rate-limits",', '                 { "per_minute" => 60 }']),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysLinesAndDefaults(output)).toEqual([
+      ["rate-limits", 4, { type: "json", value: '{ "per_minute" => 60 }' }],
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not read a Ruby method name followed by a comma as a call", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(['readers = [client.get_value, "theme-name"]']),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not read the next line as the arguments of a Ruby method name that ends its line", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(["reader = client.evaluate", '"later-key".upcase']),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not read a bracket right after a Ruby method name as its arguments", async () => {
+    const { exitCode, output } = await scanRubyFile(rubySdkFile(['first = client.evaluate["first-key"]']));
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not read the colon of a conditional after a Ruby method name as the start of its arguments", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(['value = enabled ? client.evaluate : "fallback-key"']),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not read a modifier after a Ruby method name as its arguments", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile(["fallback = client.evaluate unless disabled"]),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("reports the SDK call inside a Ruby wrapper method but not the wrapper's own definition", async () => {
+    const { exitCode, output } = await scanRubyFile(
+      rubySdkFile([
+        "module Flags",
+        "  def self.get_value(config_key, default_value)",
+        "    client.get_value(config_key, default_value)",
+        "  end",
+        "end",
+      ]),
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([
+      { file: "checkout.rb", line: 6, sdk: "ruby", call: "get_value", argument: "config_key" },
+    ]);
+  });
+});
+
 describe("scan Nuxt app and server", () => {
   const nuxtServerHandler = [
     "export default defineEventHandler(() => {",
@@ -2495,6 +2987,30 @@ describe("scan holder classes", () => {
     "}",
     "",
   ].join("\n");
+
+  const rubyGemfile = 'source "https://rubygems.org"\n\ngem "configdirector-server-sdk", "~> 0.1"\n';
+
+  const rubyHolderModule = (namespace: string, moduleName: string) =>
+    [
+      `module ${namespace}`,
+      `  module ${moduleName}`,
+      "    def self.client",
+      '      @client ||= ConfigDirector.create_client(ENV.fetch("CONFIGDIRECTOR_SERVER_KEY"))',
+      "    end",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+
+  const rubyController = (read: string) =>
+    [
+      "class CheckoutController < ApplicationController",
+      "  def show",
+      `    @value = ${read}`,
+      "  end",
+      "end",
+      "",
+    ].join("\n");
 
   it("finds the Android SDK calls of a Kotlin file through an object of its package that holds the client", async () => {
     const adminApi = await startScanAdminApi();
@@ -2974,6 +3490,167 @@ describe("scan holder classes", () => {
     expect(output.dynamicReferences).toEqual([]);
   });
 
+  it("finds the Ruby SDK calls of a Ruby file through a namespaced module of its own whose file, named after it, creates the client", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Gemfile", rubyGemfile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/models/billing/feature_flags.rb",
+      rubyHolderModule("Billing", "FeatureFlags"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/controllers/billing/invoices_controller.rb",
+      rubyController('Billing::FeatureFlags.client.get_value("invoice-redesign", false)'),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["invoice-redesign", "app/controllers/billing/invoices_controller.rb", "ruby"],
+    ]);
+  });
+
+  it("finds the Ruby SDK calls of a Ruby file through a module whose name starts with an acronym, in the file Rails names after it", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Gemfile", rubyGemfile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "lib/api_flags.rb",
+      rubyHolderModule("Shop", "APIFlags"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/controllers/checkout_controller.rb",
+      rubyController('Shop::APIFlags.client.get_value("new-checkout", false)'),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "app/controllers/checkout_controller.rb", "ruby"],
+    ]);
+  });
+
+  it("skips a Ruby SDK look-alike call in a Ruby file that refers to no module of its own that uses the SDK", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Gemfile", rubyGemfile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "lib/feature_flags.rb",
+      rubyHolderModule("Shop", "FeatureFlags"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "lib/settings_store.rb",
+      "module SettingsStore\n  def self.get_value(name, fallback) = ENV.fetch(name, fallback)\nend\n",
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/controllers/settings_controller.rb",
+      rubyController('SettingsStore.get_value("theme-name", "light")'),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a Ruby SDK look-alike call in a Ruby file that names ENV, next to a Cucumber env.rb that uses the SDK", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Gemfile", rubyGemfile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "features/support/env.rb",
+      'require "configdirector/testing"\n',
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/services/rates.rb",
+      'def rate(calculator) = calculator.evaluate("shipping-rate", ENV.fetch("REGION"))\n',
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("finds the Ruby SDK calls of a Ruby file through a module whose name holds a digit before a word, in the file Rails names after it", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Gemfile", rubyGemfile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "lib/v2_flags.rb",
+      rubyHolderModule("Shop", "V2Flags"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/controllers/checkout_controller.rb",
+      rubyController('Shop::V2Flags.client.get_value("new-checkout", false)'),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([
+      ["new-checkout", "app/controllers/checkout_controller.rb", "ruby"],
+    ]);
+  });
+
+  it("skips a Ruby SDK call through a module of its own in a Ruby file with no Gemfile above it", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "lib/feature_flags.rb",
+      rubyHolderModule("Shop", "FeatureFlags"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "lib/checkout_controller.rb",
+      rubyController('Shop::FeatureFlags.client.get_value("new-checkout", false)'),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("does not count a same-named file in a directory that the scan always skips as a Ruby module of the project", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(sandbox.workingDirectory, "Gemfile", rubyGemfile);
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "vendor/bundle/ruby/3.4.0/gems/flags-1.0.0/lib/feature_flags.rb",
+      rubyHolderModule("Shop", "FeatureFlags"),
+    );
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "app/controllers/checkout_controller.rb",
+      rubyController('FeatureFlags.client.get_value("new-checkout", false)'),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
   it("does not follow the holder classes that a holder class refers to", async () => {
     const adminApi = await startScanAdminApi();
     const sandbox = await createSandbox();
@@ -3256,6 +3933,52 @@ describe("scan OpenFeature provider imports", () => {
 
     expect(exitCode).toEqual(0);
     expect(referencedKeysFilesAndSdks(output)).toEqual([["dark-mode", "flags.php", "openfeature-php"]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a Ruby SDK look-alike call in a file that requires only the OpenFeature provider", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "flags.rb",
+      [
+        'require "configdirector/openfeature"',
+        "",
+        "OpenFeature::SDK.set_provider_and_wait(",
+        '  ConfigDirector::OpenFeature::ConfigDirectorProvider.new(ENV.fetch("CONFIGDIRECTOR_SERVER_KEY"))',
+        ")",
+        'dark_mode = OpenFeature::SDK.build_client.fetch_boolean_value(flag_key: "dark-mode", default_value: false)',
+        'theme = settings.get_value("theme-name", "light")',
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeysFilesAndSdks(output)).toEqual([["dark-mode", "flags.rb", "openfeature-ruby"]]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("skips a Ruby SDK look-alike call in a file that requires the OpenFeature provider by its gem name", async () => {
+    const adminApi = await startScanAdminApi();
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "flags.rb",
+      [
+        'require "configdirector-openfeature-server-provider"',
+        "",
+        'theme = settings.get_value("theme-name", "light")',
+        "",
+      ].join("\n"),
+    );
+
+    const { exitCode, output } = await scanJson(sandbox, adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([]);
     expect(output.dynamicReferences).toEqual([]);
   });
 

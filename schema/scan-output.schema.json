@@ -99,7 +99,9 @@
         "go",
         "openfeature-go",
         "php",
-        "openfeature-php"
+        "openfeature-php",
+        "ruby",
+        "openfeature-ruby"
       ]
     },
     "call": {
@@ -222,7 +224,8 @@
             "python",
             "csharp",
             "go",
-            "php"
+            "php",
+            "ruby"
           ]
         },
         "truncatedLines": {

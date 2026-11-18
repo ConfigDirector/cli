@@ -1,3 +1,4 @@
+import { keyExpressionOf } from "./literals.js";
 import type { SourceLanguage } from "./source-languages.js";
 import type { SourceCode, TokenRange } from "./source-code.js";
 
@@ -84,6 +85,32 @@ const csharpEntry = (code: SourceCode, item: TokenRange): MapEntry => {
     : { key, keyIsName: false, value };
 };
 
+const rubyHashEntryOf = (code: SourceCode, item: TokenRange): MapEntry | undefined => {
+  const arrow = code.firstTopLevelIndex(item, (index) => code.isPunctuation(index, "=>"));
+  if (arrow !== undefined) {
+    const entry = splitAt(item, arrow);
+    const key = keyExpressionOf(code, entry.key);
+    return { ...entry, key: key.range, keyIsName: key.isName };
+  }
+  const label = code.token(item.first);
+  const endsWithLabelColon =
+    code.isPunctuation(item.first + 1, ":") &&
+    code.areAdjacent(item.first, item.first + 1) &&
+    item.first + 2 <= item.last;
+  return endsWithLabelColon && (label?.kind === "identifier" || label?.kind === "string")
+    ? {
+        key: { first: item.first, last: item.first },
+        keyIsName: label.kind === "identifier",
+        value: { first: item.first + 2, last: item.last },
+      }
+    : undefined;
+};
+
+export const bracelessHashEntries = (code: SourceCode, items: TokenRange[]): MapEntry[] | undefined => {
+  const entries = items.map((item) => rubyHashEntryOf(code, item));
+  return entries.length > 0 && entries.every((entry) => entry !== undefined) ? entries : undefined;
+};
+
 export const mapLiteralEntries: { [L in SourceLanguage]: MapLiteralEntries } = {
   javascript: (code, range) =>
     code.openerOfLastToken(range, "}") === range.first
@@ -122,6 +149,12 @@ export const mapLiteralEntries: { [L in SourceLanguage]: MapLiteralEntries } = {
             item,
             code.firstTopLevelIndex(item, (index) => code.isPunctuation(index, "=>")),
           ),
+        )
+      : undefined,
+  ruby: (code, range) =>
+    code.openerOfLastToken(range, "}") === range.first
+      ? itemsOfGroup(code, range.first)?.map(
+          (item) => rubyHashEntryOf(code, item) ?? { key: item, keyIsName: false, value: undefined },
         )
       : undefined,
 };

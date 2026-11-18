@@ -1,4 +1,5 @@
 import { isAsciiLetter, isDigit, type SourceCode, type TokenRange } from "./source-code.js";
+import { languageSyntax } from "./source-languages.js";
 
 export type InCodeDefaultValue =
   | { type: "boolean"; value: boolean }
@@ -31,17 +32,27 @@ const singleToken = (code: SourceCode, range: TokenRange) =>
 
 export const plainStringContent = (code: SourceCode, range: TokenRange): string | undefined => {
   const token = singleToken(code, range);
-  if (token?.kind !== "string" || token.text.length < 2) {
-    return undefined;
-  }
-  const quote = token.text.charAt(0);
-  const content = token.text.slice(1, -1);
-  const isPlain =
-    token.text.endsWith(quote) &&
-    !content.includes(quote) &&
-    !content.includes("\\") &&
-    !content.includes("$");
-  return isPlain ? content : undefined;
+  return token?.kind === "string" ? token.plainContent : undefined;
+};
+
+const opensSymbol = (code: SourceCode, index: number): boolean => {
+  const symbolOpener = languageSyntax[code.language].symbolOpener;
+  return (
+    symbolOpener !== undefined &&
+    code.isPunctuation(index, symbolOpener) &&
+    code.areAdjacent(index, index + 1)
+  );
+};
+
+export const keyExpressionOf = (code: SourceCode, range: TokenRange): KeyExpression => {
+  const symbolName = code.token(range.last);
+  const isSymbol =
+    range.last === range.first + 1 &&
+    opensSymbol(code, range.first) &&
+    (symbolName?.kind === "identifier" || symbolName?.kind === "string");
+  return isSymbol
+    ? { range: { first: range.last, last: range.last }, isName: symbolName.kind === "identifier" }
+    : { range, isName: false };
 };
 
 export const literalTextOf = (code: SourceCode, expression: KeyExpression): string | undefined =>

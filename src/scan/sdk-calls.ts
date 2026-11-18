@@ -1,11 +1,12 @@
 import {
   inCodeDefaultValueOf,
+  keyExpressionOf,
   keyLiteralOf,
   literalTextOf,
   type InCodeDefaultValue,
   type KeyExpression,
 } from "./literals.js";
-import { mapLiteralEntries } from "./map-literals.js";
+import { bracelessHashEntries, mapLiteralEntries } from "./map-literals.js";
 import type { ArgumentSlot, CallShape, GetterType, KeyArgument, SdkFamily } from "./sdk-families.js";
 import type { SourceCode, TokenRange } from "./source-code.js";
 import { languageSyntax, type LanguageSyntax } from "./source-languages.js";
@@ -33,23 +34,50 @@ export type SdkCallMatch = { tokenIndex: number } & (
 
 export type FamilyCallShape = { sdk: SdkFamily; shape: CallShape };
 
-type CallArgument = { label: string | undefined; range: TokenRange };
+type CallArgument = { label: string | undefined; range: TokenRange; rangeWithLabel: TokenRange };
 
 const LABEL_SEPARATORS = new Set([":", "="]);
 const CHARACTERS_EXTENDING_A_SEPARATOR = new Set([":", "=", ">"]);
+const WORDS_ENDING_COMMAND_ARGUMENTS = new Set([
+  "do",
+  "if",
+  "unless",
+  "while",
+  "until",
+  "rescue",
+  "and",
+  "or",
+  "then",
+  "end",
+]);
+const PUNCTUATION_STARTING_A_COMMAND_ARGUMENT = new Set(["@", "::", ":"]);
+const PUNCTUATION_ENDING_COMMAND_ARGUMENTS = new Set([";", ")", "]", "}"]);
+const TOP_LEVEL_TOKENS_READ_AS_COMMAND_ARGUMENTS = 64;
+
+const valueAfterLabel = (code: SourceCode, item: TokenRange): TokenRange | undefined => {
+  if (item.first + 2 <= item.last) {
+    return { first: item.first + 2, last: item.last };
+  }
+  const omitsValue =
+    languageSyntax[code.language].labelsWithOmittedValues &&
+    item.first + 1 === item.last &&
+    code.areAdjacent(item.first, item.last);
+  return omitsValue ? { first: item.first, last: item.first } : undefined;
+};
 
 const labeledArgument = (code: SourceCode, item: TokenRange): CallArgument => {
   const labelToken = code.token(item.first);
   const separator = code.token(item.first + 1);
+  const value = valueAfterLabel(code, item);
   const isLabel =
     labelToken?.kind === "identifier" &&
     separator?.kind === "punctuation" &&
     LABEL_SEPARATORS.has(separator.text) &&
     !CHARACTERS_EXTENDING_A_SEPARATOR.has(code.characterAfter(item.first + 1)) &&
-    item.first + 2 <= item.last;
+    value !== undefined;
   return isLabel
-    ? { label: labelToken.text, range: { first: item.first + 2, last: item.last } }
-    : { label: undefined, range: item };
+    ? { label: labelToken.text, range: value, rangeWithLabel: item }
+    : { label: undefined, range: item, rangeWithLabel: item };
 };
 
 const argumentInSlot = (callArguments: CallArgument[], slot: ArgumentSlot): CallArgument | undefined => {
@@ -63,8 +91,12 @@ const argumentInSlot = (callArguments: CallArgument[], slot: ArgumentSlot): Call
 
 const precedingTokenMatchesForm = (code: SourceCode, nameIndex: number, shape: CallShape) => {
   switch (shape.form) {
-    case "method":
-      return code.isPunctuation(nameIndex - 1, languageSyntax[code.language].memberAccessOperator);
+    case "method": {
+      const { memberAccessOperator, methodDefinitionKeyword } = languageSyntax[code.language];
+      const definesTheMethod =
+        methodDefinitionKeyword !== undefined && code.isIdentifier(nameIndex - 3, methodDefinitionKeyword);
+      return code.isPunctuation(nameIndex - 1, memberAccessOperator) && !definesTheMethod;
+    }
     case "annotation":
       return code.isPunctuation(nameIndex - 1, "@");
     case "function":
@@ -173,28 +205,101 @@ const mapKeyExpressions = (
   return propertyEntry?.value === undefined ? [] : mapKeyExpressions(code, propertyEntry.value, undefined);
 };
 
+const hashKeyExpressions = (code: SourceCode, hashArguments: CallArgument[]): KeyExpression[] => {
+  const entries = bracelessHashEntries(
+    code,
+    hashArguments.map((argument) => argument.rangeWithLabel),
+  );
+  if (entries !== undefined) {
+    return entries.map((entry) => ({ range: entry.key, isName: entry.keyIsName }));
+  }
+  const [hash] = hashArguments;
+  return hash === undefined ? [] : mapKeyExpressions(code, hash.rangeWithLabel, undefined);
+};
+
 const keyExpressionsOf = (
   code: SourceCode,
   callArguments: CallArgument[],
   keyArgument: KeyArgument,
 ): KeyExpression[] => {
-  const argument = argumentInSlot(callArguments, keyArgument.slot);
-  if (argument === undefined) {
-    return [];
-  }
   switch (keyArgument.kind) {
-    case "key":
-      return [{ range: argument.range, isName: false }];
-    case "mapKeys":
-      return mapKeyExpressions(code, argument.range, keyArgument.property);
+    case "key": {
+      const argument = argumentInSlot(callArguments, keyArgument.slot);
+      return argument === undefined ? [] : [keyExpressionOf(code, argument.range)];
+    }
+    case "mapKeys": {
+      const argument = argumentInSlot(callArguments, keyArgument.slot);
+      return argument === undefined ? [] : mapKeyExpressions(code, argument.range, keyArgument.property);
+    }
+    case "hashKeysWithOptionalBraces":
+      return hashKeyExpressions(code, callArguments);
   }
 };
 
-const callArgumentsOf = (code: SourceCode, nameIndex: number): CallArgument[] | undefined => {
-  const openingParenthesis = openingParenthesisAfterName(code, nameIndex);
-  const items = openingParenthesis === undefined ? undefined : code.commaSeparatedItems(openingParenthesis);
-  return items?.map((item) => labeledArgument(code, item));
+const startsCommandArguments = (code: SourceCode, index: number): boolean => {
+  const token = code.token(index);
+  if (token === undefined || code.areAdjacent(index - 1, index) || code.startsLine(index)) {
+    return false;
+  }
+  switch (token.kind) {
+    case "string":
+    case "number":
+      return true;
+    case "identifier":
+      return !WORDS_ENDING_COMMAND_ARGUMENTS.has(token.text);
+    case "punctuation":
+      return (
+        PUNCTUATION_STARTING_A_COMMAND_ARGUMENT.has(token.text) && code.characterAfter(index).trim() !== ""
+      );
+  }
 };
+
+const endsCommandArguments = (code: SourceCode, index: number): boolean => {
+  const token = code.token(index);
+  if (token === undefined) {
+    return true;
+  }
+  if (code.startsLine(index)) {
+    return !code.isPunctuation(index - 1, ",");
+  }
+  switch (token.kind) {
+    case "identifier":
+      return WORDS_ENDING_COMMAND_ARGUMENTS.has(token.text);
+    case "punctuation":
+      return PUNCTUATION_ENDING_COMMAND_ARGUMENTS.has(token.text);
+    case "string":
+    case "number":
+      return false;
+  }
+};
+
+const commandArgumentItems = (code: SourceCode, nameIndex: number): TokenRange[] | undefined => {
+  const first = nameIndex + 1;
+  if (!startsCommandArguments(code, first)) {
+    return undefined;
+  }
+  let last = code.closerOf(first) ?? first;
+  for (let topLevelTokens = 1; !endsCommandArguments(code, last + 1); topLevelTokens += 1) {
+    if (topLevelTokens === TOP_LEVEL_TOKENS_READ_AS_COMMAND_ARGUMENTS) {
+      return undefined;
+    }
+    last = code.closerOf(last + 1) ?? last + 1;
+  }
+  return code.commaSeparatedItemsIn({ first, last });
+};
+
+const argumentItemsOf = (code: SourceCode, nameIndex: number): TokenRange[] | undefined => {
+  const openingParenthesis = openingParenthesisAfterName(code, nameIndex);
+  if (openingParenthesis !== undefined) {
+    return code.commaSeparatedItems(openingParenthesis);
+  }
+  return languageSyntax[code.language].parenthesesOptionalInCalls
+    ? commandArgumentItems(code, nameIndex)
+    : undefined;
+};
+
+const callArgumentsOf = (code: SourceCode, nameIndex: number): CallArgument[] | undefined =>
+  argumentItemsOf(code, nameIndex)?.map((item) => labeledArgument(code, item));
 
 const hasArgumentCountOf = (shape: CallShape, callArguments: CallArgument[]) =>
   shape.argumentCount === undefined ||

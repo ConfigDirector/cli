@@ -423,6 +423,42 @@ describe("scan snippets", () => {
     ]);
   });
 
+  it("names the language of a .rb file ruby", async () => {
+    const { exitCode, output } = await scanJsonOf({
+      "app/checkout.rb": [
+        'require "configdirector"',
+        "",
+        'client = ConfigDirector.create_client(ENV.fetch("CONFIGDIRECTOR_SERVER_KEY"))',
+        'new_checkout = client.get_value("new-checkout", false)',
+        "",
+      ].join("\n"),
+    });
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([
+      {
+        key: "new-checkout",
+        file: "app/checkout.rb",
+        line: 4,
+        kind: "direct",
+        sdk: "ruby",
+        call: "get_value",
+        default: { type: "boolean", value: false },
+        test: false,
+        snippet: {
+          firstLine: 2,
+          lines: [
+            "",
+            'client = ConfigDirector.create_client(ENV.fetch("CONFIGDIRECTOR_SERVER_KEY"))',
+            'new_checkout = client.get_value("new-checkout", false)',
+          ],
+          language: "ruby",
+          truncatedLines: [],
+        },
+      },
+    ]);
+  });
+
   it("includes a snippet around an indirect reference", async () => {
     const { exitCode, output } = await scanJsonOf({
       "src/cart.ts": [

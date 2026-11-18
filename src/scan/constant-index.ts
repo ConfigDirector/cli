@@ -1,5 +1,6 @@
 import { fitsKeyGrammar, plainStringContent } from "./literals.js";
 import type { SourceCode } from "./source-code.js";
+import { languageSyntax } from "./source-languages.js";
 
 type ConstantAssignment = { name: string; key: string; tokenIndex: number };
 
@@ -7,13 +8,23 @@ type IndexedKey = { kind: "key"; key: string } | { kind: "ambiguous" };
 
 const TOKENS_ENDING_AN_ASSIGNED_LITERAL = new Set([";", ",", ")", "}", "]"]);
 
+const lastTokenOfAssignedLiteral = (code: SourceCode, stringIndex: number): number => {
+  const freezingMethod = languageSyntax[code.language].stringFreezingMethod;
+  const isFrozen =
+    freezingMethod !== undefined &&
+    code.isPunctuation(stringIndex + 1, ".") &&
+    code.isIdentifier(stringIndex + 2, freezingMethod);
+  return isFrozen ? stringIndex + 2 : stringIndex;
+};
+
 const endsAssignedLiteral = (code: SourceCode, stringIndex: number): boolean => {
-  const next = code.token(stringIndex + 1);
+  const afterLiteral = lastTokenOfAssignedLiteral(code, stringIndex) + 1;
+  const next = code.token(afterLiteral);
   return (
     next === undefined ||
     (next.kind === "punctuation" && TOKENS_ENDING_AN_ASSIGNED_LITERAL.has(next.text)) ||
-    code.isIdentifier(stringIndex + 1, "as") ||
-    code.startsLine(stringIndex + 1)
+    code.isIdentifier(afterLiteral, "as") ||
+    code.startsLine(afterLiteral)
   );
 };
 

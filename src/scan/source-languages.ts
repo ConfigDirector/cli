@@ -1,5 +1,5 @@
 export type SourceLanguage =
-  "javascript" | "dart" | "swift" | "kotlin" | "java" | "python" | "csharp" | "go" | "php";
+  "javascript" | "dart" | "swift" | "kotlin" | "java" | "python" | "csharp" | "go" | "php" | "ruby";
 
 export const languageOfExtension = {
   ".js": "javascript",
@@ -20,6 +20,7 @@ export const languageOfExtension = {
   ".cs": "csharp",
   ".go": "go",
   ".php": "php",
+  ".rb": "ruby",
 } as const satisfies Record<string, SourceLanguage>;
 
 export type SourceExtension = keyof typeof languageOfExtension;
@@ -41,7 +42,8 @@ export type SnippetLanguage =
   | "python"
   | "csharp"
   | "go"
-  | "php";
+  | "php"
+  | "ruby";
 
 export const snippetLanguageOfExtension: { [E in SourceExtension]: SnippetLanguage } = {
   ".js": "javascript",
@@ -62,18 +64,27 @@ export const snippetLanguageOfExtension: { [E in SourceExtension]: SnippetLangua
   ".cs": "csharp",
   ".go": "go",
   ".php": "php",
+  ".rb": "ruby",
 };
 
 export type LanguageSyntax = {
   lineComments: readonly ("//" | "#")[];
   blockComments: boolean;
+  beginEndBlockComments: boolean;
   hashBracketOpensAttribute: boolean;
-  heredocs: boolean;
+  heredocs: "php" | "ruby" | undefined;
+  percentLiterals: boolean;
+  stringInterpolationOpener: "#{" | undefined;
+  parenthesesOptionalInCalls: boolean;
+  labelsWithOmittedValues: boolean;
+  symbolOpener: ":" | undefined;
+  methodDefinitionKeyword: "def" | undefined;
+  stringFreezingMethod: "freeze" | undefined;
   angleBracketGenerics: boolean;
   operatorsReadAsOneToken: readonly string[];
   memberAccessOperator: "." | "->";
   pathSeparators: readonly string[];
-  globalNamespacePrefix: "\\" | undefined;
+  globalNamespacePrefix: "\\" | "::" | undefined;
   enumValueAccessor: "rawValue" | "value" | undefined;
 };
 
@@ -81,8 +92,16 @@ export const languageSyntax: { [L in SourceLanguage]: LanguageSyntax } = {
   javascript: {
     lineComments: ["//"],
     blockComments: true,
+    beginEndBlockComments: false,
     hashBracketOpensAttribute: false,
-    heredocs: false,
+    heredocs: undefined,
+    percentLiterals: false,
+    stringInterpolationOpener: undefined,
+    parenthesesOptionalInCalls: false,
+    labelsWithOmittedValues: false,
+    symbolOpener: undefined,
+    methodDefinitionKeyword: undefined,
+    stringFreezingMethod: undefined,
     angleBracketGenerics: true,
     operatorsReadAsOneToken: [],
     memberAccessOperator: ".",
@@ -93,8 +112,16 @@ export const languageSyntax: { [L in SourceLanguage]: LanguageSyntax } = {
   dart: {
     lineComments: ["//"],
     blockComments: true,
+    beginEndBlockComments: false,
     hashBracketOpensAttribute: false,
-    heredocs: false,
+    heredocs: undefined,
+    percentLiterals: false,
+    stringInterpolationOpener: undefined,
+    parenthesesOptionalInCalls: false,
+    labelsWithOmittedValues: false,
+    symbolOpener: undefined,
+    methodDefinitionKeyword: undefined,
+    stringFreezingMethod: undefined,
     angleBracketGenerics: true,
     operatorsReadAsOneToken: [],
     memberAccessOperator: ".",
@@ -105,8 +132,16 @@ export const languageSyntax: { [L in SourceLanguage]: LanguageSyntax } = {
   swift: {
     lineComments: ["//"],
     blockComments: true,
+    beginEndBlockComments: false,
     hashBracketOpensAttribute: false,
-    heredocs: false,
+    heredocs: undefined,
+    percentLiterals: false,
+    stringInterpolationOpener: undefined,
+    parenthesesOptionalInCalls: false,
+    labelsWithOmittedValues: false,
+    symbolOpener: undefined,
+    methodDefinitionKeyword: undefined,
+    stringFreezingMethod: undefined,
     angleBracketGenerics: true,
     operatorsReadAsOneToken: [],
     memberAccessOperator: ".",
@@ -117,8 +152,16 @@ export const languageSyntax: { [L in SourceLanguage]: LanguageSyntax } = {
   kotlin: {
     lineComments: ["//"],
     blockComments: true,
+    beginEndBlockComments: false,
     hashBracketOpensAttribute: false,
-    heredocs: false,
+    heredocs: undefined,
+    percentLiterals: false,
+    stringInterpolationOpener: undefined,
+    parenthesesOptionalInCalls: false,
+    labelsWithOmittedValues: false,
+    symbolOpener: undefined,
+    methodDefinitionKeyword: undefined,
+    stringFreezingMethod: undefined,
     angleBracketGenerics: true,
     operatorsReadAsOneToken: [],
     memberAccessOperator: ".",
@@ -129,8 +172,16 @@ export const languageSyntax: { [L in SourceLanguage]: LanguageSyntax } = {
   java: {
     lineComments: ["//"],
     blockComments: true,
+    beginEndBlockComments: false,
     hashBracketOpensAttribute: false,
-    heredocs: false,
+    heredocs: undefined,
+    percentLiterals: false,
+    stringInterpolationOpener: undefined,
+    parenthesesOptionalInCalls: false,
+    labelsWithOmittedValues: false,
+    symbolOpener: undefined,
+    methodDefinitionKeyword: undefined,
+    stringFreezingMethod: undefined,
     angleBracketGenerics: true,
     operatorsReadAsOneToken: [],
     memberAccessOperator: ".",
@@ -141,8 +192,16 @@ export const languageSyntax: { [L in SourceLanguage]: LanguageSyntax } = {
   python: {
     lineComments: ["#"],
     blockComments: false,
+    beginEndBlockComments: false,
     hashBracketOpensAttribute: false,
-    heredocs: false,
+    heredocs: undefined,
+    percentLiterals: false,
+    stringInterpolationOpener: undefined,
+    parenthesesOptionalInCalls: false,
+    labelsWithOmittedValues: false,
+    symbolOpener: undefined,
+    methodDefinitionKeyword: undefined,
+    stringFreezingMethod: undefined,
     angleBracketGenerics: false,
     operatorsReadAsOneToken: [],
     memberAccessOperator: ".",
@@ -153,8 +212,16 @@ export const languageSyntax: { [L in SourceLanguage]: LanguageSyntax } = {
   csharp: {
     lineComments: ["//"],
     blockComments: true,
+    beginEndBlockComments: false,
     hashBracketOpensAttribute: false,
-    heredocs: false,
+    heredocs: undefined,
+    percentLiterals: false,
+    stringInterpolationOpener: undefined,
+    parenthesesOptionalInCalls: false,
+    labelsWithOmittedValues: false,
+    symbolOpener: undefined,
+    methodDefinitionKeyword: undefined,
+    stringFreezingMethod: undefined,
     angleBracketGenerics: true,
     operatorsReadAsOneToken: [],
     memberAccessOperator: ".",
@@ -165,8 +232,16 @@ export const languageSyntax: { [L in SourceLanguage]: LanguageSyntax } = {
   go: {
     lineComments: ["//"],
     blockComments: true,
+    beginEndBlockComments: false,
     hashBracketOpensAttribute: false,
-    heredocs: false,
+    heredocs: undefined,
+    percentLiterals: false,
+    stringInterpolationOpener: undefined,
+    parenthesesOptionalInCalls: false,
+    labelsWithOmittedValues: false,
+    symbolOpener: undefined,
+    methodDefinitionKeyword: undefined,
+    stringFreezingMethod: undefined,
     angleBracketGenerics: false,
     operatorsReadAsOneToken: [],
     memberAccessOperator: ".",
@@ -177,13 +252,41 @@ export const languageSyntax: { [L in SourceLanguage]: LanguageSyntax } = {
   php: {
     lineComments: ["//", "#"],
     blockComments: true,
+    beginEndBlockComments: false,
     hashBracketOpensAttribute: true,
-    heredocs: true,
+    heredocs: "php",
+    percentLiterals: false,
+    stringInterpolationOpener: undefined,
+    parenthesesOptionalInCalls: false,
+    labelsWithOmittedValues: false,
+    symbolOpener: undefined,
+    methodDefinitionKeyword: undefined,
+    stringFreezingMethod: undefined,
     angleBracketGenerics: false,
     operatorsReadAsOneToken: ["::", "->", "=>"],
     memberAccessOperator: "->",
     pathSeparators: ["::", "->", "\\"],
     globalNamespacePrefix: "\\",
     enumValueAccessor: "value",
+  },
+  ruby: {
+    lineComments: ["#"],
+    blockComments: false,
+    beginEndBlockComments: true,
+    hashBracketOpensAttribute: false,
+    heredocs: "ruby",
+    percentLiterals: true,
+    stringInterpolationOpener: "#{",
+    parenthesesOptionalInCalls: true,
+    labelsWithOmittedValues: true,
+    symbolOpener: ":",
+    methodDefinitionKeyword: "def",
+    stringFreezingMethod: "freeze",
+    angleBracketGenerics: false,
+    operatorsReadAsOneToken: ["::", "=>"],
+    memberAccessOperator: ".",
+    pathSeparators: [".", "::"],
+    globalNamespacePrefix: "::",
+    enumValueAccessor: undefined,
   },
 };

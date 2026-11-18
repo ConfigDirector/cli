@@ -406,6 +406,65 @@ describe("scan constants", () => {
     ]);
   });
 
+  it("resolves a Ruby constant assigned a frozen string, read through its module", async () => {
+    const { exitCode, output } = await scanRepositoryJson({
+      "lib/flags.rb": ["module Flags", '  NEW_CHECKOUT = "new-checkout".freeze', "end"],
+      "lib/checkout.rb": [
+        'require "configdirector"',
+        "",
+        "def new_checkout?(client) = client.get_value(Flags::NEW_CHECKOUT, false)",
+      ],
+    });
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([
+      {
+        key: "new-checkout",
+        argument: "Flags::NEW_CHECKOUT",
+        file: "lib/checkout.rb",
+        line: 3,
+        kind: "direct",
+        sdk: "ruby",
+        call: "get_value",
+        default: { type: "boolean", value: false },
+        test: false,
+      },
+    ]);
+  });
+
+  it("resolves a Ruby constant read through its module from the top-level namespace", async () => {
+    const { exitCode, output } = await scanRepositoryJson({
+      "lib/flags.rb": ["module Flags", '  NEW_CHECKOUT = "new-checkout"', "end"],
+      "lib/checkout.rb": [
+        'require "configdirector"',
+        "",
+        "def new_checkout?(client) = client.get_value(::Flags::NEW_CHECKOUT, false)",
+      ],
+    });
+
+    expect(exitCode).toEqual(0);
+    expect(referencedKeys(output)).toEqual([["new-checkout", "::Flags::NEW_CHECKOUT"]]);
+  });
+
+  it("does not report the definition of a resolved Ruby constant assigned a frozen string as an indirect reference", async () => {
+    const { exitCode, output } = await scanRepositoryJson(
+      {
+        "lib/flags.rb": ["module Flags", '  NEW_CHECKOUT = "new-checkout".freeze', "end"],
+        "lib/checkout.rb": [
+          'require "configdirector"',
+          "",
+          "def new_checkout?(client) = client.get_value(Flags::NEW_CHECKOUT, false)",
+        ],
+      },
+      [projectConfig("new-checkout")],
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(
+      output.references.map((reference: { file: string; kind: string }) => [reference.file, reference.kind]),
+    ).toEqual([["lib/checkout.rb", "direct"]]);
+  });
+
   it("reports a call through an alias of a constant as dynamic", async () => {
     const { exitCode, output } = await scanRepositoryJson({
       "src/checkout.ts": [

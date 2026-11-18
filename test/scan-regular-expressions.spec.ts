@@ -16,6 +16,15 @@ const serverSdkFile = (lines: string[]) =>
     "",
   ].join("\n");
 
+const rubySdkFile = (lines: string[]) =>
+  [
+    'require "configdirector"',
+    "",
+    'client = ConfigDirector.create_client(ENV.fetch("CONFIGDIRECTOR_SERVER_KEY"))',
+    ...lines,
+    "",
+  ].join("\n");
+
 const timedScan = async (sandbox: Sandbox) => {
   const adminApi = await startScanAdminApi();
   const invocation = sandbox.invocation({
@@ -88,6 +97,95 @@ describe("scan on pathological input", () => {
       sandbox.workingDirectory,
       `${"a/".repeat(60)}checkout.ts`,
       serverSdkFile(['client.getValue("new-checkout", false);']),
+    );
+
+    const { exitCode, elapsedMilliseconds, output } = await timedScan(sandbox);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references.length).toEqual(1);
+    expect(elapsedMilliseconds).toBeLessThan(TIME_LIMIT_MILLISECONDS);
+  });
+
+  it("scans 80,000 Ruby heredoc openers that no line closes in a fixed time", async () => {
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.rb",
+      rubySdkFile([...Array<string>(80_000).fill("keys <<KEY"), 'client.get_value("new-checkout", false)']),
+    );
+
+    const { exitCode, elapsedMilliseconds, output } = await timedScan(sandbox);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references.length).toEqual(1);
+    expect(elapsedMilliseconds).toBeLessThan(TIME_LIMIT_MILLISECONDS);
+  });
+
+  it("scans a Ruby line of 80,000 heredoc openers in a fixed time", async () => {
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.rb",
+      rubySdkFile(["keys <<KEY ".repeat(80_000), 'client.get_value("new-checkout", false)']),
+    );
+
+    const { exitCode, elapsedMilliseconds, output } = await timedScan(sandbox);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references.length).toEqual(1);
+    expect(elapsedMilliseconds).toBeLessThan(TIME_LIMIT_MILLISECONDS);
+  });
+
+  it("scans 100,000 Ruby %( literals that are never closed in a fixed time", async () => {
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.rb",
+      rubySdkFile(['client.get_value("new-checkout", false)', "x = %(".repeat(100_000)]),
+    );
+
+    const { exitCode, elapsedMilliseconds, output } = await timedScan(sandbox);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references.length).toEqual(1);
+    expect(elapsedMilliseconds).toBeLessThan(TIME_LIMIT_MILLISECONDS);
+  });
+
+  it("scans 100,000 Ruby percent literals opened with a backslash in a fixed time", async () => {
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.rb",
+      rubySdkFile(['client.get_value("new-checkout", false)', "x = %\\".repeat(100_000)]),
+    );
+
+    const { exitCode, elapsedMilliseconds, output } = await timedScan(sandbox);
+
+    expect(exitCode).toEqual(0);
+    expect(output.references.length).toEqual(1);
+    expect(elapsedMilliseconds).toBeLessThan(TIME_LIMIT_MILLISECONDS);
+  });
+
+  it("scans a Ruby line of 50,000 SDK calls without parentheses in a fixed time", async () => {
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.rb",
+      rubySdkFile([`${"client.get_value ".repeat(50_000)}"new-checkout"`]),
+    );
+
+    const { exitCode, elapsedMilliseconds } = await timedScan(sandbox);
+
+    expect(exitCode).toEqual(0);
+    expect(elapsedMilliseconds).toBeLessThan(TIME_LIMIT_MILLISECONDS);
+  });
+
+  it("scans a Ruby string whose interpolations nest 100,000 deep, and the call on the next line", async () => {
+    const sandbox = await createSandbox();
+    await writeRepositoryFile(
+      sandbox.workingDirectory,
+      "checkout.rb",
+      rubySdkFile([`label = ${'"#{'.repeat(100_000)}`, 'client.get_value("new-checkout", false)']),
     );
 
     const { exitCode, elapsedMilliseconds, output } = await timedScan(sandbox);

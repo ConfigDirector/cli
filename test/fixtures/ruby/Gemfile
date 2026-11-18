@@ -1,0 +1,6 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gem "configdirector-server-sdk", "~> 0.1"
+gem "rails", "~> 8.1"

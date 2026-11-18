@@ -13,6 +13,7 @@ type ExpectedReference = {
   file: string;
   line: number;
   call: string;
+  argument?: string;
   default?: InCodeDefaultValue;
   getterType?: string;
   test?: boolean;
@@ -1339,6 +1340,157 @@ describe("scan SDK families", () => {
         line: 27,
         call: "getObjectValue",
         default: { type: "json", value: "['per_minute' => 60]" },
+        getterType: "json",
+      }),
+    ]);
+    expect(output.dynamicReferences).toEqual([]);
+  });
+
+  it("finds the Ruby SDK's reads, evaluations, watches and test client calls, with and without parentheses, in a file that requires the SDK and in one written the Rails way", async () => {
+    const reference = directReferenceFor("ruby");
+    const spec = "spec/checkout_spec.rb";
+    const test = "test/checkout_test.rb";
+
+    const { exitCode, output, schemaErrors } = await scanFixture("ruby");
+
+    expect(exitCode).toEqual(0);
+    expect(schemaErrors).toEqual(null);
+    expect(output.references).toEqual([
+      reference({
+        key: "new-checkout",
+        file: "app/controllers/checkout_controller.rb",
+        line: 6,
+        call: "get_value",
+        argument: "FeatureFlags::NEW_CHECKOUT",
+        default: falseDefault,
+      }),
+      reference({
+        key: "max-items",
+        file: "app.rb",
+        line: 12,
+        call: "watch",
+        default: { type: "integer", value: 20 },
+      }),
+      reference({
+        key: "new-checkout",
+        file: "app.rb",
+        line: 21,
+        call: "get_value",
+        default: falseDefault,
+      }),
+      reference({
+        key: "theme",
+        file: "app.rb",
+        line: 22,
+        call: "get_value",
+        default: { type: "string", value: "light" },
+      }),
+      reference({
+        key: "rate-limits",
+        file: "app.rb",
+        line: 23,
+        call: "get_value",
+        default: { type: "json", value: '{ "per_minute" => 60 }' },
+      }),
+      reference({
+        key: "checkout-button-color",
+        file: "app.rb",
+        line: 24,
+        call: "evaluate",
+        default: { type: "string", value: "blue" },
+      }),
+      reference({ key: "max-items", file: "app.rb", line: 28, call: "unwatch" }),
+      reference({ key: "new-checkout", file: spec, line: 7, call: "create_test_client", test: true }),
+      reference({ key: "dark_mode", file: spec, line: 7, call: "create_test_client", test: true }),
+      reference({ key: "new-checkout", file: spec, line: 10, call: "set_value", test: true }),
+      reference({
+        key: "new-checkout",
+        file: spec,
+        line: 11,
+        call: "get_value",
+        default: { type: "boolean", value: true },
+      }),
+      reference({ key: "new-checkout", file: spec, line: 13, call: "remove_value", test: true }),
+      reference({ key: "max-items", file: spec, line: 14, call: "replace_values", test: true }),
+      reference({ key: "checkout-theme", file: spec, line: 14, call: "replace_values", test: true }),
+      reference({ key: "theme_name", file: spec, line: 14, call: "replace_values", test: true }),
+      reference({ key: "new_checkout", file: test, line: 8, call: "create_test_client", test: true }),
+      reference({ key: "new_checkout", file: test, line: 11, call: "set_value", test: true }),
+      reference({ key: "max_items", file: test, line: 12, call: "replace_values", test: true }),
+    ]);
+    expect(output.dynamicReferences).toEqual([
+      {
+        file: "app/controllers/checkout_controller.rb",
+        line: 7,
+        sdk: "ruby",
+        call: "get_value",
+        argument: '"banner-#{params[:region]}"',
+      },
+    ]);
+  });
+
+  it("finds the OpenFeature Ruby SDK's typed getters, with and without parentheses, in a file that requires OpenFeature and in one written the Rails way", async () => {
+    const reference = directReferenceFor("openfeature-ruby");
+
+    const { exitCode, output, schemaErrors } = await scanFixture("openfeature-ruby");
+
+    expect(exitCode).toEqual(0);
+    expect(schemaErrors).toEqual(null);
+    expect(output.references).toEqual([
+      reference({
+        key: "new-checkout",
+        file: "app/controllers/checkout_controller.rb",
+        line: 5,
+        call: "fetch_boolean_value",
+        default: falseDefault,
+        getterType: "boolean",
+      }),
+      reference({
+        key: "new-checkout",
+        file: "app.rb",
+        line: 12,
+        call: "fetch_boolean_value",
+        default: falseDefault,
+        getterType: "boolean",
+      }),
+      reference({
+        key: "theme",
+        file: "app.rb",
+        line: 13,
+        call: "fetch_string_value",
+        default: { type: "string", value: "light" },
+        getterType: "string",
+      }),
+      reference({
+        key: "max-items",
+        file: "app.rb",
+        line: 14,
+        call: "fetch_integer_details",
+        default: { type: "integer", value: 20 },
+        getterType: "integer",
+      }),
+      reference({
+        key: "checkout-discount",
+        file: "app.rb",
+        line: 15,
+        call: "fetch_float_value",
+        default: { type: "float", value: 0.1 },
+        getterType: "float",
+      }),
+      reference({
+        key: "price-multiplier",
+        file: "app.rb",
+        line: 16,
+        call: "fetch_number_value",
+        default: { type: "integer", value: 1 },
+        getterType: "number",
+      }),
+      reference({
+        key: "rate-limits",
+        file: "app.rb",
+        line: 17,
+        call: "fetch_object_value",
+        default: { type: "json", value: '{ "per_minute" => 60 }' },
         getterType: "json",
       }),
     ]);

@@ -5,7 +5,7 @@ import { plainStringContent } from "./literals.js";
 import { NearestDeclarations } from "./nearest-declarations.js";
 import { PathAliases } from "./path-aliases.js";
 import { EXCLUDED_DIRECTORY_NAMES, readFileWithinSizeLimit } from "./scanned-files.js";
-import { SourceCode } from "./source-code.js";
+import { isDigit, SourceCode } from "./source-code.js";
 
 type PythonImport = { level: number; modulePath: string[]; names: string[] };
 
@@ -49,6 +49,9 @@ const JVM_SOURCE_EXTENSIONS = [".kt", ".java"];
 const CSHARP_PROJECT_EXTENSION = ".csproj";
 const CSHARP_SOURCE_EXTENSION = ".cs";
 const CSHARP_BUILD_OUTPUT_DIRECTORIES = ["bin", "obj"];
+const RUBY_PROJECT_FILE = "Gemfile";
+const RUBY_SOURCE_EXTENSION = ".rb";
+const RUBY_RELATIVE_REQUIRE = "require_relative";
 
 const stringAt = (code: SourceCode, index: number): string | undefined =>
   code.token(index)?.kind === "string" ? plainStringContent(code, { first: index, last: index }) : undefined;
@@ -283,7 +286,11 @@ const goPackageNameIn = (code: SourceCode): string | undefined => {
   return code.isIdentifier(0, "package") && name?.kind === "identifier" ? name.text : undefined;
 };
 
-const isCapitalized = (name: string) => name.charAt(0) >= "A" && name.charAt(0) <= "Z";
+const isUppercase = (character: string) => character >= "A" && character <= "Z";
+
+const isLowercase = (character: string) => character >= "a" && character <= "z";
+
+const isCapitalized = (name: string) => isUppercase(name.charAt(0));
 
 const capitalizedNamesIn = (code: SourceCode): Set<string> =>
   new Set(
@@ -344,30 +351,74 @@ const csharpProjectRootDeclaredIn = async (directory: string): Promise<string | 
     : undefined;
 };
 
-const isSearchedForHolderClasses = (directoryName: string) =>
+const rubyRelativeRequirePaths = (code: SourceCode): string[] =>
+  code.tokens.flatMap((_token, index) => {
+    if (!code.isIdentifier(index, RUBY_RELATIVE_REQUIRE)) {
+      return [];
+    }
+    const path = stringAt(code, code.isPunctuation(index + 1, "(") ? index + 2 : index + 1);
+    return path === undefined ? [] : [path];
+  });
+
+const rubyFileRequiredAt = (requiringFile: string, path: string): string => {
+  const requiredPath = join(dirname(requiringFile), path);
+  return extname(requiredPath) === RUBY_SOURCE_EXTENSION
+    ? requiredPath
+    : requiredPath + RUBY_SOURCE_EXTENSION;
+};
+
+const rubyProjectRootDeclaredIn = async (directory: string): Promise<string | undefined> =>
+  (await fileExists(join(directory, RUBY_PROJECT_FILE))) ? directory : undefined;
+
+const isSearchedForCsharpHolderClasses = (directoryName: string) =>
   !CSHARP_BUILD_OUTPUT_DIRECTORIES.includes(directoryName) && !EXCLUDED_DIRECTORY_NAMES.has(directoryName);
 
-const csharpFilesUnder = async (directory: string): Promise<string[]> => {
+const isSearchedForRubyHolderClasses = (directoryName: string) =>
+  !EXCLUDED_DIRECTORY_NAMES.has(directoryName);
+
+const filesWithExtensionUnder = async (
+  directory: string,
+  extension: string,
+  isSearched: (directoryName: string) => boolean,
+): Promise<string[]> => {
   const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
   const files = entries
-    .filter((entry) => entry.isFile() && extname(entry.name) === CSHARP_SOURCE_EXTENSION)
+    .filter((entry) => entry.isFile() && extname(entry.name) === extension)
     .map((entry) => join(directory, entry.name));
   const filesOfSubdirectories = await Promise.all(
     entries
-      .filter((entry) => entry.isDirectory() && isSearchedForHolderClasses(entry.name))
-      .map((entry) => csharpFilesUnder(join(directory, entry.name))),
+      .filter((entry) => entry.isDirectory() && isSearched(entry.name))
+      .map((entry) => filesWithExtensionUnder(join(directory, entry.name), extension, isSearched)),
   );
   return [...files, ...filesOfSubdirectories.flat()];
 };
 
-const filesOfCsharpClassName = (files: readonly string[]): Map<string, string[]> => {
-  const filesOfClassName = new Map<string, string[]>();
+const filesOfBaseName = (files: readonly string[], extension: string): Map<string, string[]> => {
+  const filesOfName = new Map<string, string[]>();
   for (const file of files) {
-    const className = basename(file, CSHARP_SOURCE_EXTENSION);
-    filesOfClassName.set(className, [...(filesOfClassName.get(className) ?? []), file]);
+    const name = basename(file, extension);
+    filesOfName.set(name, [...(filesOfName.get(name) ?? []), file]);
   }
-  return filesOfClassName;
+  return filesOfName;
 };
+
+const isRubyClassOrModuleName = (constantName: string) => [...constantName].some(isLowercase);
+
+const startsWordOfConstantName = (name: string, index: number): boolean => {
+  const previous = name.charAt(index - 1);
+  return (
+    index > 0 &&
+    isUppercase(name.charAt(index)) &&
+    (isLowercase(previous) ||
+      isDigit(previous) ||
+      (isUppercase(previous) && isLowercase(name.charAt(index + 1))))
+  );
+};
+
+const rubyFileNameOfConstant = (name: string): string =>
+  [...name]
+    .map((character, index) => (startsWordOfConstantName(name, index) ? "_" : "") + character.toLowerCase())
+    .join("");
 
 const goPackageNameOfFile = async (file: string): Promise<string | undefined> => {
   const contents = await readFileWithinSizeLimit(file);
@@ -379,9 +430,10 @@ export class LocalImports {
   private readonly goModules: NearestDeclarations<GoModule>;
   private readonly swiftProjects: NearestDeclarations<SwiftProject>;
   private readonly csharpProjectRoots: NearestDeclarations<string>;
+  private readonly rubyProjectRoots: NearestDeclarations<string>;
   private readonly pathAliases: PathAliases;
   private readonly filesOfDirectory = new Map<string, Promise<string[]>>();
-  private readonly csharpClassFilesOfProject = new Map<string, Promise<Map<string, string[]>>>();
+  private readonly filesOfBaseNameOfListing = new Map<string, Promise<Map<string, string[]>>>();
   private readonly fileExistence = new Map<string, Promise<boolean>>();
 
   constructor(private readonly highestDirectory: string) {
@@ -389,6 +441,7 @@ export class LocalImports {
     this.goModules = new NearestDeclarations(highestDirectory, goModuleDeclaredIn);
     this.swiftProjects = new NearestDeclarations(highestDirectory, swiftProjectDeclaredIn);
     this.csharpProjectRoots = new NearestDeclarations(highestDirectory, csharpProjectRootDeclaredIn);
+    this.rubyProjectRoots = new NearestDeclarations(highestDirectory, rubyProjectRootDeclaredIn);
     this.pathAliases = new PathAliases(highestDirectory);
   }
 
@@ -402,6 +455,10 @@ export class LocalImports {
         return this.dartFilesAt(dartSpecifiers(code, DART_IMPORT_DIRECTIVES), file);
       case "go":
         return this.goFilesImportedBy(code, file);
+      case "ruby":
+        return this.existingFiles(
+          rubyRelativeRequirePaths(code).map((path) => rubyFileRequiredAt(file, path)),
+        );
       case "swift":
       case "kotlin":
       case "java":
@@ -424,6 +481,7 @@ export class LocalImports {
       case "java":
       case "csharp":
       case "php":
+      case "ruby":
         return Promise.resolve([]);
     }
   }
@@ -435,6 +493,8 @@ export class LocalImports {
         return this.jvmHolderClassFilesReferencedBy(code, file);
       case "csharp":
         return this.csharpHolderClassFilesReferencedBy(code, file);
+      case "ruby":
+        return this.rubyHolderClassFilesReferencedBy(code, file);
       case "javascript":
       case "python":
       case "dart":
@@ -461,6 +521,7 @@ export class LocalImports {
       case "java":
       case "csharp":
       case "php":
+      case "ruby":
         return Promise.resolve([]);
     }
   }
@@ -648,18 +709,44 @@ export class LocalImports {
     if (projectRoot === undefined) {
       return [];
     }
-    const filesOfClassName = await this.csharpClassFilesIn(projectRoot);
+    const filesOfClassName = await this.filesOfBaseNameUnder(
+      projectRoot,
+      CSHARP_SOURCE_EXTENSION,
+      isSearchedForCsharpHolderClasses,
+    );
     return [...capitalizedNamesIn(code)].flatMap((className) => filesOfClassName.get(className) ?? []);
   }
 
-  private csharpClassFilesIn(projectRoot: string): Promise<Map<string, string[]>> {
-    const classFilesListedBefore = this.csharpClassFilesOfProject.get(projectRoot);
-    if (classFilesListedBefore !== undefined) {
-      return classFilesListedBefore;
+  private async rubyHolderClassFilesReferencedBy(code: SourceCode, file: string): Promise<string[]> {
+    const projectRoot = await this.rubyProjectRoots.declarationAbove(file);
+    if (projectRoot === undefined) {
+      return [];
     }
-    const classFiles = csharpFilesUnder(projectRoot).then(filesOfCsharpClassName);
-    this.csharpClassFilesOfProject.set(projectRoot, classFiles);
-    return classFiles;
+    const filesOfName = await this.filesOfBaseNameUnder(
+      projectRoot,
+      RUBY_SOURCE_EXTENSION,
+      isSearchedForRubyHolderClasses,
+    );
+    return [...capitalizedNamesIn(code)]
+      .filter(isRubyClassOrModuleName)
+      .flatMap((constantName) => filesOfName.get(rubyFileNameOfConstant(constantName)) ?? []);
+  }
+
+  private filesOfBaseNameUnder(
+    directory: string,
+    extension: string,
+    isSearched: (directoryName: string) => boolean,
+  ): Promise<Map<string, string[]>> {
+    const listing = join(directory, `*${extension}`);
+    const filesListedBefore = this.filesOfBaseNameOfListing.get(listing);
+    if (filesListedBefore !== undefined) {
+      return filesListedBefore;
+    }
+    const files = filesWithExtensionUnder(directory, extension, isSearched).then((filesFound) =>
+      filesOfBaseName(filesFound, extension),
+    );
+    this.filesOfBaseNameOfListing.set(listing, files);
+    return files;
   }
 
   private async goFilesIn(directory: string): Promise<string[]> {

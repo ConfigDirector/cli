@@ -81,6 +81,33 @@ describe("scan known keys as text", () => {
     expect(referenceLines(output)).toEqual([1]);
   });
 
+  it("finds a key among the words of each Ruby word list literal", async () => {
+    const { exitCode, output } = await scanRepositoryJson(
+      {
+        "lib/flags.rb": [
+          "WORDS = %w[dark-mode new-checkout].freeze",
+          "INTERPOLATED_WORDS = %W[dark-mode max-items].freeze",
+          "SYMBOLS = %i[dark-mode theme-name].freeze",
+          "INTERPOLATED_SYMBOLS = %I[dark-mode rate-limits].freeze",
+        ],
+      },
+      [
+        projectConfig("new-checkout"),
+        projectConfig("max-items"),
+        projectConfig("theme-name"),
+        projectConfig("rate-limits"),
+      ],
+    );
+
+    expect(exitCode).toEqual(0);
+    expect(output.references).toEqual([
+      indirectReference("new-checkout", "lib/flags.rb", 1),
+      indirectReference("max-items", "lib/flags.rb", 2),
+      indirectReference("theme-name", "lib/flags.rb", 3),
+      indirectReference("rate-limits", "lib/flags.rb", 4),
+    ]);
+  });
+
   it("reports nothing for a key inside a template string with a placeholder", async () => {
     const { exitCode, output } = await scanRepositoryJson(
       { "src/checkout.ts": ["export const checkout = isEnabled(`new-checkout-${region}`);"] },
@@ -155,6 +182,34 @@ describe("scan known keys as text", () => {
 
     expect(exitCode).toEqual(0);
     expect(references).toEqual([indirectReference("new-checkout", "src/CheckoutTests.cs", 1, true)]);
+  });
+
+  it("marks an indirect reference in a Ruby spec directory as a test", async () => {
+    const { exitCode, references } = await scanQuotedKeyIn("spec/support/flags.rb");
+
+    expect(exitCode).toEqual(0);
+    expect(references).toEqual([indirectReference("new-checkout", "spec/support/flags.rb", 1, true)]);
+  });
+
+  it("marks an indirect reference in a Ruby _spec file as a test", async () => {
+    const { exitCode, references } = await scanQuotedKeyIn("lib/checkout_spec.rb");
+
+    expect(exitCode).toEqual(0);
+    expect(references).toEqual([indirectReference("new-checkout", "lib/checkout_spec.rb", 1, true)]);
+  });
+
+  it("marks an indirect reference in a Ruby test directory as a test", async () => {
+    const { exitCode, references } = await scanQuotedKeyIn("test/support/flags.rb");
+
+    expect(exitCode).toEqual(0);
+    expect(references).toEqual([indirectReference("new-checkout", "test/support/flags.rb", 1, true)]);
+  });
+
+  it("marks an indirect reference in a Ruby _test file as a test", async () => {
+    const { exitCode, references } = await scanQuotedKeyIn("lib/checkout_test.rb");
+
+    expect(exitCode).toEqual(0);
+    expect(references).toEqual([indirectReference("new-checkout", "lib/checkout_test.rb", 1, true)]);
   });
 
   it("does not mark an indirect reference in a source file as a test", async () => {

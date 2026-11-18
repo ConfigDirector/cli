@@ -94,6 +94,32 @@ describe("validate", () => {
     ]);
   });
 
+  it("reports an unknown key read in Ruby code and exits 1", async () => {
+    const { exitCode, output } = await validateRepositoryJson(
+      {
+        "app/services/checkout_service.rb": [
+          'require "configdirector"',
+          "",
+          "class CheckoutService",
+          "  def initialize(client)",
+          "    @client = client",
+          "  end",
+          "",
+          "  def new_checkout?",
+          '    @client.get_value "new-chekout", false',
+          "  end",
+          "end",
+        ],
+      },
+      [projectConfig("new-checkout")],
+    );
+
+    expect(exitCode).toEqual(1);
+    expect(output.findings).toEqual([
+      { kind: "unknown-key", key: "new-chekout", file: "app/services/checkout_service.rb", line: 9 },
+    ]);
+  });
+
   it("reports a deprecated key as a deprecated key naming the config's current key and exits 1", async () => {
     const { exitCode, output } = await validateRepositoryJson(
       { "src/checkout.ts": [...serverSdkSetup, 'client.getValue("checkout-v2", false);'] },
