@@ -78,8 +78,13 @@ const ProjectAccessSchema = v.variant("kind", [
 
 export type ProjectAccess = v.InferOutput<typeof ProjectAccessSchema>;
 
+const ApiTokenKindSchema = v.picklist(["user", "organization"]);
+
+export type ApiTokenKind = v.InferOutput<typeof ApiTokenKindSchema>;
+
 const DescribedApiTokenSchema = v.object({
   name: v.string(),
+  kind: v.optional(ApiTokenKindSchema, "user"),
   organization: v.object({ id: v.string(), name: v.string() }),
   permissions: v.array(v.string()),
   projectAccess: v.optional(ProjectAccessSchema, { kind: "all" }),

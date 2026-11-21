@@ -22,13 +22,13 @@ The Homebrew formula is updated with every npm release, so `brew upgrade configd
 
 ## Sign in
 
-Create an API token in the ConfigDirector dashboard, then run:
+Create a user API token in the ConfigDirector dashboard, then run:
 
 ```bash
 configdirector login
 ```
 
-The token is saved as your sign-in for its organization, where only you can read it. You keep one sign-in per organization: run `login` again with a token of another organization to add one, and `configdirector logout` removes the sign-in the commands in the current directory would use. `configdirector api-token get` shows which token a command there would use, with its organization, name, permissions and expiration. In CI, set `CONFIGDIRECTOR_TOKEN` instead.
+The token is saved as your sign-in for its organization, where only you can read it. You keep one sign-in per organization: run `login` again with a token of another organization to add one, and `configdirector logout` removes the sign-in the commands in the current directory would use. `configdirector api-token get` shows which token a command there would use, with its organization, name, kind, permissions, project access and expiration. In CI, set `CONFIGDIRECTOR_TOKEN` to an organization API token instead, so the job keeps running when the member who generated the token changes role or leaves.
 
 ## Link a repository to a project
 
@@ -138,7 +138,7 @@ The [ConfigDirector Code Scan](https://github.com/ConfigDirector/scan-code) acti
     token: ${{ secrets.CONFIGDIRECTOR_TOKEN }}
 ```
 
-Its README lists the inputs and the permissions the token needs for each step.
+Give it an organization API token, saved as the `CONFIGDIRECTOR_TOKEN` secret. Its README lists the inputs and the permissions the token needs for each step.
 
 ## See what a context gets for a config
 

@@ -8,6 +8,10 @@ type EnvironmentUnderTest = { id: string; slug: string; name: string; live: bool
 
 type ProjectAccessUnderTest = { kind: "all" } | { kind: "selected"; projectIds: string[] };
 
+type ApiTokenKindUnderTest = "user" | "organization";
+
+type DescribedApiTokenUnderTest = { kind: ApiTokenKindUnderTest; projectAccess: ProjectAccessUnderTest };
+
 export const SKIPPED_WITHOUT_VARIABLES =
   "The integration suite is skipped: CONFIGDIRECTOR_BASE_URL and CONFIGDIRECTOR_TOKEN name the Admin API to test against, and at least one is unset.";
 
@@ -69,15 +73,21 @@ export const projectUnderTest = async (adminApi: AdminApiUnderTest): Promise<Pro
   return slug === undefined ? requireOnlyProject(projects) : requireProjectBySlug(projects, slug);
 };
 
-export const projectAccessUnderTest = async (
+const describedApiTokenUnderTest = async (
   adminApi: AdminApiUnderTest,
-): Promise<ProjectAccessUnderTest> => {
+): Promise<DescribedApiTokenUnderTest> => {
   const { status, body } = await requestAdminApi(adminApi, { method: "GET" }, "/v1/api-token");
   if (status !== 200) {
     throw new Error(`GET ${adminApi.baseUrl}/v1/api-token answered HTTP ${status}: ${JSON.stringify(body)}`);
   }
-  return (body as { projectAccess: ProjectAccessUnderTest }).projectAccess;
+  return body as DescribedApiTokenUnderTest;
 };
+
+export const projectAccessUnderTest = async (adminApi: AdminApiUnderTest): Promise<ProjectAccessUnderTest> =>
+  (await describedApiTokenUnderTest(adminApi)).projectAccess;
+
+export const apiTokenKindUnderTest = async (adminApi: AdminApiUnderTest): Promise<ApiTokenKindUnderTest> =>
+  (await describedApiTokenUnderTest(adminApi)).kind;
 
 export const environmentsOf = async (
   adminApi: AdminApiUnderTest,

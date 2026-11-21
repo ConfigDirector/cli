@@ -36,7 +36,7 @@ const getApiToken = async (
 };
 
 describe("api-token get", () => {
-  it("prints the organization, the token's name, permissions, expiration and the CLI sign-in it came from, with one GET /api-token", async () => {
+  it("prints the organization, the token's name, kind, permissions, expiration and the CLI sign-in it came from, with one GET /api-token", async () => {
     const adminApi = await startSignInAdminApi([acmeAccount]);
     const sandbox = await createSandbox();
     await logIn(sandbox, adminApi.baseUrl, "cd_acme_token");
@@ -49,6 +49,7 @@ describe("api-token get", () => {
     expect(stdout.split("\n")).toEqual([
       `Organization: Acme (${acme.id})`,
       "Name: Laptop",
+      "Kind: user API token",
       "Permissions: configs:read, projects:read",
       "Project access: all projects",
       "Expires: 2027-01-31 09:30 UTC",
@@ -75,10 +76,30 @@ describe("api-token get", () => {
     expect(stdout.split("\n")).toEqual([
       `Organization: Acme (${acme.id})`,
       "Name: CI",
+      "Kind: user API token",
       "Permissions: none",
       "Project access: all projects",
       "Expires: never",
       "Source: CONFIGDIRECTOR_TOKEN",
+      "",
+    ]);
+  });
+
+  it("shows the kind of an organization API token", async () => {
+    const adminApi = await startSignInAdminApi([{ ...acmeAccount, kind: "organization" }]);
+    const sandbox = await createSandbox();
+
+    const { exitCode, stdout } = await getApiToken(sandbox, adminApi.baseUrl, ["--token", "cd_acme_token"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stdout.split("\n")).toEqual([
+      `Organization: Acme (${acme.id})`,
+      "Name: Laptop",
+      "Kind: organization API token",
+      "Permissions: configs:read, projects:read",
+      "Project access: all projects",
+      "Expires: 2027-01-31 09:30 UTC",
+      "Source: --token",
       "",
     ]);
   });
@@ -98,6 +119,7 @@ describe("api-token get", () => {
     expect(stdout.split("\n")).toEqual([
       `Organization: Acme (${acme.id})`,
       "Name: Laptop",
+      "Kind: user API token",
       "Permissions: configs:read, projects:read",
       `Project access: selected projects (${acmeWebApp.id}, ${acmeMobileApp.id})`,
       "Expires: 2027-01-31 09:30 UTC",
@@ -134,6 +156,30 @@ describe("api-token get", () => {
 
     expect(exitCode).toEqual(0);
     expect(stdout).toContain("\nProject access: all projects\n");
+  });
+
+  it("says the token is a user API token when the Admin API does not give its kind", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/api-token": {
+          status: 200,
+          body: {
+            name: "Laptop",
+            organization: acme,
+            permissions: ["projects:read"],
+            projectAccess: { kind: "all" },
+            expiresAt: null,
+          },
+        },
+      },
+    );
+    const sandbox = await createSandbox();
+
+    const { exitCode, stdout } = await getApiToken(sandbox, adminApi.baseUrl, ["--token", "cd_acme_token"]);
+
+    expect(exitCode).toEqual(0);
+    expect(stdout).toContain("\nKind: user API token\n");
   });
 
   it("says the token came from --token", async () => {

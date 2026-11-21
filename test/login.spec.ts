@@ -47,7 +47,9 @@ describe("login", () => {
     const signInsFile = join(userConfigDirectoryOf(sandbox), "sign-ins.json");
     expect(exitCode).toEqual(0);
     expect(stderr).toEqual("Paste your API token: ");
-    expect(stdout).toEqual(`Signed in to Acme. The CLI sign-in is saved in ${signInsFile}\n`);
+    expect(stdout).toEqual(
+      `Signed in to Acme with a user API token. The CLI sign-in is saved in ${signInsFile}\n`,
+    );
     expect(adminApi.receivedRequests.map((request) => [request.path, request.headers.authorization])).toEqual(
       [["/v1/api-token", "Bearer cd_acme_token"]],
     );
@@ -66,7 +68,7 @@ describe("login", () => {
     const { exitCode, stdout } = await logIn(sandbox, adminApi.baseUrl, "cd_globex_token");
 
     expect(exitCode).toEqual(0);
-    expect(stdout).toContain("Signed in to Globex.");
+    expect(stdout).toContain("Signed in to Globex with a user API token.");
     expect(await readSignInsFile(sandbox)).toEqual({
       signIns: [
         { organization: acme, token: "cd_acme_token" },
@@ -96,6 +98,48 @@ describe("login", () => {
     });
   });
 
+  it("says it signed in with an organization API token when the token is one", async () => {
+    const adminApi = await startSignInAdminApi([{ ...acmeAccount, kind: "organization" }]);
+    const sandbox = await createSandbox();
+
+    const { exitCode, stdout } = await logIn(sandbox, adminApi.baseUrl, "cd_acme_token");
+
+    const signInsFile = join(userConfigDirectoryOf(sandbox), "sign-ins.json");
+    expect(exitCode).toEqual(0);
+    expect(stdout).toEqual(
+      `Signed in to Acme with an organization API token. The CLI sign-in is saved in ${signInsFile}\n`,
+    );
+    expect(await readSignInsFile(sandbox)).toEqual({
+      signIns: [{ organization: acme, token: "cd_acme_token" }],
+    });
+  });
+
+  it("says it signed in with a user API token when the Admin API does not give the token's kind", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/api-token": {
+          status: 200,
+          body: {
+            name: "Laptop",
+            organization: acme,
+            permissions: ["projects:read"],
+            projectAccess: { kind: "all" },
+            expiresAt: null,
+          },
+        },
+      },
+    );
+    const sandbox = await createSandbox();
+
+    const { exitCode, stdout } = await logIn(sandbox, adminApi.baseUrl, "cd_acme_token");
+
+    expect(exitCode).toEqual(0);
+    expect(stdout).toEqual(
+      `Signed in to Acme with a user API token. The CLI sign-in is saved in ${join(userConfigDirectoryOf(sandbox), "sign-ins.json")}\n`,
+    );
+  });
+
   it("adds that the token reaches only its selected projects, which projects list shows, for a token limited to them", async () => {
     const adminApi = await startSignInAdminApi([
       { ...acmeAccount, projectAccess: { kind: "selected", projectIds: [acmeWebApp.id] } },
@@ -107,7 +151,7 @@ describe("login", () => {
     const signInsFile = join(userConfigDirectoryOf(sandbox), "sign-ins.json");
     expect(exitCode).toEqual(0);
     expect(stdout).toEqual(
-      `Signed in to Acme. The CLI sign-in is saved in ${signInsFile}\n` +
+      `Signed in to Acme with a user API token. The CLI sign-in is saved in ${signInsFile}\n` +
         "The token reaches only its selected projects, which configdirector projects list shows.\n",
     );
     expect(await readSignInsFile(sandbox)).toEqual({
@@ -123,7 +167,7 @@ describe("login", () => {
 
     expect(exitCode).toEqual(0);
     expect(stdout).toEqual(
-      `Signed in to Acme. The CLI sign-in is saved in ${join(userConfigDirectoryOf(sandbox), "sign-ins.json")}\n`,
+      `Signed in to Acme with a user API token. The CLI sign-in is saved in ${join(userConfigDirectoryOf(sandbox), "sign-ins.json")}\n`,
     );
   });
 
@@ -400,7 +444,7 @@ describe("login", () => {
     });
   });
 
-  it("prints only JSON naming the sign-ins file and the organization on stdout with --json", async () => {
+  it("prints only JSON naming the sign-ins file, the organization and the token's kind on stdout with --json", async () => {
     const adminApi = await startSignInAdminApi([acmeAccount]);
     const sandbox = await createSandbox();
     const invocation = sandbox.invocation({
@@ -415,6 +459,61 @@ describe("login", () => {
     expect(JSON.parse(invocation.stdout.text())).toEqual({
       signInsFile: join(sandbox.homeDirectory, ".config", "configdirector", "sign-ins.json"),
       organization: acme,
+      kind: "user",
+      projectAccess: { kind: "all" },
+    });
+  });
+
+  it("prints the kind of an organization API token in the JSON with --json", async () => {
+    const adminApi = await startSignInAdminApi([{ ...acmeAccount, kind: "organization" }]);
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({
+      commandLineArguments: ["login", "--json"],
+      environmentVariables: { CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl },
+      stdin: Readable.from(["cd_acme_token\n"]),
+    });
+
+    const exitCode = await run(invocation);
+
+    expect(exitCode).toEqual(0);
+    expect(JSON.parse(invocation.stdout.text())).toEqual({
+      signInsFile: join(sandbox.homeDirectory, ".config", "configdirector", "sign-ins.json"),
+      organization: acme,
+      kind: "organization",
+      projectAccess: { kind: "all" },
+    });
+  });
+
+  it("prints the kind of a user API token in the JSON with --json when the Admin API does not give the token's kind", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/api-token": {
+          status: 200,
+          body: {
+            name: "Laptop",
+            organization: acme,
+            permissions: ["projects:read"],
+            projectAccess: { kind: "all" },
+            expiresAt: null,
+          },
+        },
+      },
+    );
+    const sandbox = await createSandbox();
+    const invocation = sandbox.invocation({
+      commandLineArguments: ["login", "--json"],
+      environmentVariables: { CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl },
+      stdin: Readable.from(["cd_acme_token\n"]),
+    });
+
+    const exitCode = await run(invocation);
+
+    expect(exitCode).toEqual(0);
+    expect(JSON.parse(invocation.stdout.text())).toEqual({
+      signInsFile: join(sandbox.homeDirectory, ".config", "configdirector", "sign-ins.json"),
+      organization: acme,
+      kind: "user",
       projectAccess: { kind: "all" },
     });
   });
@@ -436,6 +535,7 @@ describe("login", () => {
     expect(JSON.parse(invocation.stdout.text())).toEqual({
       signInsFile: join(sandbox.homeDirectory, ".config", "configdirector", "sign-ins.json"),
       organization: acme,
+      kind: "user",
       projectAccess: { kind: "selected", projectIds: [acmeWebApp.id] },
     });
   });

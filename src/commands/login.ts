@@ -1,4 +1,5 @@
 import { AdminApiClient, type ProjectAccess } from "../admin-api/AdminApiClient.js";
+import { apiTokenKindNames } from "../api-token-kind-names.js";
 import { CliError } from "../CliError.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { ExitCode } from "../ExitCode.js";
@@ -31,11 +32,18 @@ export const login = async (context: CommandContext): Promise<CommandOutput> => 
     );
   }
   const file = await saveSignIn(context, { organization: apiToken.organization, token });
+  const kindName = apiTokenKindNames[apiToken.kind];
 
   return {
-    json: { signInsFile: file, organization: apiToken.organization, projectAccess: apiToken.projectAccess },
+    json: {
+      signInsFile: file,
+      organization: apiToken.organization,
+      kind: apiToken.kind,
+      projectAccess: apiToken.projectAccess,
+    },
     text: [
-      `Signed in to ${apiToken.organization.name}. The CLI sign-in is saved in ${file}`,
+      `Signed in to ${apiToken.organization.name} with ${kindName.article} ${kindName.name}. ` +
+        `The CLI sign-in is saved in ${file}`,
       ...projectAccessLines(apiToken.projectAccess),
       "",
     ].join("\n"),

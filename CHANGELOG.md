@@ -4,6 +4,15 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- `configdirector api-token get` shows the token's kind on a line after its name: `Kind: user API token` or `Kind: organization API token`. With `--json` it still prints the Admin API's response as received, which carries `kind`.
+- `configdirector login --json` carries the token's `kind`, `user` or `organization`.
+
+### Changed
+
+- `configdirector login` names the token's kind when it signs in, as in `Signed in to Acme with an organization API token.`, before saying where the CLI sign-in is saved.
+
 ## [0.25.0] - 2026-11-18
 
 ### Added

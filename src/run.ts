@@ -252,7 +252,7 @@ export const run = async (invocation: Invocation): Promise<ExitCode> => {
     .description("describe the API token a command here would use")
     .command("get")
     .description(
-      "show the token's organization, name, permissions and expiration, and where it came from; never the token itself",
+      "show the token's organization, name, kind, permissions, project access and expiration, and where it came from; never the token itself",
     )
     .action(commandAction(getApiToken));
 

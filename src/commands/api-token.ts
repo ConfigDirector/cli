@@ -1,4 +1,5 @@
 import { AdminApiClient, type DescribedApiToken, type ProjectAccess } from "../admin-api/AdminApiClient.js";
+import { apiTokenKindNames } from "../api-token-kind-names.js";
 import type { CommandContext, CommandOutput } from "../CommandContext.js";
 import { configuredApiToken, describeApiTokenSource, type ApiTokenSource } from "../configured-api-token.js";
 import { ExitCode } from "../ExitCode.js";
@@ -18,6 +19,7 @@ const describeProjectAccess = (projectAccess: ProjectAccess): string => {
 const apiTokenLines = (apiToken: DescribedApiToken, source: ApiTokenSource): string[] => [
   `Organization: ${apiToken.organization.name} (${apiToken.organization.id})`,
   `Name: ${apiToken.name}`,
+  `Kind: ${apiTokenKindNames[apiToken.kind].name}`,
   `Permissions: ${listedOrNone(apiToken.permissions)}`,
   `Project access: ${describeProjectAccess(apiToken.projectAccess)}`,
   `Expires: ${apiToken.expiresAt === null ? "never" : utcMinute(apiToken.expiresAt)}`,

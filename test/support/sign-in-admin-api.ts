@@ -46,6 +46,7 @@ export type ProjectAccess = { kind: "all" } | { kind: "selected"; projectIds: st
 type ApiTokenAccount = {
   token: string;
   name?: string;
+  kind?: "user" | "organization";
   organization: Organization;
   permissions?: string[];
   projectAccess?: ProjectAccess;
@@ -66,6 +67,7 @@ const accountOf = (accounts: ApiTokenAccount[], request: ReceivedRequest): ApiTo
 
 export const describedApiToken = (account: ApiTokenAccount) => ({
   name: account.name ?? "Laptop",
+  kind: account.kind ?? "user",
   organization: account.organization,
   permissions: account.permissions ?? ["configs:read", "projects:read"],
   projectAccess: account.projectAccess ?? { kind: "all" },

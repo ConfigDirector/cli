@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { adminApiUnderTest, projectAccessUnderTest } from "./support/admin-api-under-test.js";
+import {
+  adminApiUnderTest,
+  apiTokenKindUnderTest,
+  projectAccessUnderTest,
+} from "./support/admin-api-under-test.js";
 import { jsonOf, startCliUnderTest } from "./support/built-cli.js";
 
 describe.skipIf(adminApiUnderTest() === undefined)("api-token get against the Admin API", () => {
@@ -15,6 +19,28 @@ describe.skipIf(adminApiUnderTest() === undefined)("api-token get against the Ad
         permissions: expect.arrayContaining(["projects:read"]),
       }),
     );
+  });
+
+  it("shows the kind of a user API token", async ({ skip }) => {
+    const cli = await startCliUnderTest();
+    const kind = await apiTokenKindUnderTest(cli.adminApi);
+    skip(kind !== "user", "The token is an organization API token.");
+
+    const result = await cli.run(["api-token", "get"]);
+
+    expect(result.exitCode).toEqual(0);
+    expect(result.stdout).toContain("\nKind: user API token\n");
+  });
+
+  it("shows the kind of an organization API token", async ({ skip }) => {
+    const cli = await startCliUnderTest();
+    const kind = await apiTokenKindUnderTest(cli.adminApi);
+    skip(kind !== "organization", "The token is a user API token.");
+
+    const result = await cli.run(["api-token", "get"]);
+
+    expect(result.exitCode).toEqual(0);
+    expect(result.stdout).toContain("\nKind: organization API token\n");
   });
 
   it("says a token with all projects reaches all projects", async ({ skip }) => {
