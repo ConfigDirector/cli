@@ -4,6 +4,8 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-22
+
 ### Added
 
 - `configdirector api-token get` shows the token's kind on a line after its name: `Kind: user API token` or `Kind: organization API token`. With `--json` it still prints the Admin API's response as received, which carries `kind`.
