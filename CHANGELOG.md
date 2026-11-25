@@ -4,6 +4,8 @@ All notable changes to `@configdirector/cli` are documented here. The format fol
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-11-24
+
 ### Changed
 
 - When the Admin API refuses a request because a request rate limit was reached, every command waits the seconds the API names in `Retry-After`, which run until the current minute ends, and sends the request again, up to three times for each request. Before each wait it writes a line such as `The Admin API's request rate limit was reached. Waiting 23 seconds before trying again.` to stderr, so `--json` output is unchanged. When the request is still refused after the third wait, the command exits with 2 with `ConfigDirector kept refusing the request after three waits.` and the API's message. Earlier versions exited with 2 at once, with an error that named the status 429. An answer whose `Retry-After` is missing or outside 1 to 60 seconds is not waited on: the command exits with 2 at once, with the API's message.
