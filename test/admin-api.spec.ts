@@ -585,7 +585,7 @@ describe("Admin API request rate limits", () => {
       waitingTwentyThreeSecondsLine +
         waitingTwentyThreeSecondsLine +
         waitingTwentyThreeSecondsLine +
-        `Error: The Admin API kept refusing the request after three waits. ${organizationRequestRateLimitSentence}\n`,
+        `Error: ConfigDirector kept refusing the request after three waits. ${organizationRequestRateLimitSentence}\n`,
     );
     expect(stdout).toEqual("");
   });

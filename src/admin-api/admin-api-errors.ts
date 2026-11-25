@@ -82,7 +82,7 @@ export class RequestRateLimitReachedError extends CliError {}
 
 export class RequestRateLimitReachedAfterWaitsError extends CliError {
   constructor(apiMessage: string) {
-    super(`The Admin API kept refusing the request after three waits. ${apiMessage}`);
+    super(`ConfigDirector kept refusing the request after three waits. ${apiMessage}`);
   }
 }
 
