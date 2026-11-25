@@ -21,7 +21,11 @@ const captureOutput = (): CapturedOutput => {
   };
 };
 
-type TestInvocation = Invocation & { stdout: CapturedOutput; stderr: CapturedOutput };
+type TestInvocation = Invocation & {
+  stdout: CapturedOutput;
+  stderr: CapturedOutput;
+  requestedWaits: readonly number[];
+};
 
 type InvocationOptions = {
   commandLineArguments: string[];
@@ -38,16 +42,23 @@ export const createSandbox = async () => {
   await mkdir(workingDirectory);
   await mkdir(homeDirectory);
 
-  const invocation = (options: InvocationOptions): TestInvocation => ({
-    commandLineArguments: options.commandLineArguments,
-    environmentVariables: options.environmentVariables ?? {},
-    workingDirectory,
-    homeDirectory,
-    platform: options.platform ?? "linux",
-    stdin: options.stdin ?? Readable.from([]),
-    stdout: captureOutput(),
-    stderr: captureOutput(),
-  });
+  const invocation = (options: InvocationOptions): TestInvocation => {
+    const requestedWaits: number[] = [];
+    return {
+      commandLineArguments: options.commandLineArguments,
+      environmentVariables: options.environmentVariables ?? {},
+      workingDirectory,
+      homeDirectory,
+      platform: options.platform ?? "linux",
+      stdin: options.stdin ?? Readable.from([]),
+      stdout: captureOutput(),
+      stderr: captureOutput(),
+      wait: async (milliseconds) => {
+        requestedWaits.push(milliseconds);
+      },
+      requestedWaits,
+    };
+  };
 
   return { root, workingDirectory, homeDirectory, invocation };
 };

@@ -21,7 +21,10 @@ const configJsonTokenMoveOf = async (
   context: CommandContext,
   configJsonToken: ConfigJsonToken,
 ): Promise<ConfigJsonTokenMove> => {
-  const client = new AdminApiClient({ baseUrl: context.baseUrl, token: configJsonToken.token });
+  const client = new AdminApiClient(
+    { baseUrl: context.baseUrl, token: configJsonToken.token },
+    context.invocation,
+  );
   try {
     const { parsedBody: apiToken } = await client.describeApiToken();
     return {

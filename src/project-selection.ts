@@ -103,7 +103,7 @@ export const connectToLinkedProject = async (context: CommandContext): Promise<L
   const settings = await readProjectSettings(context.invocation.workingDirectory);
   const projectSlug = requireLinkedProjectSlug(context, settings);
   const apiToken = await configuredApiToken(context);
-  const client = new AdminApiClient({ baseUrl: context.baseUrl, token: apiToken.token });
+  const client = new AdminApiClient({ baseUrl: context.baseUrl, token: apiToken.token }, context.invocation);
   const { parsedBody: reachableProjects } = await client.listProjects();
   const project = await projectWithSlug(client, reachableProjects, projectSlug);
   refuseProjectOfAnotherOrganization(project, settings, apiToken);

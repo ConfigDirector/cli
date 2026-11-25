@@ -20,10 +20,10 @@ export const listProjects = async (
   _commandArguments: readonly [],
   options: ListingOptions,
 ): Promise<CommandOutput> => {
-  const client = new AdminApiClient({
-    baseUrl: context.baseUrl,
-    token: (await configuredApiToken(context)).token,
-  });
+  const client = new AdminApiClient(
+    { baseUrl: context.baseUrl, token: (await configuredApiToken(context)).token },
+    context.invocation,
+  );
   const { parsedBody: projects, responseBody } = await client.listProjects();
 
   return {

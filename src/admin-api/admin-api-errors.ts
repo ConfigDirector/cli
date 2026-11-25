@@ -78,6 +78,14 @@ export class ServiceSuspendedError extends CliError {
   }
 }
 
+export class RequestRateLimitReachedError extends CliError {}
+
+export class RequestRateLimitReachedAfterWaitsError extends CliError {
+  constructor(apiMessage: string) {
+    super(`The Admin API kept refusing the request after three waits. ${apiMessage}`);
+  }
+}
+
 const messageOf = (failure: unknown): string =>
   failure instanceof Error ? failure.message : String(failure);
 

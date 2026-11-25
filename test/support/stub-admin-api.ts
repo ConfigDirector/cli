@@ -27,13 +27,15 @@ export type ReceivedRequest = {
 
 export type StubReplyForRequest = StubReply | ((request: ReceivedRequest) => StubReply);
 
-export const firstReplyThen = (first: StubReply, then: StubReply) => {
+export const firstRepliesThen = (firstReplies: StubReply[], then: StubReply) => {
   let requestsReceived = 0;
   return (): StubReply => {
     requestsReceived += 1;
-    return requestsReceived === 1 ? first : then;
+    return firstReplies[requestsReceived - 1] ?? then;
   };
 };
+
+export const firstReplyThen = (first: StubReply, then: StubReply) => firstRepliesThen([first], then);
 
 const dropConnection: { [Dropped in DroppedConnection]: (socket: Socket) => void } = {
   reset: (socket) => socket.resetAndDestroy(),

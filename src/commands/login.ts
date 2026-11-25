@@ -21,10 +21,10 @@ export const login = async (context: CommandContext): Promise<CommandOutput> => 
     );
   }
   const token = context.tokenOption ?? (await readPastedApiToken(context.invocation));
-  const { parsedBody: apiToken } = await new AdminApiClient({
-    baseUrl: context.baseUrl,
-    token,
-  }).describeApiToken();
+  const { parsedBody: apiToken } = await new AdminApiClient(
+    { baseUrl: context.baseUrl, token },
+    context.invocation,
+  ).describeApiToken();
   if (!apiToken.permissions.includes(PERMISSION_TO_FIND_PROJECTS)) {
     throw new CliError(
       `The API token lacks the ${PERMISSION_TO_FIND_PROJECTS} permission, which the CLI needs to find a project. ` +

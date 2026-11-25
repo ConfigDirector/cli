@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { setDefaultAutoSelectFamilyAttemptTimeout } from "node:net";
 import { homedir } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import { run } from "./run.js";
 
 const millisecondsEachAddressGetsToConnect = 2_000;
@@ -16,4 +17,5 @@ process.exitCode = await run({
   stdin: process.stdin,
   stdout: process.stdout,
   stderr: process.stderr,
+  wait: (milliseconds) => delay(milliseconds),
 });

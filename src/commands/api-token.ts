@@ -28,10 +28,10 @@ const apiTokenLines = (apiToken: DescribedApiToken, source: ApiTokenSource): str
 
 export const getApiToken = async (context: CommandContext): Promise<CommandOutput> => {
   const { token, source } = await configuredApiToken(context);
-  const { parsedBody: apiToken, responseBody } = await new AdminApiClient({
-    baseUrl: context.baseUrl,
-    token,
-  }).describeApiToken();
+  const { parsedBody: apiToken, responseBody } = await new AdminApiClient(
+    { baseUrl: context.baseUrl, token },
+    context.invocation,
+  ).describeApiToken();
 
   return {
     json: responseBody,

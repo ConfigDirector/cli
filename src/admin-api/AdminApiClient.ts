@@ -2,6 +2,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import * as v from "valibot";
 import { version } from "../../package.json";
 import type { CliError } from "../CliError.js";
+import type { Invocation } from "../Invocation.js";
+import { plural } from "../plural.js";
 import {
   ApiAuthorizationError,
   ApiAuthorizationErrorBodySchema,
@@ -10,6 +12,8 @@ import {
   ApiValidationErrorBodySchema,
   RepositoryLimitReachedBodySchema,
   RepositoryLimitReachedError,
+  RequestRateLimitReachedAfterWaitsError,
+  RequestRateLimitReachedError,
   ResourceNotFoundBodySchema,
   ResourceNotFoundError,
   ServiceSuspendedBodySchema,
@@ -35,6 +39,7 @@ import {
 } from "./metrics.js";
 import { CreatedConfigSchema, type CreateConfigRequest, type CreatedConfig } from "./config-creation.js";
 import { retryDecisionAfter } from "./connection-failure-retry.js";
+import { waitDecisionAfter } from "./request-rate-limit-wait.js";
 import {
   ConfigWithTargetingRulesSchema,
   type ConfigWithTargetingRules,
@@ -311,8 +316,15 @@ const parsedResponseOf = <TSchema extends v.GenericSchema>(
   return { responseBody: body, parsedBody: parsedBody.output };
 };
 
+const requestRateLimitWaitLine = (waitSeconds: number): string =>
+  "The Admin API's request rate limit was reached. " +
+  `Waiting ${waitSeconds} ${plural(waitSeconds, "second", "seconds")} before trying again.\n`;
+
 export class AdminApiClient {
-  constructor(private readonly connection: { baseUrl: string; token: string }) {}
+  constructor(
+    private readonly connection: { baseUrl: string; token: string },
+    private readonly invocation: Pick<Invocation, "stderr" | "wait">,
+  ) {}
 
   public describeApiToken(): Promise<ParsedResponse<DescribedApiToken>> {
     return this.get("/v1/api-token", DescribedApiTokenSchema);
@@ -640,8 +652,22 @@ export class AdminApiClient {
 
   private async send(path: string, request: JsonRequest): Promise<ReceivedResponse> {
     const url = `${this.connection.baseUrl}${path}`;
-    const response = await this.fetchResponse(url, request);
-    return { url, response, body: await readJsonBody(response) };
+    for (let waitsMade = 0; ; waitsMade += 1) {
+      const response = await this.fetchResponse(url, request);
+      const body = await readJsonBody(response);
+      const wait = waitDecisionAfter(response, body, waitsMade);
+      switch (wait.decision) {
+        case "use-answer":
+          return { url, response, body };
+        case "give-up-without-waiting":
+          throw new RequestRateLimitReachedError(wait.apiMessage);
+        case "give-up-after-waits":
+          throw new RequestRateLimitReachedAfterWaitsError(wait.apiMessage);
+        case "wait-and-retry":
+          this.invocation.stderr.write(requestRateLimitWaitLine(wait.waitSeconds));
+          await this.invocation.wait(wait.waitSeconds * 1_000);
+      }
+    }
   }
 
   private async fetchResponse(url: string, request: JsonRequest): Promise<Response> {

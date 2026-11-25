@@ -70,7 +70,7 @@ const projectFoundWith = async (
   apiToken: ConfiguredApiToken,
   slug: string,
 ): Promise<ProjectFound | undefined> => {
-  const client = new AdminApiClient({ baseUrl: context.baseUrl, token: apiToken.token });
+  const client = new AdminApiClient({ baseUrl: context.baseUrl, token: apiToken.token }, context.invocation);
   const { parsedBody: projects } = await client.listProjects();
   const project = projects.find((listedProject) => listedProject.slug === slug);
   return project === undefined ? undefined : { apiToken, project };
@@ -97,7 +97,10 @@ const anyLimitedToSelectedProjects = async (
   apiTokens: ConfiguredApiToken[],
 ): Promise<boolean> => {
   for (const apiToken of apiTokens) {
-    const client = new AdminApiClient({ baseUrl: context.baseUrl, token: apiToken.token });
+    const client = new AdminApiClient(
+      { baseUrl: context.baseUrl, token: apiToken.token },
+      context.invocation,
+    );
     const { parsedBody: describedApiToken } = await client.describeApiToken();
     if (isLimitedToSelectedProjects(describedApiToken.projectAccess)) {
       return true;

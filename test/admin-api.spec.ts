@@ -3,13 +3,16 @@ import { createServer, type Socket } from "node:net";
 import { Readable } from "node:stream";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { run } from "../src/run.js";
+import { projectPath, requestLinesOf, startBrowseAdminApi } from "./support/browse-admin-api.js";
 import { createSandbox } from "./support/sandbox.js";
 import { acme, startSignInAdminApi } from "./support/sign-in-admin-api.js";
 import {
   connectionClosed,
   connectionReset,
+  firstRepliesThen,
   firstReplyThen,
   startStubAdminApi,
+  type StubReply,
 } from "./support/stub-admin-api.js";
 
 const webApp = {
@@ -28,8 +31,25 @@ const runInit = async (baseUrl: string) => {
     environmentVariables: { CONFIGDIRECTOR_BASE_URL: baseUrl },
   });
   const exitCode = await run(invocation);
-  return { exitCode, stdout: invocation.stdout.text(), stderr: invocation.stderr.text() };
+  return {
+    exitCode,
+    stdout: invocation.stdout.text(),
+    stderr: invocation.stderr.text(),
+    requestedWaits: invocation.requestedWaits,
+  };
 };
+
+const organizationRequestRateLimitSentence =
+  "This organization has reached its limit of 1,200 Admin API requests per minute. Retry after 23 seconds.";
+
+const requestRateLimitReached = (headers: Record<string, string>): StubReply => ({
+  status: 429,
+  body: { error: organizationRequestRateLimitSentence, code: "REQUEST_RATE_LIMIT_REACHED" },
+  headers,
+});
+
+const waitingTwentyThreeSecondsLine =
+  "The Admin API's request rate limit was reached. Waiting 23 seconds before trying again.\n";
 
 const closedPort = async () => {
   const server = createServer();
@@ -438,5 +458,266 @@ describe("Admin API connection failures", () => {
 
     expect(exitCode).toEqual(2);
     expect(plainHttpHost.connectionsAccepted()).toEqual(1);
+  });
+});
+
+describe("Admin API request rate limits", () => {
+  it("repeat a GET the request rate limit refused after waiting the seconds Retry-After names, saying so on stderr", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/projects": firstReplyThen(requestRateLimitReached({ "retry-after": "23" }), {
+          status: 200,
+          body: [webApp],
+        }),
+      },
+    );
+
+    const { exitCode, stderr, requestedWaits } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", "GET /v1/projects"]);
+    expect(requestedWaits).toEqual([23_000]);
+    expect(stderr).toEqual(waitingTwentyThreeSecondsLine);
+  });
+
+  it("repeat a POST the request rate limit refused, sending the same body again", async () => {
+    const sentMetric = {
+      eventName: "checkout_completed",
+      kinds: ["conversion"],
+      direction: "higher-is-better",
+    };
+    const adminApi = await startBrowseAdminApi({
+      "/metrics": firstReplyThen(requestRateLimitReached({ "retry-after": "23" }), {
+        status: 201,
+        body: {
+          id: "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+          projectId: webApp.id,
+          eventName: "checkout_completed",
+          filter: null,
+          valueField: null,
+          ratio: null,
+          funnel: null,
+          retention: null,
+          description: null,
+          direction: "higher-is-better",
+          kinds: ["conversion"],
+          usages: [],
+          createdAt: "2026-11-01T10:00:00.000Z",
+          updatedAt: "2026-11-01T10:00:00.000Z",
+        },
+      }),
+    });
+    const invocation = (await createSandbox()).invocation({
+      commandLineArguments: [
+        "metrics",
+        "create",
+        "--event-name",
+        "checkout_completed",
+        "--kind",
+        "conversion",
+        "--direction",
+        "higher-is-better",
+        "--project",
+        "web-app",
+        "--token",
+        "cd_flag_token",
+      ],
+      environmentVariables: { CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl },
+    });
+
+    const exitCode = await run(invocation);
+
+    expect(exitCode).toEqual(0);
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      `POST ${projectPath("/metrics")}`,
+      `POST ${projectPath("/metrics")}`,
+    ]);
+    expect(adminApi.receivedRequests.slice(1).map((request) => request.body)).toEqual([
+      sentMetric,
+      sentMetric,
+    ]);
+    expect(invocation.requestedWaits).toEqual([23_000]);
+  });
+
+  it("repeat a GET whose connection the network reset after a request rate limit wait, and use the answer to the third one", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/projects": firstRepliesThen(
+          [requestRateLimitReached({ "retry-after": "23" }), connectionReset],
+          { status: 200, body: [webApp] },
+        ),
+      },
+    );
+
+    const { exitCode, requestedWaits } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects", "GET /v1/projects", "GET /v1/projects"]);
+    expect(requestedWaits).toEqual([23_000]);
+  });
+
+  it("exit 2 with the API's sentence when the request rate limit refuses the request again after three waits", async () => {
+    const rateLimitReached = requestRateLimitReached({ "retry-after": "23" });
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/projects": firstRepliesThen(
+          [rateLimitReached, rateLimitReached, rateLimitReached, rateLimitReached],
+          { status: 200, body: [webApp] },
+        ),
+      },
+    );
+
+    const { exitCode, stdout, stderr, requestedWaits } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(2);
+    expect(requestLinesOf(adminApi)).toEqual([
+      "GET /v1/projects",
+      "GET /v1/projects",
+      "GET /v1/projects",
+      "GET /v1/projects",
+    ]);
+    expect(requestedWaits).toEqual([23_000, 23_000, 23_000]);
+    expect(stderr).toEqual(
+      waitingTwentyThreeSecondsLine +
+        waitingTwentyThreeSecondsLine +
+        waitingTwentyThreeSecondsLine +
+        `Error: The Admin API kept refusing the request after three waits. ${organizationRequestRateLimitSentence}\n`,
+    );
+    expect(stdout).toEqual("");
+  });
+
+  it("exit 2 with the API's sentence after one request when the request rate limit comes without Retry-After", async () => {
+    const adminApi = await startStubAdminApi(requestRateLimitReached({}));
+
+    const { exitCode, stdout, stderr, requestedWaits } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(2);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects"]);
+    expect(requestedWaits).toEqual([]);
+    expect(stderr).toEqual(`Error: ${organizationRequestRateLimitSentence}\n`);
+    expect(stdout).toEqual("");
+  });
+
+  it("exit 2 with the API's sentence after one request when the request rate limit's Retry-After is 'soon'", async () => {
+    const adminApi = await startStubAdminApi(requestRateLimitReached({ "retry-after": "soon" }));
+
+    const { exitCode, stdout, stderr, requestedWaits } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(2);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects"]);
+    expect(requestedWaits).toEqual([]);
+    expect(stderr).toEqual(`Error: ${organizationRequestRateLimitSentence}\n`);
+    expect(stdout).toEqual("");
+  });
+
+  it("exit 2 with the API's sentence after one request when the request rate limit's Retry-After is 600 seconds", async () => {
+    const adminApi = await startStubAdminApi(requestRateLimitReached({ "retry-after": "600" }));
+
+    const { exitCode, stdout, stderr, requestedWaits } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(2);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects"]);
+    expect(requestedWaits).toEqual([]);
+    expect(stderr).toEqual(`Error: ${organizationRequestRateLimitSentence}\n`);
+    expect(stdout).toEqual("");
+  });
+
+  it("exit 2 with the API's sentence after one request when the request rate limit's Retry-After is 61 seconds", async () => {
+    const adminApi = await startStubAdminApi(requestRateLimitReached({ "retry-after": "61" }));
+
+    const { exitCode, stdout, stderr, requestedWaits } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(2);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects"]);
+    expect(requestedWaits).toEqual([]);
+    expect(stderr).toEqual(`Error: ${organizationRequestRateLimitSentence}\n`);
+    expect(stdout).toEqual("");
+  });
+
+  it("exit 2 with the API's sentence after one request when the request rate limit's Retry-After is 0 seconds", async () => {
+    const adminApi = await startStubAdminApi(requestRateLimitReached({ "retry-after": "0" }));
+
+    const { exitCode, stdout, stderr, requestedWaits } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(2);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects"]);
+    expect(requestedWaits).toEqual([]);
+    expect(stderr).toEqual(`Error: ${organizationRequestRateLimitSentence}\n`);
+    expect(stdout).toEqual("");
+  });
+
+  it("exit 2 with the API's sentence after one request when the request rate limit's Retry-After is not a whole number of seconds", async () => {
+    const adminApi = await startStubAdminApi(requestRateLimitReached({ "retry-after": "2.5" }));
+
+    const { exitCode, stdout, stderr, requestedWaits } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(2);
+    expect(requestLinesOf(adminApi)).toEqual(["GET /v1/projects"]);
+    expect(requestedWaits).toEqual([]);
+    expect(stderr).toEqual(`Error: ${organizationRequestRateLimitSentence}\n`);
+    expect(stdout).toEqual("");
+  });
+
+  it("wait one second, saying so in the singular, when the request rate limit's Retry-After is 1", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/projects": firstReplyThen(requestRateLimitReached({ "retry-after": "1" }), {
+          status: 200,
+          body: [webApp],
+        }),
+      },
+    );
+
+    const { exitCode, stderr, requestedWaits } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(requestedWaits).toEqual([1_000]);
+    expect(stderr).toEqual(
+      "The Admin API's request rate limit was reached. Waiting 1 second before trying again.\n",
+    );
+  });
+
+  it("wait sixty seconds when the request rate limit's Retry-After is 60", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/projects": firstReplyThen(requestRateLimitReached({ "retry-after": "60" }), {
+          status: 200,
+          body: [webApp],
+        }),
+      },
+    );
+
+    const { exitCode, requestedWaits } = await runInit(adminApi.baseUrl);
+
+    expect(exitCode).toEqual(0);
+    expect(requestedWaits).toEqual([60_000]);
+  });
+
+  it("leave stdout to the command's JSON with --json after a wait", async () => {
+    const adminApi = await startStubAdminApi(
+      { status: 404, body: {} },
+      {
+        "/v1/projects": firstReplyThen(requestRateLimitReached({ "retry-after": "23" }), {
+          status: 200,
+          body: [webApp],
+        }),
+      },
+    );
+    const invocation = (await createSandbox()).invocation({
+      commandLineArguments: ["projects", "list", "--json", "--token", "cd_flag_token"],
+      environmentVariables: { CONFIGDIRECTOR_BASE_URL: adminApi.baseUrl },
+    });
+
+    const exitCode = await run(invocation);
+
+    expect(exitCode).toEqual(0);
+    expect(JSON.parse(invocation.stdout.text())).toEqual([webApp]);
+    expect(invocation.stderr.text()).toEqual(waitingTwentyThreeSecondsLine);
   });
 });
